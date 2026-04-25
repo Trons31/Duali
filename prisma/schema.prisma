@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StudentStatus {
+  ACTIVO
+  INACTIVO
+}
+
+enum MonthlyPaymentStatus {
+  PENDIENTE
+  PAGADO
+  VENCIDO
+}
+
+enum SuppliesPaymentStatus {
+  PENDIENTE
+  PAGADO
+}
+
+enum ReminderStatus {
+  PENDIENTE
+  ENVIADO
+  FALLIDO
+}
+
+enum NotificationStatus {
+  PENDIENTE
+  ENVIADA
+  FALLIDA
+  LEIDA
+}
+
+model Client {
+  id              String           @id @default(cuid())
+  nombre          String
+  email           String           @unique
+  passwordHash    String
+  telefono        String?
+  businessName    String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  groups          Group[]
+  students        Student[]
+  monthlyPayments MonthlyPayment[]
+  suppliesPayments SuppliesPayment[]
+  expenses        Expense[]
+  notifications   Notification[]
+  reminders        Reminder[]
+  pushTokens       PushToken[]
+
+  @@index([email])
+  @@map("clients")
+}
+
+model Group {
+  id                    String           @id @default(cuid())
+  nombre                String
+  descripcion           String?
+  precioMensualidadDefault Decimal       @db.Decimal(12, 2)
+  clientId              String
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  deletedAt             DateTime?
+
+  client                Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  students              Student[]
+  monthlyPayments       MonthlyPayment[]
+  suppliesPayments      SuppliesPayment[]
+
+  @@index([clientId])
+  @@index([clientId, nombre])
+  @@map("groups")
+}
+
+model Student {
+  id              String        @id @default(cuid())
+  nombre          String
+  apellido        String
+  edad            Int
+  celular         String?
+  esMenorDeEdad   Boolean       @default(false)
+  nombrePadre     String?
+  telefonoPadre   String?
+  parentesco      String?
+  grupoId         String
+  clientId        String
+  estado          StudentStatus @default(ACTIVO)
+  precioMensualidad Decimal?    @db.Decimal(12, 2)
+  diaCobro        Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group           Group         @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  monthlyPayments MonthlyPayment[]
+  suppliesPayments SuppliesPayment[]
+  reminders       Reminder[]
+
+  @@index([clientId])
+  @@index([grupoId])
+  @@index([clientId, estado])
+  @@index([clientId, nombre, apellido])
+  @@map("students")
+}
+
+model MonthlyPayment {
+  id               String               @id @default(cuid())
+  estudianteId     String
+  grupoId          String
+  clientId         String
+  mes              Int
+  anio             Int
+  monto            Decimal              @db.Decimal(12, 2)
+  fechaVencimiento DateTime
+  fechaPago        DateTime?
+  estado           MonthlyPaymentStatus @default(PENDIENTE)
+  metodoPago       String?
+  comprobanteUrl   String?
+  notas            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+
+  client           Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student          Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  group            Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  reminders        Reminder[]
+
+  @@unique([estudianteId, mes, anio])
+  @@index([clientId])
+  @@index([grupoId])
+  @@index([estudianteId])
+  @@index([clientId, estado])
+  @@index([clientId, fechaVencimiento])
+  @@map("monthly_payments")
+}
+
+model SuppliesPayment {
+  id               String                @id @default(cuid())
+  nombreConcepto   String
+  descripcion      String?
+  monto            Decimal               @db.Decimal(12, 2)
+  grupoId          String?
+  estudianteId     String?
+  clientId         String
+  estado           SuppliesPaymentStatus @default(PENDIENTE)
+  fechaVencimiento DateTime
+  fechaPago        DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  deletedAt        DateTime?
+
+  client           Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group            Group?                @relation(fields: [grupoId], references: [id], onDelete: SetNull)
+  student          Student?              @relation(fields: [estudianteId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([grupoId])
+  @@index([estudianteId])
+  @@index([clientId, estado])
+  @@index([clientId, fechaVencimiento])
+  @@map("supplies_payments")
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  clientId    String
+  concepto    String
+  descripcion String?
+  monto       Decimal  @db.Decimal(12, 2)
+  fecha       DateTime
+  categoria   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([clientId, fecha])
+  @@index([clientId, categoria])
+  @@map("expenses")
+}
+
+model PushToken {
+  id          String   @id @default(cuid())
+  clientId    String
+  token       String   @unique
+  platform    String?
+  deviceName  String?
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("push_tokens")
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  clientId    String
+  title       String
+  body        String
+  data        Json?
+  status      NotificationStatus @default(PENDIENTE)
+  sentAt      DateTime?
+  readAt      DateTime?
+  error       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  client      Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([clientId, status])
+  @@map("notifications")
+}
+
+model Reminder {
+  id                String         @id @default(cuid())
+  clientId          String
+  estudianteId      String
+  monthlyPaymentId  String?
+  phone             String
+  message           String
+  whatsappUrl       String
+  status            ReminderStatus @default(PENDIENTE)
+  sentAt            DateTime?
+  error             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student           Student        @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  monthlyPayment    MonthlyPayment? @relation(fields: [monthlyPaymentId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([estudianteId])
+  @@index([monthlyPaymentId])
+  @@index([clientId, status])
+  @@map("reminders")
+}
