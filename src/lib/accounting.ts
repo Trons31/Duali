@@ -1,11 +1,16 @@
 import { prisma } from "./prisma";
-import { endOfCurrentMonth, startOfCurrentMonth } from "./dates";
+import { endOfCurrentMonth, startOfCurrentMonth, startOfLocalDay, startOfNextLocalDay } from "./dates";
+import { ensureCurrentMonthlyPayments } from "./monthly-payments";
 
 export async function getAccountingSummary(clientId: string) {
+  await ensureCurrentMonthlyPayments(clientId);
+
   const monthStart = startOfCurrentMonth();
   const monthEnd = endOfCurrentMonth();
+  const todayStart = startOfLocalDay();
+  const tomorrowStart = startOfNextLocalDay();
 
-  const [monthlyIncome, suppliesIncome, expenses, pendingAmount, monthlyReceivedThisMonth, activeStudents, pendingPayments, overduePayments] = await Promise.all([
+  const [monthlyIncome, suppliesIncome, expenses, pendingTodayAmount, monthlyReceivedThisMonth, activeStudents, pendingTodayPayments, overduePayments] = await Promise.all([
     prisma.monthlyPayment.aggregate({
       where: { clientId, deletedAt: null, estado: "PAGADO" },
       _sum: { monto: true }
@@ -19,7 +24,12 @@ export async function getAccountingSummary(clientId: string) {
       _sum: { monto: true }
     }),
     prisma.monthlyPayment.aggregate({
-      where: { clientId, deletedAt: null, estado: { in: ["PENDIENTE", "VENCIDO"] } },
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PENDIENTE",
+        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
+      },
       _sum: { monto: true }
     }),
     prisma.monthlyPayment.aggregate({
@@ -32,12 +42,19 @@ export async function getAccountingSummary(clientId: string) {
       _sum: { monto: true }
     }),
     prisma.student.count({ where: { clientId, deletedAt: null, estado: "ACTIVO" } }),
-    prisma.monthlyPayment.count({ where: { clientId, deletedAt: null, estado: "PENDIENTE" } }),
     prisma.monthlyPayment.count({
       where: {
         clientId,
         deletedAt: null,
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: new Date() } }]
+        estado: "PENDIENTE",
+        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
+      }
+    }),
+    prisma.monthlyPayment.count({
+      where: {
+        clientId,
+        deletedAt: null,
+        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
       }
     })
   ]);
@@ -53,10 +70,10 @@ export async function getAccountingSummary(clientId: string) {
     ingresosTotales,
     gastosTotales: totalGastos,
     balance: ingresosTotales - totalGastos,
-    pendientesPorCobrar: Number(pendingAmount._sum.monto ?? 0),
+    pendientesPorCobrar: Number(pendingTodayAmount._sum.monto ?? 0),
     pagosRecibidosEsteMes: Number(monthlyReceivedThisMonth._sum.monto ?? 0),
     estudiantesActivos: activeStudents,
-    mensualidadesPendientes: pendingPayments,
+    mensualidadesPendientes: pendingTodayPayments,
     mensualidadesVencidas: overduePayments
   };
 }

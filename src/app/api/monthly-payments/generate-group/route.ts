@@ -1,4 +1,5 @@
 import { requireClient } from "@/lib/auth";
+import { paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, created, handleError, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { generateMonthlyByGroupSchema } from "@/lib/validations";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
         anio: body.anio,
         monto: body.monto ?? Number(student.precioMensualidad ?? group.precioMensualidadDefault),
         fechaVencimiento: body.fechaVencimiento,
-        estado: body.fechaVencimiento < new Date() ? "VENCIDO" : "PENDIENTE"
+        estado: paymentStatusForDueDate(body.fechaVencimiento)
       })),
       skipDuplicates: true
     });

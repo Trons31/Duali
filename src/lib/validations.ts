@@ -47,7 +47,12 @@ const studentBaseSchema = z.object({
   diaCobro: z.coerce.number().int().min(1).max(28).optional().nullable()
 });
 
-export const studentSchema = studentBaseSchema.superRefine((data, ctx) => {
+const studentCreateSchema = studentBaseSchema.extend({
+  tipoRegistro: z.enum(["NUEVO", "ANTIGUO"]).default("NUEVO"),
+  pagoMesActual: z.coerce.boolean().default(false)
+});
+
+export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
   if (data.esMenorDeEdad && !data.telefonoPadre && !data.celular) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

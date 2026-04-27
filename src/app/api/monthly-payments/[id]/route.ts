@@ -1,4 +1,5 @@
 import { requireClient } from "@/lib/auth";
+import { paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, handleError, noContent, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { monthlyPaymentSchema } from "@/lib/validations";
@@ -37,7 +38,7 @@ export async function PUT(request: Request, context: Params) {
 
     const payment = await prisma.monthlyPayment.update({
       where: { id },
-      data: { ...body, grupoId, estado: body.fechaVencimiento && body.fechaVencimiento < new Date() ? "VENCIDO" : exists.estado }
+      data: { ...body, grupoId, estado: body.fechaVencimiento ? paymentStatusForDueDate(body.fechaVencimiento) : exists.estado }
     });
     return ok(payment);
   } catch (error) {
