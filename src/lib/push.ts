@@ -20,3 +20,7 @@ export async function sendExpoPushNotifications(tokens: string[], title: string,
 
   return tickets;
 }
+
+export function hasPushFailures(tickets: Awaited<ReturnType<typeof sendExpoPushNotifications>>) {
+  return tickets.some((ticket) => ticket.status === "error");
+}

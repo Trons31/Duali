@@ -12,6 +12,7 @@ export async function GET(request: Request, context: Params) {
     const student = await prisma.student.findFirst({
       where: { id, clientId, deletedAt: null },
       include: {
+        enrollmentPayment: true,
         group: true,
         monthlyPayments: { where: { deletedAt: null }, orderBy: [{ anio: "desc" }, { mes: "desc" }] },
         suppliesPayments: { where: { deletedAt: null }, orderBy: { fechaVencimiento: "desc" } }

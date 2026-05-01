@@ -49,7 +49,11 @@ const studentBaseSchema = z.object({
 
 const studentCreateSchema = studentBaseSchema.extend({
   tipoRegistro: z.enum(["NUEVO", "ANTIGUO"]).default("NUEVO"),
-  pagoMesActual: z.coerce.boolean().default(false)
+  pagoMesActual: z.coerce.boolean().default(false),
+  inscripcionMonto: z.coerce.number().positive().optional().nullable(),
+  inscripcionPagada: z.coerce.boolean().default(false),
+  inscripcionFechaPago: z.coerce.date().optional().nullable(),
+  inscripcionMetodoPago: z.string().optional().nullable()
 });
 
 export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
@@ -58,6 +62,13 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ["telefonoPadre"],
       message: "Un menor debe tener teléfono del acudiente o celular registrado"
+    });
+  }
+  if (data.tipoRegistro === "NUEVO" && !data.inscripcionMonto) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inscripcionMonto"],
+      message: "La inscripcion es obligatoria para estudiantes nuevos"
     });
   }
 });
@@ -87,6 +98,12 @@ export const payMonthlySchema = z.object({
   fechaPago: z.coerce.date().optional(),
   metodoPago: z.string().optional().nullable(),
   comprobanteUrl: z.string().url().optional().nullable(),
+  notas: z.string().optional().nullable()
+});
+
+export const payEnrollmentSchema = z.object({
+  fechaPago: z.coerce.date().optional(),
+  metodoPago: z.string().optional().nullable(),
   notas: z.string().optional().nullable()
 });
 
@@ -121,5 +138,8 @@ export const sendNotificationSchema = z.object({
 });
 
 export const whatsappReminderSchema = z.object({
-  monthlyPaymentId: z.string().min(1)
+  monthlyPaymentId: z.string().min(1).optional(),
+  enrollmentPaymentId: z.string().min(1).optional()
+}).refine((data) => Boolean(data.monthlyPaymentId) !== Boolean(data.enrollmentPaymentId), {
+  message: "Debes enviar una mensualidad o una inscripcion"
 });

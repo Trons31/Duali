@@ -9,16 +9,33 @@ export async function GET(request: Request) {
     const { clientId } = await requireClient(request);
     await ensureCurrentMonthlyPayments(clientId);
     const todayStart = startOfLocalDay();
-    const payments = await prisma.monthlyPayment.findMany({
-      where: {
-        clientId,
-        deletedAt: null,
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
-      },
-      orderBy: { fechaVencimiento: "asc" },
-      include: { student: true, group: true }
-    });
-    return ok(payments);
+    const [payments, enrollments] = await Promise.all([
+      prisma.monthlyPayment.findMany({
+        where: {
+          clientId,
+          deletedAt: null,
+          student: { estado: "ACTIVO", deletedAt: null },
+          OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
+        },
+        orderBy: { fechaVencimiento: "asc" },
+        include: { student: true, group: true }
+      }),
+      prisma.enrollmentPayment.findMany({
+        where: {
+          clientId,
+          deletedAt: null,
+          student: { estado: "ACTIVO", deletedAt: null },
+          OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
+        },
+        orderBy: { fechaVencimiento: "asc" },
+        include: { student: { include: { group: true } } }
+      })
+    ]);
+
+    return ok([
+      ...payments.map((payment) => ({ ...payment, kind: "MONTHLY_PAYMENT" })),
+      ...enrollments.map((payment) => ({ ...payment, kind: "ENROLLMENT_PAYMENT", group: payment.student.group }))
+    ].sort((a, b) => a.fechaVencimiento.getTime() - b.fechaVencimiento.getTime()));
   } catch (error) {
     return handleError(error);
   }

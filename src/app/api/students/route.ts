@@ -29,6 +29,7 @@ export async function GET(request: Request) {
       },
       orderBy: { createdAt: "desc" },
       include: {
+        enrollmentPayment: true,
         group: true,
         monthlyPayments: {
           where: { deletedAt: null },
@@ -52,8 +53,31 @@ export async function POST(request: Request) {
     if (!group) throw new ApiError(404, "Grupo no encontrado");
 
     const student = await prisma.$transaction(async (tx) => {
-      const { tipoRegistro, pagoMesActual, ...studentData } = body;
+      const {
+        tipoRegistro,
+        pagoMesActual,
+        inscripcionMonto,
+        inscripcionPagada,
+        inscripcionFechaPago,
+        inscripcionMetodoPago,
+        ...studentData
+      } = body;
       const createdStudent = await tx.student.create({ data: { ...studentData, clientId } });
+
+      if (tipoRegistro === "NUEVO" && inscripcionMonto) {
+        const fechaVencimiento = new Date();
+        await tx.enrollmentPayment.create({
+          data: {
+            estudianteId: createdStudent.id,
+            clientId,
+            monto: inscripcionMonto,
+            fechaVencimiento,
+            estado: inscripcionPagada ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
+            fechaPago: inscripcionPagada ? inscripcionFechaPago ?? new Date() : null,
+            metodoPago: inscripcionPagada ? inscripcionMetodoPago : null
+          }
+        });
+      }
 
       if (body.precioMensualidad && body.diaCobro) {
         const currentPeriod = currentMonthlyPeriod();

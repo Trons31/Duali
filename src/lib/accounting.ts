@@ -10,7 +10,21 @@ export async function getAccountingSummary(clientId: string) {
   const todayStart = startOfLocalDay();
   const tomorrowStart = startOfNextLocalDay();
 
-  const [monthlyIncome, suppliesIncome, expenses, pendingTodayAmount, monthlyReceivedThisMonth, activeStudents, pendingTodayPayments, overduePayments] = await Promise.all([
+  const [
+    monthlyIncome,
+    suppliesIncome,
+    enrollmentIncome,
+    expenses,
+    pendingTodayAmount,
+    pendingEnrollmentTodayAmount,
+    monthlyReceivedThisMonth,
+    enrollmentReceivedThisMonth,
+    activeStudents,
+    pendingTodayPayments,
+    pendingEnrollmentTodayPayments,
+    overduePayments,
+    overdueEnrollmentPayments
+  ] = await Promise.all([
     prisma.monthlyPayment.aggregate({
       where: { clientId, deletedAt: null, estado: "PAGADO" },
       _sum: { monto: true }
@@ -19,11 +33,24 @@ export async function getAccountingSummary(clientId: string) {
       where: { clientId, deletedAt: null, estado: "PAGADO" },
       _sum: { monto: true }
     }),
+    prisma.enrollmentPayment.aggregate({
+      where: { clientId, deletedAt: null, estado: "PAGADO" },
+      _sum: { monto: true }
+    }),
     prisma.expense.aggregate({
       where: { clientId, deletedAt: null },
       _sum: { monto: true }
     }),
     prisma.monthlyPayment.aggregate({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PENDIENTE",
+        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
+      },
+      _sum: { monto: true }
+    }),
+    prisma.enrollmentPayment.aggregate({
       where: {
         clientId,
         deletedAt: null,
@@ -41,8 +68,25 @@ export async function getAccountingSummary(clientId: string) {
       },
       _sum: { monto: true }
     }),
+    prisma.enrollmentPayment.aggregate({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PAGADO",
+        fechaPago: { gte: monthStart, lte: monthEnd }
+      },
+      _sum: { monto: true }
+    }),
     prisma.student.count({ where: { clientId, deletedAt: null, estado: "ACTIVO" } }),
     prisma.monthlyPayment.count({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PENDIENTE",
+        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
+      }
+    }),
+    prisma.enrollmentPayment.count({
       where: {
         clientId,
         deletedAt: null,
@@ -56,24 +100,35 @@ export async function getAccountingSummary(clientId: string) {
         deletedAt: null,
         OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
       }
+    }),
+    prisma.enrollmentPayment.count({
+      where: {
+        clientId,
+        deletedAt: null,
+        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
+      }
     })
   ]);
 
   const ingresosMensualidades = Number(monthlyIncome._sum.monto ?? 0);
   const ingresosUtiles = Number(suppliesIncome._sum.monto ?? 0);
+  const ingresosInscripciones = Number(enrollmentIncome._sum.monto ?? 0);
   const totalGastos = Number(expenses._sum.monto ?? 0);
-  const ingresosTotales = ingresosMensualidades + ingresosUtiles;
+  const ingresosTotales = ingresosMensualidades + ingresosUtiles + ingresosInscripciones;
 
   return {
     ingresosMensualidades,
     ingresosUtiles,
+    ingresosInscripciones,
     ingresosTotales,
     gastosTotales: totalGastos,
     balance: ingresosTotales - totalGastos,
-    pendientesPorCobrar: Number(pendingTodayAmount._sum.monto ?? 0),
-    pagosRecibidosEsteMes: Number(monthlyReceivedThisMonth._sum.monto ?? 0),
+    pendientesPorCobrar: Number(pendingTodayAmount._sum.monto ?? 0) + Number(pendingEnrollmentTodayAmount._sum.monto ?? 0),
+    pagosRecibidosEsteMes: Number(monthlyReceivedThisMonth._sum.monto ?? 0) + Number(enrollmentReceivedThisMonth._sum.monto ?? 0),
     estudiantesActivos: activeStudents,
     mensualidadesPendientes: pendingTodayPayments,
-    mensualidadesVencidas: overduePayments
+    mensualidadesVencidas: overduePayments,
+    inscripcionesPendientes: pendingEnrollmentTodayPayments,
+    inscripcionesVencidas: overdueEnrollmentPayments
   };
 }

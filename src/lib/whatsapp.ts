@@ -1,4 +1,4 @@
-import { MonthlyPayment, Student } from "@prisma/client";
+import { EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
 
 const monthNames = [
   "enero",
@@ -53,6 +53,21 @@ export function createWhatsappUrl(phone: string, message: string) {
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
+export function buildEnrollmentReminderMessage(params: {
+  studentName: string;
+  monto: string | number;
+  fechaVencimiento: Date;
+}) {
+  const amount = Number(params.monto).toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0
+  });
+  const dueDate = params.fechaVencimiento.toLocaleDateString("es-CO");
+
+  return `Hola, te recordamos que la inscripcion de ${params.studentName} esta pendiente por valor de ${amount}. Por favor realizar el pago antes de ${dueDate}.`;
+}
+
 export function buildReminderForPayment(
   payment: MonthlyPayment & { student: Pick<Student, "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"> }
 ) {
@@ -61,6 +76,23 @@ export function buildReminderForPayment(
     studentName: `${payment.student.nombre} ${payment.student.apellido}`,
     mes: payment.mes,
     anio: payment.anio,
+    monto: payment.monto.toString(),
+    fechaVencimiento: payment.fechaVencimiento
+  });
+
+  return {
+    phone: normalizeWhatsappPhone(phone),
+    message,
+    whatsappUrl: createWhatsappUrl(phone, message)
+  };
+}
+
+export function buildReminderForEnrollment(
+  payment: EnrollmentPayment & { student: Pick<Student, "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"> }
+) {
+  const phone = resolveWhatsappPhone(payment.student);
+  const message = buildEnrollmentReminderMessage({
+    studentName: `${payment.student.nombre} ${payment.student.apellido}`,
     monto: payment.monto.toString(),
     fechaVencimiento: payment.fechaVencimiento
   });

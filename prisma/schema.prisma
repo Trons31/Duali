@@ -24,6 +24,12 @@ enum SuppliesPaymentStatus {
   PAGADO
 }
 
+enum EnrollmentPaymentStatus {
+  PENDIENTE
+  PAGADO
+  VENCIDO
+}
+
 enum ReminderStatus {
   PENDIENTE
   ENVIADO
@@ -52,6 +58,7 @@ model Client {
   students        Student[]
   monthlyPayments MonthlyPayment[]
   suppliesPayments SuppliesPayment[]
+  enrollmentPayments EnrollmentPayment[]
   expenses        Expense[]
   notifications   Notification[]
   reminders        Reminder[]
@@ -104,6 +111,7 @@ model Student {
   group           Group         @relation(fields: [grupoId], references: [id], onDelete: Restrict)
   monthlyPayments MonthlyPayment[]
   suppliesPayments SuppliesPayment[]
+  enrollmentPayment EnrollmentPayment?
   reminders       Reminder[]
 
   @@index([clientId])
@@ -111,6 +119,31 @@ model Student {
   @@index([clientId, estado])
   @@index([clientId, nombre, apellido])
   @@map("students")
+}
+
+model EnrollmentPayment {
+  id               String                  @id @default(cuid())
+  estudianteId     String                  @unique
+  clientId         String
+  monto            Decimal                 @db.Decimal(12, 2)
+  estado           EnrollmentPaymentStatus @default(PENDIENTE)
+  fechaVencimiento DateTime
+  fechaPago        DateTime?
+  metodoPago       String?
+  notas            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  deletedAt        DateTime?
+
+  client           Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student          Student                 @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  reminders        Reminder[]
+
+  @@index([clientId])
+  @@index([estudianteId])
+  @@index([clientId, estado])
+  @@index([clientId, fechaVencimiento])
+  @@map("enrollment_payments")
 }
 
 model MonthlyPayment {
@@ -215,6 +248,10 @@ model Notification {
   title       String
   body        String
   data        Json?
+  type        String?
+  dedupKey    String?            @unique
+  attempts    Int                @default(0)
+  nextAttemptAt DateTime         @default(now())
   status      NotificationStatus @default(PENDIENTE)
   sentAt      DateTime?
   readAt      DateTime?
@@ -226,6 +263,8 @@ model Notification {
 
   @@index([clientId])
   @@index([clientId, status])
+  @@index([status, nextAttemptAt])
+  @@index([clientId, type])
   @@map("notifications")
 }
 
@@ -234,6 +273,7 @@ model Reminder {
   clientId          String
   estudianteId      String
   monthlyPaymentId  String?
+  enrollmentPaymentId String?
   phone             String
   message           String
   whatsappUrl       String
@@ -246,10 +286,12 @@ model Reminder {
   client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   student           Student        @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
   monthlyPayment    MonthlyPayment? @relation(fields: [monthlyPaymentId], references: [id], onDelete: SetNull)
+  enrollmentPayment EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
   @@index([estudianteId])
   @@index([monthlyPaymentId])
+  @@index([enrollmentPaymentId])
   @@index([clientId, status])
   @@map("reminders")
 }
