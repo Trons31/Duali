@@ -10,6 +10,10 @@ export async function sendExpoPushNotifications(tokens: string[], title: string,
     messages.push({ to: token, sound: "default", title, body, data });
   }
 
+  if (tokens.length > 0 && messages.length === 0) {
+    throw new Error("No hay Expo Push Tokens validos");
+  }
+
   const chunks = expo.chunkPushNotifications(messages);
   const tickets = [];
 

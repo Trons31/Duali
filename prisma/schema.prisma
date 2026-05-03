@@ -244,6 +244,7 @@ model PushToken {
 
 model Notification {
   id          String             @id @default(cuid())
+  sequence    Int                @default(autoincrement())
   clientId    String
   title       String
   body        String
@@ -254,6 +255,7 @@ model Notification {
   nextAttemptAt DateTime         @default(now())
   status      NotificationStatus @default(PENDIENTE)
   sentAt      DateTime?
+  deliveredAt DateTime?
   readAt      DateTime?
   error       String?
   createdAt   DateTime           @default(now())
@@ -262,6 +264,7 @@ model Notification {
   client      Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@index([clientId, sequence])
   @@index([clientId, status])
   @@index([status, nextAttemptAt])
   @@index([clientId, type])
