@@ -6,5 +6,9 @@ export function requireCronSecret(request: Request) {
 
   const url = new URL(request.url);
   const provided = request.headers.get("x-cron-secret") ?? url.searchParams.get("secret");
-  if (provided !== expected) throw new ApiError(401, "Cron no autorizado");
+  const normalizedProvided = provided?.replace(/ /g, "+");
+
+  if (provided !== expected && normalizedProvided !== expected) {
+    throw new ApiError(401, "Cron no autorizado");
+  }
 }
