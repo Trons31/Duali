@@ -28,6 +28,21 @@ export type NotificationQueueSummary = {
   skippedNoTokens: number;
 };
 
+function isDedupConstraintError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const code = "code" in error ? error.code : undefined;
+  if (code !== "P2002") return false;
+
+  const meta = "meta" in error ? error.meta : undefined;
+  const target = meta && typeof meta === "object" && "target" in meta ? meta.target : undefined;
+
+  if (Array.isArray(target)) return target.includes("dedupKey");
+  if (typeof target === "string") return target.includes("dedupKey");
+
+  return true;
+}
+
 function retryDate(attempt: number) {
   const minutes = Math.min(60, Math.max(1, 2 ** Math.max(0, attempt - 1)));
   const jitterSeconds = Math.floor(Math.random() * 30);
@@ -73,24 +88,6 @@ export async function queueNotification(input: QueueNotificationInput): Promise<
     };
   }
 
-  const existing = await prisma.notification.findUnique({
-    where: {
-      dedupKey: input.dedupKey
-    },
-    select: {
-      id: true,
-      sequence: true
-    }
-  });
-
-  if (existing) {
-    return {
-      notificationId: existing.id,
-      sequence: existing.sequence,
-      deduped: true
-    };
-  }
-
   try {
     const notification = await prisma.notification.create({
       data: {
@@ -115,10 +112,7 @@ export async function queueNotification(input: QueueNotificationInput): Promise<
       deduped: false
     };
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
+    if (isDedupConstraintError(error)) {
       const duplicated = await prisma.notification.findUnique({
         where: {
           dedupKey: input.dedupKey
