@@ -48,6 +48,23 @@ export function getNotificationBatchLimit(request: Request) {
   return parseLimit(searchParams.get("limit"));
 }
 
+async function reviveNotification(notificationId: string) {
+  return prisma.notification.update({
+    where: { id: notificationId },
+    data: {
+      status: "PENDIENTE",
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      error: null,
+      sentAt: null
+    },
+    select: {
+      id: true,
+      sequence: true
+    }
+  });
+}
+
 export async function queueNotification(input: QueueNotificationInput): Promise<QueueNotificationResult> {
   if (!input.dedupKey) {
     const notification = await prisma.notification.create({
@@ -77,11 +94,22 @@ export async function queueNotification(input: QueueNotificationInput): Promise<
     where: { dedupKey: input.dedupKey },
     select: {
       id: true,
-      sequence: true
+      sequence: true,
+      status: true,
+      error: true
     }
   });
 
   if (existing) {
+    if (existing.status === "FALLIDA") {
+      const revived = await reviveNotification(existing.id);
+      return {
+        notificationId: revived.id,
+        sequence: revived.sequence,
+        deduped: false
+      };
+    }
+
     return {
       notificationId: existing.id,
       sequence: existing.sequence,
@@ -236,6 +264,44 @@ export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Pro
   }
 
   return summary;
+}
+
+export async function requeuePushNotificationsForClient(clientId: string, options?: { limit?: number }) {
+  const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
+  const notifications = await prisma.notification.findMany({
+    where: {
+      clientId,
+      OR: [
+        {
+          status: "PENDIENTE",
+          error: { contains: "No hay dispositivos registrados para push" }
+        },
+        {
+          status: "FALLIDA",
+          error: { contains: "No hay dispositivos registrados para push" }
+        }
+      ]
+    },
+    orderBy: [{ sequence: "desc" }],
+    take: limit,
+    select: { id: true }
+  });
+
+  if (!notifications.length) return { requeued: 0 };
+
+  const ids = notifications.map((notification) => notification.id);
+  await prisma.notification.updateMany({
+    where: { id: { in: ids }, clientId },
+    data: {
+      status: "PENDIENTE",
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      error: null,
+      sentAt: null
+    }
+  });
+
+  return { requeued: ids.length };
 }
 
 export async function getNotificationsForClient(clientId: string, afterSequence = 0, limit = 100) {

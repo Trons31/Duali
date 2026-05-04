@@ -13,7 +13,15 @@ export async function sendExpoPushNotifications(tokens: string[], title: string,
 
   for (const token of tokens) {
     if (!Expo.isExpoPushToken(token)) continue;
-    messages.push({ to: token, sound: "default", title, body, data });
+    messages.push({
+      to: token,
+      sound: "default",
+      title,
+      body,
+      data,
+      priority: "high",
+      channelId: "default"
+    });
     validTokens.push(token);
   }
 

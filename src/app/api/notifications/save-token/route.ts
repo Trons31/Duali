@@ -1,5 +1,6 @@
 import { requireClient } from "@/lib/auth";
 import { created, handleError, readBody } from "@/lib/http";
+import { processNotificationQueue, requeuePushNotificationsForClient } from "@/lib/notification-queue";
 import { prisma } from "@/lib/prisma";
 import { savePushTokenSchema } from "@/lib/validations";
 
@@ -14,7 +15,10 @@ export async function POST(request: Request) {
       create: { clientId, token: body.token, platform: body.platform, deviceName: body.deviceName }
     });
 
-    return created(token);
+    const requeue = await requeuePushNotificationsForClient(clientId, { limit: 25 });
+    const queue = await processNotificationQueue(25);
+
+    return created({ token, requeue, queue });
   } catch (error) {
     return handleError(error);
   }
