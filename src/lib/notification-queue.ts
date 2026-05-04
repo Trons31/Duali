@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
-import { hasPushFailures, sendExpoPushNotifications } from "./push";
+import { getPushFailureDetails, hasPushFailures, sendExpoPushNotifications } from "./push";
 
 const MAX_ATTEMPTS = 5;
 const DEFAULT_BATCH_LIMIT = 100;
@@ -167,7 +167,21 @@ async function processNotification(notificationId: string) {
       }
     );
 
-    if (hasPushFailures(tickets)) throw new Error("Expo devolvio tickets con error");
+    if (hasPushFailures(tickets)) {
+      const failures = getPushFailureDetails(tickets);
+      const invalidTokens = failures
+        .filter(({ message }) => /DeviceNotRegistered/i.test(message))
+        .map(({ token }) => token);
+
+      if (invalidTokens.length) {
+        await prisma.pushToken.updateMany({
+          where: { clientId: notification.clientId, token: { in: invalidTokens } },
+          data: { isActive: false }
+        });
+      }
+
+      throw new Error(failures.map(({ token, message }) => `${token}: ${message}`).join(" ; "));
+    }
 
     await prisma.notification.update({
       where: { id: notification.id },
