@@ -7,6 +7,7 @@ function buildHints(input: {
   activeTokenCount: number;
   duePendingCount: number;
   failedCount: number;
+  failedOutboxCount: number;
   recentErrors: string[];
 }) {
   const hints: string[] = [];
@@ -16,11 +17,11 @@ function buildHints(input: {
   }
 
   if (input.duePendingCount > 0) {
-    hints.push("Hay notificaciones pendientes que ya deberian haberse procesado.");
+    hints.push("Hay notificaciones en cola que ya deberian haberse procesado.");
   }
 
-  if (input.failedCount > 0) {
-    hints.push("Hay notificaciones fallidas; revisa los errores recientes para identificar si es token o credenciales.");
+  if (input.failedCount > 0 || input.failedOutboxCount > 0) {
+    hints.push("Hay fallos recientes en la cola o en la entrega; revisa los errores recientes.");
   }
 
   if (input.recentErrors.some((error) => /No hay dispositivos registrados para push/i.test(error))) {
@@ -35,6 +36,10 @@ function buildHints(input: {
     hints.push("El fallo apunta a configuracion de Expo/FCM para Android.");
   }
 
+  if (input.recentErrors.some((error) => /Procesamiento recuperado por el job de reparacion/i.test(error))) {
+    hints.push("Se detectaron trabajos de cola atascados y fueron recuperados automaticamente.");
+  }
+
   return hints;
 }
 
@@ -43,67 +48,118 @@ export async function GET(request: Request) {
     const { clientId } = await requireClient(request);
     const now = new Date();
 
-    const [tokens, recentNotifications, counts] = await Promise.all([
-      prisma.pushToken.findMany({
-        where: { clientId },
-        orderBy: [{ updatedAt: "desc" }],
-        select: {
-          id: true,
-          token: true,
-          platform: true,
-          deviceName: true,
-          isActive: true,
-          lastUsedAt: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      }),
-      prisma.notification.findMany({
-        where: { clientId },
-        orderBy: [{ createdAt: "desc" }],
-        take: 20,
-        select: {
-          id: true,
-          sequence: true,
-          type: true,
-          title: true,
-          status: true,
-          attempts: true,
-          nextAttemptAt: true,
-          sentAt: true,
-          deliveredAt: true,
-          readAt: true,
-          error: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      }),
-      prisma.notification.groupBy({
-        by: ["status"],
-        where: { clientId },
-        _count: { _all: true }
-      })
-    ]);
+    const [tokens, recentNotifications, recentOutbox, recentDeliveries, notificationCounts, outboxCounts, deliveryCounts] =
+      await Promise.all([
+        prisma.pushToken.findMany({
+          where: { clientId },
+          orderBy: [{ updatedAt: "desc" }],
+          select: {
+            id: true,
+            token: true,
+            platform: true,
+            deviceName: true,
+            isActive: true,
+            lastUsedAt: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }),
+        prisma.notification.findMany({
+          where: { clientId },
+          orderBy: [{ createdAt: "desc" }],
+          take: 20,
+          select: {
+            id: true,
+            sequence: true,
+            type: true,
+            title: true,
+            status: true,
+            attempts: true,
+            nextAttemptAt: true,
+            sentAt: true,
+            deliveredAt: true,
+            readAt: true,
+            error: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }),
+        prisma.notificationOutbox.findMany({
+          where: { clientId },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 20,
+          select: {
+            id: true,
+            notificationId: true,
+            status: true,
+            attemptCount: true,
+            nextAttemptAt: true,
+            processingStartedAt: true,
+            lastAttemptAt: true,
+            sentAt: true,
+            lastError: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }),
+        prisma.notificationDelivery.findMany({
+          where: { clientId },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 20,
+          select: {
+            id: true,
+            notificationId: true,
+            channel: true,
+            attempt: true,
+            status: true,
+            providerMessageId: true,
+            lastError: true,
+            sentAt: true,
+            deliveredAt: true,
+            failedAt: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }),
+        prisma.notification.groupBy({
+          by: ["status"],
+          where: { clientId },
+          _count: { _all: true }
+        }),
+        prisma.notificationOutbox.groupBy({
+          by: ["status"],
+          where: { clientId },
+          _count: { _all: true }
+        }),
+        prisma.notificationDelivery.groupBy({
+          by: ["channel", "status"],
+          where: { clientId },
+          _count: { _all: true }
+        })
+      ]);
 
-    const duePendingCount = await prisma.notification.count({
+    const duePendingCount = await prisma.notificationOutbox.count({
       where: {
         clientId,
-        status: "PENDIENTE",
-        attempts: { lt: 5 },
+        status: { in: ["ENCOLADA", "REINTENTANDO"] },
         nextAttemptAt: { lte: now }
       }
     });
 
-    const pendingFutureCount = await prisma.notification.count({
+    const pendingFutureCount = await prisma.notificationOutbox.count({
       where: {
         clientId,
-        status: "PENDIENTE",
+        status: { in: ["ENCOLADA", "REINTENTANDO"] },
         nextAttemptAt: { gt: now }
       }
     });
 
     const activeTokenCount = tokens.filter((token) => token.isActive).length;
-    const recentErrors = recentNotifications.map((notification) => notification.error).filter((error): error is string => Boolean(error));
+    const recentErrors = [
+      ...recentNotifications.map((notification) => notification.error),
+      ...recentOutbox.map((entry) => entry.lastError),
+      ...recentDeliveries.map((delivery) => delivery.lastError)
+    ].filter((error): error is string => Boolean(error));
 
     return ok({
       serverTime: now.toISOString(),
@@ -112,8 +168,16 @@ export async function GET(request: Request) {
         totalTokenCount: tokens.length,
         duePendingCount,
         pendingFutureCount,
-        counts: counts.reduce<Record<string, number>>((acc, entry) => {
+        notificationCounts: notificationCounts.reduce<Record<string, number>>((acc, entry) => {
           acc[entry.status] = entry._count._all;
+          return acc;
+        }, {}),
+        outboxCounts: outboxCounts.reduce<Record<string, number>>((acc, entry) => {
+          acc[entry.status] = entry._count._all;
+          return acc;
+        }, {}),
+        deliveryCounts: deliveryCounts.reduce<Record<string, number>>((acc, entry) => {
+          acc[`${entry.channel}:${entry.status}`] = entry._count._all;
           return acc;
         }, {})
       },
@@ -122,10 +186,13 @@ export async function GET(request: Request) {
         isExpoPushToken: Expo.isExpoPushToken(token.token)
       })),
       recentNotifications,
+      recentOutbox,
+      recentDeliveries,
       hints: buildHints({
         activeTokenCount,
         duePendingCount,
-        failedCount: counts.find((entry) => entry.status === "FALLIDA")?._count._all ?? 0,
+        failedCount: notificationCounts.find((entry) => entry.status === "FALLIDA")?._count._all ?? 0,
+        failedOutboxCount: outboxCounts.find((entry) => entry.status === "FALLIDA")?._count._all ?? 0,
         recentErrors
       })
     });

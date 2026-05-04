@@ -43,6 +43,26 @@ enum NotificationStatus {
   LEIDA
 }
 
+enum NotificationQueueStatus {
+  ENCOLADA
+  PROCESANDO
+  REINTENTANDO
+  ENVIADA
+  FALLIDA
+}
+
+enum NotificationDeliveryStatus {
+  OMITIDA
+  ENVIADA
+  ENTREGADA
+  FALLIDA
+}
+
+enum NotificationChannel {
+  INBOX_SYNC
+  EXPO
+}
+
 model Client {
   id              String           @id @default(cuid())
   nombre          String
@@ -61,6 +81,8 @@ model Client {
   enrollmentPayments EnrollmentPayment[]
   expenses        Expense[]
   notifications   Notification[]
+  notificationOutboxes NotificationOutbox[]
+  notificationDeliveries NotificationDelivery[]
   reminders        Reminder[]
   pushTokens       PushToken[]
 
@@ -262,6 +284,8 @@ model Notification {
   updatedAt   DateTime           @updatedAt
 
   client      Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  outbox      NotificationOutbox?
+  deliveries  NotificationDelivery[]
 
   @@index([clientId])
   @@index([clientId, sequence])
@@ -269,6 +293,52 @@ model Notification {
   @@index([status, nextAttemptAt])
   @@index([clientId, type])
   @@map("notifications")
+}
+
+model NotificationOutbox {
+  id                String                  @id @default(cuid())
+  notificationId    String                  @unique
+  clientId          String
+  status            NotificationQueueStatus @default(ENCOLADA)
+  attemptCount      Int                     @default(0)
+  nextAttemptAt     DateTime                @default(now())
+  processingStartedAt DateTime?
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
+  lastError         String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notification      Notification            @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+  @@index([status, nextAttemptAt])
+  @@map("notification_outbox")
+}
+
+model NotificationDelivery {
+  id                String                     @id @default(cuid())
+  notificationId    String
+  clientId          String
+  channel           NotificationChannel
+  attempt           Int                        @default(1)
+  status            NotificationDeliveryStatus @default(ENVIADA)
+  providerMessageId String?
+  lastError         String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  failedAt          DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  client            Client                     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, channel])
+  @@index([clientId, channel])
+  @@index([notificationId, status])
+  @@map("notification_deliveries")
 }
 
 model Reminder {

@@ -1,8 +1,14 @@
-import { Prisma } from "@prisma/client";
+import {
+  NotificationChannel,
+  NotificationDeliveryStatus,
+  NotificationQueueStatus,
+  Prisma
+} from "@prisma/client";
+import { getPushFailureDetails, sendExpoPushNotifications } from "./push";
 import { prisma } from "./prisma";
-import { getPushFailureDetails, hasPushFailures, sendExpoPushNotifications } from "./push";
 
-const MAX_ATTEMPTS = 5;
+const MAX_PROCESSING_ATTEMPTS = 5;
+const STALE_PROCESSING_MINUTES = 5;
 const DEFAULT_BATCH_LIMIT = 100;
 
 export type QueueNotificationInput = {
@@ -21,6 +27,9 @@ export type QueueNotificationResult = {
 };
 
 export type NotificationQueueSummary = {
+  repaired: number;
+  repairedSentWithoutDelivery: number;
+  clientsLocked: number;
   processed: number;
   sent: number;
   retried: number;
@@ -28,14 +37,19 @@ export type NotificationQueueSummary = {
   skippedNoTokens: number;
 };
 
-function retryDate(attempt: number) {
-  const minutes = Math.min(60, Math.max(1, 2 ** Math.max(0, attempt - 1)));
+type DispatchSummary = {
+  attempted: boolean;
+  success: boolean;
+  shouldRetry: boolean;
+  providerMessageId?: string;
+  error?: string;
+  invalidTokens: string[];
+};
+
+function retryDate(attemptCount: number) {
+  const minutes = Math.min(60, Math.max(1, 2 ** Math.max(0, attemptCount - 1)));
   const jitterSeconds = Math.floor(Math.random() * 30);
   return new Date(Date.now() + minutes * 60_000 + jitterSeconds * 1000);
-}
-
-function lockUntil() {
-  return new Date(Date.now() + 5 * 60_000);
 }
 
 function parseLimit(value: string | null, fallback = DEFAULT_BATCH_LIMIT) {
@@ -43,126 +57,342 @@ function parseLimit(value: string | null, fallback = DEFAULT_BATCH_LIMIT) {
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 300) : fallback;
 }
 
+function staleProcessingDate() {
+  return new Date(Date.now() - STALE_PROCESSING_MINUTES * 60_000);
+}
+
 export function getNotificationBatchLimit(request: Request) {
   const { searchParams } = new URL(request.url);
   return parseLimit(searchParams.get("limit"));
 }
 
-async function reviveNotification(notificationId: string) {
-  return prisma.notification.update({
+async function tryAcquireClientLock(clientId: string) {
+  const result = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+    SELECT pg_try_advisory_lock(hashtext(${clientId})) AS locked
+  `;
+
+  return Boolean(result[0]?.locked);
+}
+
+async function releaseClientLock(clientId: string) {
+  await prisma.$executeRaw`
+    SELECT pg_advisory_unlock(hashtext(${clientId}))
+  `;
+}
+
+async function upsertDeliveryResult(input: {
+  clientId: string;
+  notificationId: string;
+  channel: NotificationChannel;
+  attempt: number;
+  status: NotificationDeliveryStatus;
+  providerMessageId?: string;
+  error?: string | null;
+  sentAt?: Date | null;
+  deliveredAt?: Date | null;
+  failedAt?: Date | null;
+}) {
+  await prisma.notificationDelivery.upsert({
+    where: {
+      notificationId_channel: {
+        notificationId: input.notificationId,
+        channel: input.channel
+      }
+    },
+    create: {
+      clientId: input.clientId,
+      notificationId: input.notificationId,
+      channel: input.channel,
+      attempt: input.attempt,
+      status: input.status,
+      providerMessageId: input.providerMessageId ?? null,
+      lastError: input.error ?? null,
+      sentAt: input.sentAt ?? null,
+      deliveredAt: input.deliveredAt ?? null,
+      failedAt: input.failedAt ?? null
+    },
+    update: {
+      attempt: input.attempt,
+      status: input.status,
+      providerMessageId: input.providerMessageId ?? undefined,
+      lastError: input.error ?? null,
+      sentAt: input.sentAt ?? undefined,
+      deliveredAt: input.deliveredAt ?? undefined,
+      failedAt: input.failedAt ?? undefined
+    }
+  });
+}
+
+async function reviveNotificationTx(
+  tx: Prisma.TransactionClient,
+  notificationId: string,
+  clientId: string
+) {
+  const now = new Date();
+
+  await tx.notification.update({
     where: { id: notificationId },
     data: {
       status: "PENDIENTE",
       attempts: 0,
-      nextAttemptAt: new Date(),
+      nextAttemptAt: now,
       error: null,
-      sentAt: null
+      sentAt: null,
+      deliveredAt: null,
+      readAt: null
+    }
+  });
+
+  await tx.notificationOutbox.upsert({
+    where: { notificationId },
+    create: {
+      notificationId,
+      clientId,
+      status: "ENCOLADA",
+      attemptCount: 0,
+      nextAttemptAt: now,
+      sentAt: null,
+      lastError: null
     },
-    select: {
-      id: true,
-      sequence: true
+    update: {
+      status: "ENCOLADA",
+      attemptCount: 0,
+      nextAttemptAt: now,
+      processingStartedAt: null,
+      lastAttemptAt: null,
+      sentAt: null,
+      lastError: null
+    }
+  });
+}
+
+function summarizeExpoDispatch(
+  tickets: Awaited<ReturnType<typeof sendExpoPushNotifications>>
+): DispatchSummary {
+  if (!tickets.length) {
+    return {
+      attempted: false,
+      success: false,
+      shouldRetry: false,
+      error: "No hay Expo Push Tokens validos",
+      invalidTokens: []
+    };
+  }
+
+  const failures = getPushFailureDetails(tickets);
+  const successTickets = tickets.filter(({ ticket }) => ticket.status === "ok");
+  const providerMessageId = successTickets
+    .map(({ ticket }) => ("id" in ticket && typeof ticket.id === "string" ? ticket.id : null))
+    .filter((value): value is string => Boolean(value))
+    .join(",");
+
+  const invalidTokens = failures
+    .filter(({ message }) => /DeviceNotRegistered/i.test(message))
+    .map(({ token }) => token);
+
+  if (successTickets.length > 0) {
+    return {
+      attempted: true,
+      success: true,
+      shouldRetry: false,
+      providerMessageId: providerMessageId || String(successTickets.length),
+      error: failures.length ? failures.map(({ message }) => message).join(" | ") : undefined,
+      invalidTokens
+    };
+  }
+
+  return {
+    attempted: true,
+    success: false,
+    shouldRetry: failures.some(({ message }) => !/DeviceNotRegistered/i.test(message)),
+    error: failures.map(({ token, message }) => `${token}: ${message}`).join(" ; "),
+    invalidTokens
+  };
+}
+
+async function updateNotificationForFailure(input: {
+  notificationId: string;
+  status: "PENDIENTE" | "FALLIDA";
+  attemptCount: number;
+  nextAttemptAt: Date;
+  error: string;
+}) {
+  await prisma.notification.update({
+    where: { id: input.notificationId },
+    data: {
+      status: input.status,
+      attempts: input.attemptCount,
+      nextAttemptAt: input.nextAttemptAt,
+      error: input.error
     }
   });
 }
 
 export async function queueNotification(input: QueueNotificationInput): Promise<QueueNotificationResult> {
-  if (!input.dedupKey) {
-    const notification = await prisma.notification.create({
-      data: {
-        clientId: input.clientId,
-        type: input.type,
-        title: input.title,
-        body: input.body,
-        data: input.data ?? {},
-        status: "PENDIENTE",
-        nextAttemptAt: new Date()
-      },
-      select: {
-        id: true,
-        sequence: true
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    if (input.dedupKey) {
+      const existing = await tx.notification.findUnique({
+        where: { dedupKey: input.dedupKey },
+        select: {
+          id: true,
+          sequence: true,
+          status: true
+        }
+      });
+
+      if (existing) {
+        if (existing.status === "FALLIDA") {
+          await reviveNotificationTx(tx, existing.id, input.clientId);
+          return {
+            notificationId: existing.id,
+            sequence: existing.sequence,
+            deduped: false
+          };
+        }
+
+        return {
+          notificationId: existing.id,
+          sequence: existing.sequence,
+          deduped: true
+        };
       }
-    });
-
-    return {
-      notificationId: notification.id,
-      sequence: notification.sequence,
-      deduped: false
-    };
-  }
-
-  const existing = await prisma.notification.findUnique({
-    where: { dedupKey: input.dedupKey },
-    select: {
-      id: true,
-      sequence: true,
-      status: true,
-      error: true
     }
-  });
 
-  if (existing) {
-    if (existing.status === "FALLIDA") {
-      const revived = await reviveNotification(existing.id);
+    try {
+      const notification = await tx.notification.create({
+        data: {
+          clientId: input.clientId,
+          type: input.type,
+          dedupKey: input.dedupKey,
+          title: input.title,
+          body: input.body,
+          data: input.data ?? {},
+          status: "PENDIENTE",
+          nextAttemptAt: now
+        },
+        select: {
+          id: true,
+          sequence: true
+        }
+      });
+
+      await tx.notificationOutbox.create({
+        data: {
+          notificationId: notification.id,
+          clientId: input.clientId,
+          status: "ENCOLADA",
+          nextAttemptAt: now
+        }
+      });
+
+      await tx.notificationDelivery.create({
+        data: {
+          notificationId: notification.id,
+          clientId: input.clientId,
+          channel: "INBOX_SYNC",
+          attempt: 1,
+          status: "ENVIADA",
+          sentAt: now
+        }
+      });
+
       return {
-        notificationId: revived.id,
-        sequence: revived.sequence,
+        notificationId: notification.id,
+        sequence: notification.sequence,
         deduped: false
       };
-    }
+    } catch (error) {
+      if (
+        input.dedupKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const existing = await tx.notification.findUnique({
+          where: { dedupKey: input.dedupKey },
+          select: {
+            id: true,
+            sequence: true,
+            status: true
+          }
+        });
 
-    return {
-      notificationId: existing.id,
-      sequence: existing.sequence,
-      deduped: true
-    };
-  }
+        if (existing) {
+          if (existing.status === "FALLIDA") {
+            await reviveNotificationTx(tx, existing.id, input.clientId);
+            return {
+              notificationId: existing.id,
+              sequence: existing.sequence,
+              deduped: false
+            };
+          }
 
-  const notification = await prisma.notification.upsert({
-    where: { dedupKey: input.dedupKey },
-    update: {},
-    create: {
-      clientId: input.clientId,
-      type: input.type,
-      dedupKey: input.dedupKey,
-      title: input.title,
-      body: input.body,
-      data: input.data ?? {},
-      status: "PENDIENTE",
-      nextAttemptAt: new Date()
-    },
-    select: {
-      id: true,
-      sequence: true
+          return {
+            notificationId: existing.id,
+            sequence: existing.sequence,
+            deduped: true
+          };
+        }
+      }
+
+      throw error;
     }
   });
-
-  return {
-    notificationId: notification.id,
-    sequence: notification.sequence,
-    deduped: false
-  };
 }
 
-async function processNotification(notificationId: string) {
+async function processSingleOutboxEntry(outboxId: string) {
   const now = new Date();
-  const claimed = await prisma.notification.updateMany({
+
+  const claimed = await prisma.notificationOutbox.updateMany({
     where: {
-      id: notificationId,
-      status: "PENDIENTE",
-      attempts: { lt: MAX_ATTEMPTS },
+      id: outboxId,
+      status: { in: ["ENCOLADA", "REINTENTANDO"] },
       nextAttemptAt: { lte: now }
     },
     data: {
-      attempts: { increment: 1 },
-      nextAttemptAt: lockUntil(),
-      error: null
+      status: "PROCESANDO",
+      processingStartedAt: now,
+      lastAttemptAt: now,
+      attemptCount: { increment: 1 }
     }
   });
 
-  if (!claimed.count) return { processed: false, sent: false, retried: false, failed: false, skippedNoTokens: false };
+  if (!claimed.count) {
+    return { processed: false, sent: false, retried: false, failed: false, skippedNoTokens: false };
+  }
 
-  const notification = await prisma.notification.findUnique({ where: { id: notificationId } });
-  if (!notification) return { processed: false, sent: false, retried: false, failed: false, skippedNoTokens: false };
+  const outbox = await prisma.notificationOutbox.findUnique({
+    where: { id: outboxId },
+    include: {
+      notification: {
+        select: {
+          id: true,
+          clientId: true,
+          title: true,
+          body: true,
+          data: true,
+          sequence: true
+        }
+      }
+    }
+  });
+
+  if (!outbox?.notification) {
+    return { processed: false, sent: false, retried: false, failed: false, skippedNoTokens: false };
+  }
+
+  const currentAttempt = outbox.attemptCount;
+  const notification = outbox.notification;
+
+  await prisma.notification.update({
+    where: { id: notification.id },
+    data: {
+      attempts: currentAttempt,
+      nextAttemptAt: now,
+      error: null
+    }
+  });
 
   const tokens = await prisma.pushToken.findMany({
     where: { clientId: notification.clientId, isActive: true },
@@ -170,22 +400,56 @@ async function processNotification(notificationId: string) {
   });
 
   if (!tokens.length) {
-    const exhausted = notification.attempts >= MAX_ATTEMPTS;
-    await prisma.notification.update({
-      where: { id: notification.id },
-      data: {
-        status: exhausted ? "FALLIDA" : "PENDIENTE",
-        nextAttemptAt: retryDate(notification.attempts),
-        error: "No hay dispositivos registrados para push"
-      }
+    const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
+    const error = "No hay dispositivos registrados para push";
+    const nextAttemptAt = exhausted ? now : retryDate(currentAttempt);
+
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "EXPO",
+      attempt: currentAttempt,
+      status: "OMITIDA",
+      error,
+      failedAt: now
     });
 
-    return { processed: true, sent: false, retried: !exhausted, failed: exhausted, skippedNoTokens: true };
+    await prisma.notificationOutbox.update({
+      where: { id: outbox.id },
+      data: exhausted
+        ? {
+            status: "FALLIDA",
+            processingStartedAt: null,
+            lastError: error
+          }
+        : {
+            status: "REINTENTANDO",
+            processingStartedAt: null,
+            nextAttemptAt,
+            lastError: error
+          }
+    });
+
+    await updateNotificationForFailure({
+      notificationId: notification.id,
+      status: exhausted ? "FALLIDA" : "PENDIENTE",
+      attemptCount: currentAttempt,
+      nextAttemptAt,
+      error
+    });
+
+    return {
+      processed: true,
+      sent: false,
+      retried: !exhausted,
+      failed: exhausted,
+      skippedNoTokens: true
+    };
   }
 
   try {
     const tickets = await sendExpoPushNotifications(
-      tokens.map((token) => token.token),
+      tokens.map((entry) => entry.token),
       notification.title,
       notification.body,
       {
@@ -195,66 +459,179 @@ async function processNotification(notificationId: string) {
       }
     );
 
-    if (hasPushFailures(tickets)) {
-      const failures = getPushFailureDetails(tickets);
-      const invalidTokens = failures
-        .filter(({ message }) => /DeviceNotRegistered/i.test(message))
-        .map(({ token }) => token);
+    const dispatch = summarizeExpoDispatch(tickets);
 
-      if (invalidTokens.length) {
-        await prisma.pushToken.updateMany({
-          where: { clientId: notification.clientId, token: { in: invalidTokens } },
-          data: { isActive: false }
-        });
-      }
-
-      throw new Error(failures.map(({ token, message }) => `${token}: ${message}`).join(" ; "));
+    if (dispatch.invalidTokens.length) {
+      await prisma.pushToken.updateMany({
+        where: {
+          clientId: notification.clientId,
+          token: { in: dispatch.invalidTokens }
+        },
+        data: { isActive: false }
+      });
     }
 
-    await prisma.notification.update({
-      where: { id: notification.id },
-      data: { status: "ENVIADA", sentAt: new Date(), error: null }
+    if (dispatch.success) {
+      const sentAt = new Date();
+
+      await upsertDeliveryResult({
+        clientId: notification.clientId,
+        notificationId: notification.id,
+        channel: "EXPO",
+        attempt: currentAttempt,
+        status: "ENVIADA",
+        providerMessageId: dispatch.providerMessageId,
+        error: dispatch.error ?? null,
+        sentAt
+      });
+
+      await prisma.notificationOutbox.update({
+        where: { id: outbox.id },
+        data: {
+          status: "ENVIADA",
+          processingStartedAt: null,
+          sentAt,
+          lastError: dispatch.error ?? null
+        }
+      });
+
+      await prisma.notification.update({
+        where: { id: notification.id },
+        data: {
+          status: "ENVIADA",
+          attempts: currentAttempt,
+          nextAttemptAt: sentAt,
+          sentAt,
+          error: dispatch.error ?? null
+        }
+      });
+
+      return { processed: true, sent: true, retried: false, failed: false, skippedNoTokens: false };
+    }
+
+    const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
+    const shouldRetry = !exhausted && dispatch.shouldRetry;
+    const error = dispatch.error ?? "Expo no pudo enviar la notificacion";
+    const nextAttemptAt = shouldRetry ? retryDate(currentAttempt) : now;
+
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "EXPO",
+      attempt: currentAttempt,
+      status: "FALLIDA",
+      providerMessageId: dispatch.providerMessageId,
+      error,
+      failedAt: now
     });
 
-    return { processed: true, sent: true, retried: false, failed: false, skippedNoTokens: false };
+    await prisma.notificationOutbox.update({
+      where: { id: outbox.id },
+      data: shouldRetry
+        ? {
+            status: "REINTENTANDO",
+            processingStartedAt: null,
+            nextAttemptAt,
+            lastError: error
+          }
+        : {
+            status: "FALLIDA",
+            processingStartedAt: null,
+            lastError: error
+          }
+    });
+
+    await updateNotificationForFailure({
+      notificationId: notification.id,
+      status: shouldRetry ? "PENDIENTE" : "FALLIDA",
+      attemptCount: currentAttempt,
+      nextAttemptAt,
+      error
+    });
+
+    return {
+      processed: true,
+      sent: false,
+      retried: shouldRetry,
+      failed: !shouldRetry,
+      skippedNoTokens: false
+    };
   } catch (error) {
-    const exhausted = notification.attempts >= MAX_ATTEMPTS;
-    await prisma.notification.update({
-      where: { id: notification.id },
-      data: {
-        status: exhausted ? "FALLIDA" : "PENDIENTE",
-        nextAttemptAt: exhausted ? notification.nextAttemptAt : retryDate(notification.attempts),
-        error: error instanceof Error ? error.message : "Error desconocido"
-      }
+    const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
+    const shouldRetry = !exhausted;
+    const message = error instanceof Error ? error.message : "No se pudo procesar la notificacion";
+    const nextAttemptAt = shouldRetry ? retryDate(currentAttempt) : now;
+
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "EXPO",
+      attempt: currentAttempt,
+      status: "FALLIDA",
+      error: message,
+      failedAt: now
     });
 
-    return { processed: true, sent: false, retried: !exhausted, failed: exhausted, skippedNoTokens: false };
+    await prisma.notificationOutbox.update({
+      where: { id: outbox.id },
+      data: shouldRetry
+        ? {
+            status: "REINTENTANDO",
+            processingStartedAt: null,
+            nextAttemptAt,
+            lastError: message
+          }
+        : {
+            status: "FALLIDA",
+            processingStartedAt: null,
+            lastError: message
+          }
+    });
+
+    await updateNotificationForFailure({
+      notificationId: notification.id,
+      status: shouldRetry ? "PENDIENTE" : "FALLIDA",
+      attemptCount: currentAttempt,
+      nextAttemptAt,
+      error: message
+    });
+
+    return {
+      processed: true,
+      sent: false,
+      retried: shouldRetry,
+      failed: !shouldRetry,
+      skippedNoTokens: false
+    };
   }
 }
 
-export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Promise<NotificationQueueSummary> {
-  const dueNotifications = await prisma.notification.findMany({
-    where: {
-      status: "PENDIENTE",
-      attempts: { lt: MAX_ATTEMPTS },
-      nextAttemptAt: { lte: new Date() }
-    },
-    orderBy: [{ sequence: "asc" }],
-    select: { id: true },
-    take: limit
-  });
+async function processClientQueue(clientId: string, limit: number) {
+  const summary = { processed: 0, sent: 0, retried: 0, failed: 0, skippedNoTokens: 0 };
 
-  const summary: NotificationQueueSummary = {
-    processed: 0,
-    sent: 0,
-    retried: 0,
-    failed: 0,
-    skippedNoTokens: 0
-  };
+  while (summary.processed < limit) {
+    const candidates = await prisma.notificationOutbox.findMany({
+      where: {
+        clientId,
+        status: { in: ["ENCOLADA", "REINTENTANDO"] },
+        nextAttemptAt: { lte: new Date() }
+      },
+      select: {
+        id: true,
+        notification: {
+          select: { sequence: true }
+        }
+      },
+      take: limit
+    });
 
-  for (const candidate of dueNotifications) {
-    const result = await processNotification(candidate.id);
-    if (!result.processed) continue;
+    if (!candidates.length) break;
+
+    candidates.sort((left, right) => left.notification.sequence - right.notification.sequence);
+    const nextEntry = candidates[0];
+    const result = await processSingleOutboxEntry(nextEntry.id);
+
+    if (!result.processed) break;
 
     summary.processed += 1;
     if (result.sent) summary.sent += 1;
@@ -266,48 +643,219 @@ export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Pro
   return summary;
 }
 
-export async function requeuePushNotificationsForClient(clientId: string, options?: { limit?: number }) {
-  const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
-  const notifications = await prisma.notification.findMany({
+export async function repairStuckNotificationOutbox() {
+  const repaired = await prisma.notificationOutbox.updateMany({
     where: {
-      clientId,
-      OR: [
-        {
-          status: "PENDIENTE",
-          error: { contains: "No hay dispositivos registrados para push" }
-        },
-        {
-          status: "FALLIDA",
-          error: { contains: "No hay dispositivos registrados para push" }
-        }
-      ]
+      status: "PROCESANDO",
+      processingStartedAt: { lt: staleProcessingDate() }
     },
-    orderBy: [{ sequence: "desc" }],
-    take: limit,
-    select: { id: true }
-  });
-
-  if (!notifications.length) return { requeued: 0 };
-
-  const ids = notifications.map((notification) => notification.id);
-  await prisma.notification.updateMany({
-    where: { id: { in: ids }, clientId },
     data: {
-      status: "PENDIENTE",
-      attempts: 0,
+      status: "REINTENTANDO",
+      processingStartedAt: null,
       nextAttemptAt: new Date(),
-      error: null,
-      sentAt: null
+      lastError: "Procesamiento recuperado por el job de reparacion"
     }
   });
 
-  return { requeued: ids.length };
+  if (repaired.count) {
+    await prisma.notification.updateMany({
+      where: {
+        outbox: {
+          is: {
+            status: "REINTENTANDO",
+            processingStartedAt: null,
+            lastError: "Procesamiento recuperado por el job de reparacion"
+          }
+        },
+        status: "PENDIENTE"
+      },
+      data: {
+        error: "Procesamiento recuperado por el job de reparacion"
+      }
+    });
+  }
+
+  return repaired.count;
+}
+
+async function repairSentWithoutSuccessfulPush(limit = 100) {
+  const outboxes = await prisma.notificationOutbox.findMany({
+    where: {
+      status: "ENVIADA",
+      attemptCount: { lt: MAX_PROCESSING_ATTEMPTS },
+      notification: {
+        is: {
+          deliveredAt: null,
+          readAt: null,
+          deliveries: {
+            some: {
+              channel: "EXPO",
+              status: "FALLIDA"
+            }
+          }
+        }
+      }
+    },
+    select: {
+      id: true,
+      notificationId: true
+    },
+    take: limit
+  });
+
+  if (!outboxes.length) return 0;
+
+  const outboxIds = outboxes.map((entry) => entry.id);
+  const notificationIds = outboxes.map((entry) => entry.notificationId);
+  const now = new Date();
+  const message = "Reintentando push marcado como enviado sin entrega consistente";
+
+  await prisma.notificationOutbox.updateMany({
+    where: { id: { in: outboxIds } },
+    data: {
+      status: "REINTENTANDO",
+      sentAt: null,
+      processingStartedAt: null,
+      nextAttemptAt: now,
+      lastError: message
+    }
+  });
+
+  await prisma.notification.updateMany({
+    where: { id: { in: notificationIds } },
+    data: {
+      status: "PENDIENTE",
+      sentAt: null,
+      nextAttemptAt: now,
+      error: message
+    }
+  });
+
+  return outboxes.length;
+}
+
+export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Promise<NotificationQueueSummary> {
+  const repaired = await repairStuckNotificationOutbox();
+  const repairedSentWithoutDelivery = await repairSentWithoutSuccessfulPush();
+  const dueEntries = await prisma.notificationOutbox.findMany({
+    where: {
+      status: { in: ["ENCOLADA", "REINTENTANDO"] },
+      nextAttemptAt: { lte: new Date() }
+    },
+    select: {
+      clientId: true,
+      notification: {
+        select: {
+          sequence: true
+        }
+      }
+    },
+    take: limit * 3
+  });
+
+  const clientsByPriority = Array.from(
+    dueEntries.reduce((map, entry) => {
+      const current = map.get(entry.clientId) ?? Number.MAX_SAFE_INTEGER;
+      map.set(entry.clientId, Math.min(current, entry.notification.sequence));
+      return map;
+    }, new Map<string, number>())
+  )
+    .sort((left, right) => left[1] - right[1])
+    .map(([clientId]) => clientId);
+
+  const summary: NotificationQueueSummary = {
+    repaired,
+    repairedSentWithoutDelivery,
+    clientsLocked: 0,
+    processed: 0,
+    sent: 0,
+    retried: 0,
+    failed: 0,
+    skippedNoTokens: 0
+  };
+
+  for (const clientId of clientsByPriority) {
+    if (summary.processed >= limit) break;
+
+    const locked = await tryAcquireClientLock(clientId);
+    if (!locked) continue;
+
+    summary.clientsLocked += 1;
+
+    try {
+      const result = await processClientQueue(clientId, limit - summary.processed);
+      summary.processed += result.processed;
+      summary.sent += result.sent;
+      summary.retried += result.retried;
+      summary.failed += result.failed;
+      summary.skippedNoTokens += result.skippedNoTokens;
+    } finally {
+      await releaseClientLock(clientId);
+    }
+  }
+
+  return summary;
+}
+
+export async function requeuePushNotificationsForClient(clientId: string, options?: { limit?: number }) {
+  const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
+  const outboxes = await prisma.notificationOutbox.findMany({
+    where: {
+      clientId,
+      OR: [
+        { lastError: { contains: "No hay dispositivos registrados para push" } },
+        { notification: { error: { contains: "No hay dispositivos registrados para push" } } }
+      ]
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      notificationId: true
+    }
+  });
+
+  if (!outboxes.length) return { requeued: 0 };
+
+  const now = new Date();
+  const outboxIds = outboxes.map((entry) => entry.id);
+  const notificationIds = outboxes.map((entry) => entry.notificationId);
+
+  await prisma.notificationOutbox.updateMany({
+    where: { id: { in: outboxIds }, clientId },
+    data: {
+      status: "ENCOLADA",
+      attemptCount: 0,
+      nextAttemptAt: now,
+      processingStartedAt: null,
+      lastAttemptAt: null,
+      sentAt: null,
+      lastError: null
+    }
+  });
+
+  await prisma.notification.updateMany({
+    where: { id: { in: notificationIds }, clientId },
+    data: {
+      status: "PENDIENTE",
+      attempts: 0,
+      nextAttemptAt: now,
+      sentAt: null,
+      error: null
+    }
+  });
+
+  return { requeued: outboxes.length };
 }
 
 export async function getNotificationsForClient(clientId: string, afterSequence = 0, limit = 100) {
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   return prisma.notification.findMany({
-    where: { clientId, sequence: { gt: Math.max(afterSequence, 0) }, status: { in: ["ENVIADA", "LEIDA"] } },
+    where: {
+      clientId,
+      sequence: { gt: Math.max(afterSequence, 0) },
+      status: { in: ["ENVIADA", "LEIDA"] }
+    },
     orderBy: { sequence: "asc" },
     take: safeLimit
   });
@@ -319,27 +867,47 @@ export async function acknowledgeDeliveredNotifications(
 ) {
   const ids = input.notificationIds?.filter(Boolean) ?? [];
   const sequenceCap = input.uptoSequence ?? 0;
-  if (!ids.length && sequenceCap <= 0) return { updated: 0, lastDeliveredSequence: 0 };
 
-  const conditions: Prisma.NotificationWhereInput[] = [];
-  if (ids.length) conditions.push({ id: { in: ids } });
-  if (sequenceCap > 0) conditions.push({ sequence: { lte: sequenceCap } });
+  if (!ids.length && sequenceCap <= 0) {
+    return { updated: 0, lastDeliveredSequence: 0 };
+  }
 
-  const targets = await prisma.notification.findMany({
-    where: { clientId, OR: conditions },
-    select: { id: true, sequence: true }
+  return prisma.$transaction(async (tx) => {
+    const conditions: Prisma.NotificationWhereInput[] = [];
+    if (ids.length) conditions.push({ id: { in: ids } });
+    if (sequenceCap > 0) conditions.push({ sequence: { lte: sequenceCap } });
+
+    const targets = await tx.notification.findMany({
+      where: { clientId, OR: conditions },
+      select: { id: true, sequence: true }
+    });
+
+    if (!targets.length) {
+      return { updated: 0, lastDeliveredSequence: sequenceCap };
+    }
+
+    const now = new Date();
+    const targetIds = targets.map((notification) => notification.id);
+    const maxSequence = Math.max(sequenceCap, ...targets.map((notification) => notification.sequence));
+
+    await tx.notification.updateMany({
+      where: { id: { in: targetIds }, clientId, deliveredAt: null },
+      data: { deliveredAt: now }
+    });
+
+    await tx.notificationDelivery.updateMany({
+      where: {
+        notificationId: { in: targetIds },
+        channel: { in: ["INBOX_SYNC", "EXPO"] }
+      },
+      data: {
+        status: "ENTREGADA",
+        deliveredAt: now
+      }
+    });
+
+    return { updated: targetIds.length, lastDeliveredSequence: maxSequence };
   });
-
-  if (!targets.length) return { updated: 0, lastDeliveredSequence: sequenceCap };
-
-  const targetIds = targets.map((notification) => notification.id);
-  const maxSequence = Math.max(sequenceCap, ...targets.map((notification) => notification.sequence));
-  await prisma.notification.updateMany({
-    where: { id: { in: targetIds }, clientId, deliveredAt: null },
-    data: { deliveredAt: new Date() }
-  });
-
-  return { updated: targetIds.length, lastDeliveredSequence: maxSequence };
 }
 
 export async function markNotificationsRead(
@@ -348,26 +916,45 @@ export async function markNotificationsRead(
 ) {
   const ids = input.notificationIds?.filter(Boolean) ?? [];
   const sequenceCap = input.uptoSequence ?? 0;
-  if (!ids.length && sequenceCap <= 0) return { updated: 0, lastReadSequence: 0 };
 
-  const conditions: Prisma.NotificationWhereInput[] = [];
-  if (ids.length) conditions.push({ id: { in: ids } });
-  if (sequenceCap > 0) conditions.push({ sequence: { lte: sequenceCap } });
+  if (!ids.length && sequenceCap <= 0) {
+    return { updated: 0, lastReadSequence: 0 };
+  }
 
-  const targets = await prisma.notification.findMany({
-    where: { clientId, OR: conditions },
-    select: { id: true, sequence: true }
+  return prisma.$transaction(async (tx) => {
+    const conditions: Prisma.NotificationWhereInput[] = [];
+    if (ids.length) conditions.push({ id: { in: ids } });
+    if (sequenceCap > 0) conditions.push({ sequence: { lte: sequenceCap } });
+
+    const targets = await tx.notification.findMany({
+      where: { clientId, OR: conditions },
+      select: { id: true, sequence: true }
+    });
+
+    if (!targets.length) {
+      return { updated: 0, lastReadSequence: sequenceCap };
+    }
+
+    const now = new Date();
+    const targetIds = targets.map((notification) => notification.id);
+    const maxSequence = Math.max(sequenceCap, ...targets.map((notification) => notification.sequence));
+
+    await tx.notification.updateMany({
+      where: { id: { in: targetIds }, clientId },
+      data: { status: "LEIDA", deliveredAt: now, readAt: now }
+    });
+
+    await tx.notificationDelivery.updateMany({
+      where: {
+        notificationId: { in: targetIds },
+        channel: { in: ["INBOX_SYNC", "EXPO"] }
+      },
+      data: {
+        status: "ENTREGADA",
+        deliveredAt: now
+      }
+    });
+
+    return { updated: targetIds.length, lastReadSequence: maxSequence };
   });
-
-  if (!targets.length) return { updated: 0, lastReadSequence: sequenceCap };
-
-  const now = new Date();
-  const targetIds = targets.map((notification) => notification.id);
-  const maxSequence = Math.max(sequenceCap, ...targets.map((notification) => notification.sequence));
-  await prisma.notification.updateMany({
-    where: { id: { in: targetIds }, clientId },
-    data: { status: "LEIDA", deliveredAt: now, readAt: now }
-  });
-
-  return { updated: targetIds.length, lastReadSequence: maxSequence };
 }
