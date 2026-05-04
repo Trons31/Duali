@@ -46,6 +46,12 @@ type DispatchSummary = {
   invalidTokens: string[];
 };
 
+function isPermanentExpoFailure(message: string) {
+  return /InvalidCredentials|MismatchSenderId|Unable to retrieve the FCM server key|InvalidProviderToken|SenderId/i.test(
+    message
+  );
+}
+
 function retryDate(attemptCount: number) {
   const minutes = Math.min(60, Math.max(1, 2 ** Math.max(0, attemptCount - 1)));
   const jitterSeconds = Math.floor(Math.random() * 30);
@@ -204,7 +210,9 @@ function summarizeExpoDispatch(
   return {
     attempted: true,
     success: false,
-    shouldRetry: failures.some(({ message }) => !/DeviceNotRegistered/i.test(message)),
+    shouldRetry: failures.some(
+      ({ message }) => !/DeviceNotRegistered/i.test(message) && !isPermanentExpoFailure(message)
+    ),
     error: failures.map(({ token, message }) => `${token}: ${message}`).join(" ; "),
     invalidTokens
   };
@@ -854,7 +862,12 @@ export async function getNotificationsForClient(clientId: string, afterSequence 
     where: {
       clientId,
       sequence: { gt: Math.max(afterSequence, 0) },
-      status: { in: ["ENVIADA", "LEIDA"] }
+      deliveries: {
+        some: {
+          channel: "INBOX_SYNC",
+          status: { in: ["ENVIADA", "ENTREGADA"] }
+        }
+      }
     },
     orderBy: { sequence: "asc" },
     take: safeLimit
