@@ -49,6 +49,48 @@ export function getNotificationBatchLimit(request: Request) {
 }
 
 export async function queueNotification(input: QueueNotificationInput): Promise<QueueNotificationResult> {
+  if (!input.dedupKey) {
+    const notification = await prisma.notification.create({
+      data: {
+        clientId: input.clientId,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+        status: "PENDIENTE",
+        nextAttemptAt: new Date()
+      },
+      select: {
+        id: true,
+        sequence: true
+      }
+    });
+
+    return {
+      notificationId: notification.id,
+      sequence: notification.sequence,
+      deduped: false
+    };
+  }
+
+  const existing = await prisma.notification.findUnique({
+    where: {
+      dedupKey: input.dedupKey
+    },
+    select: {
+      id: true,
+      sequence: true
+    }
+  });
+
+  if (existing) {
+    return {
+      notificationId: existing.id,
+      sequence: existing.sequence,
+      deduped: true
+    };
+  }
+
   try {
     const notification = await prisma.notification.create({
       data: {
@@ -61,18 +103,39 @@ export async function queueNotification(input: QueueNotificationInput): Promise<
         status: "PENDIENTE",
         nextAttemptAt: new Date()
       },
-      select: { id: true, sequence: true }
+      select: {
+        id: true,
+        sequence: true
+      }
     });
 
-    return { notificationId: notification.id, sequence: notification.sequence, deduped: false };
+    return {
+      notificationId: notification.id,
+      sequence: notification.sequence,
+      deduped: false
+    };
   } catch (error) {
-    if (input.dedupKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const existing = await prisma.notification.findUnique({
-        where: { dedupKey: input.dedupKey },
-        select: { id: true, sequence: true }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const duplicated = await prisma.notification.findUnique({
+        where: {
+          dedupKey: input.dedupKey
+        },
+        select: {
+          id: true,
+          sequence: true
+        }
       });
 
-      if (existing) return { notificationId: existing.id, sequence: existing.sequence, deduped: true };
+      if (duplicated) {
+        return {
+          notificationId: duplicated.id,
+          sequence: duplicated.sequence,
+          deduped: true
+        };
+      }
     }
 
     throw error;
