@@ -56,12 +56,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      session.user.id = String(token.sub);
+      const userId = String(token.sub ?? "");
+      const email = String(token.email ?? "");
+      const apiToken =
+        typeof token.apiToken === "string" && token.apiToken
+          ? token.apiToken
+          : userId && email
+            ? signToken({ id: userId, email })
+            : "";
+
+      session.user.id = userId;
       session.user.name = token.name;
-      session.user.email = token.email ?? "";
+      session.user.email = email;
       session.user.businessName = String(token.businessName ?? "");
       session.user.telefono = (token.telefono as string | null | undefined) ?? null;
-      session.user.apiToken = String(token.apiToken ?? "");
+      session.user.apiToken = apiToken;
       return session;
     }
   }
