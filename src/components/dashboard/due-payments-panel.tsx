@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
 import { FiCheck, FiChevronDown, FiChevronUp, FiMessageCircle, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency, formatDate } from "@/lib/web-utils";
 
@@ -54,6 +54,8 @@ export function DuePaymentsPanel({
   const { data: session } = useSession();
   const router = useRouter();
   const [payTarget, setPayTarget] = useState<DuePayment | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
   const [query, setQuery] = useState("");
   const token = session?.user.apiToken ?? "";
@@ -76,8 +78,19 @@ export function DuePaymentsPanel({
     });
   }, [items, query]);
 
+  function openPayModal(item: DuePayment) {
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPayTarget(item);
+  }
+
+  function closePayModal() {
+    setPayTarget(null);
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+  }
+
   async function payCurrent() {
     if (!payTarget) return;
+    setSubmittingPayment(true);
     const endpoint =
       payTarget.kind === "MONTHLY_PAYMENT"
         ? `/api/monthly-payments/${payTarget.id}/pay`
@@ -85,14 +98,15 @@ export function DuePaymentsPanel({
 
     await clientApiFetch(endpoint, token, {
       method: "PUT",
-      body: JSON.stringify({})
+      body: JSON.stringify({ metodoPago: paymentMethod })
     })
       .then(() => {
         sileo.success({ title: "Cobro registrado como pagado" });
-        setPayTarget(null);
+        closePayModal();
         router.refresh();
       })
-      .catch((error: Error) => sileo.error({ title: error.message }));
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingPayment(false));
   }
 
   async function notifyByWhatsapp(item: DuePayment) {
@@ -197,7 +211,7 @@ export function DuePaymentsPanel({
                           <FiMessageCircle className="size-5" />
                           Notificar por WhatsApp
                         </Button>
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => setPayTarget(item)}>
+                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(item)}>
                           <FiCheck className="size-5" />
                           Marcar pagado
                         </Button>
@@ -222,16 +236,18 @@ export function DuePaymentsPanel({
         </section>
       </div>
 
-      <ConfirmDialog
+      <PaymentMethodModal
         open={Boolean(payTarget)}
-        title={`Marcar cobro ${titleAction === "pendiente" ? "pendiente" : "vencido"} como pagado`}
+        title={`Marcar ${paymentConceptLabel(payTarget ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))} como pagada`}
         description={`Confirmaras el pago de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
-        notice={`Marca este cobro como pagado solo si el estudiante ya pago la ${paymentConceptLabel(payTarget ?? { kind: "MONTHLY_PAYMENT" } as DuePayment)} pendiente.`}
-        variant="primary"
-        noticeTone="success"
+        amount={payTarget?.monto ?? null}
+        notice={`Marca como pagado solo si ya recibiste el dinero de esta ${paymentConceptLabel(payTarget ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))}.`}
+        selectedMethod={paymentMethod}
         confirmText="Confirmar pago"
-        onClose={() => setPayTarget(null)}
+        loading={submittingPayment}
+        onClose={closePayModal}
         onConfirm={payCurrent}
+        onSelectMethod={setPaymentMethod}
       />
     </div>
   );

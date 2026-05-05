@@ -50,7 +50,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.email = user.email;
         token.businessName = user.businessName;
         token.telefono = user.telefono;
-        token.apiToken = user.apiToken;
       }
 
       return token;
@@ -58,12 +57,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       const userId = String(token.sub ?? "");
       const email = String(token.email ?? "");
-      const apiToken =
-        typeof token.apiToken === "string" && token.apiToken
-          ? token.apiToken
-          : userId && email
-            ? signToken({ id: userId, email })
-            : "";
+      const apiToken = userId && email ? signToken({ id: userId, email }) : "";
 
       session.user.id = userId;
       session.user.name = token.name;

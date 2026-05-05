@@ -14,13 +14,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const userId = session?.user?.id;
   const email = session?.user?.email;
   const token =
-    session?.user?.apiToken ||
-    (userId && email
+    userId && email
       ? signToken({
           id: userId,
           email
         })
-      : "");
+      : "";
 
   if (!token) {
     throw new WebApiError("No autenticado", 401);

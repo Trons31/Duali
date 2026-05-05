@@ -1,7 +1,7 @@
-import { PageHeader } from "@/components/ui/page-header";
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import { apiFetch } from "@/lib/server-api";
-import type { AccountingSummary, NotificationItem } from "@/lib/web-types";
+import { auth } from "@/lib/web-auth";
+import type { AccountingSummary, GroupSummary } from "@/lib/web-types";
 
 type DueItem = {
   id: string;
@@ -18,26 +18,20 @@ type DueItem = {
 };
 
 export default async function DashboardPage() {
-  const [summary, pending, overdue, notificationPayload] = await Promise.all([
+  const session = await auth();
+  const [summary, pending, groups] = await Promise.all([
     apiFetch<AccountingSummary>("/api/accounting/summary"),
     apiFetch<DueItem[]>("/api/monthly-payments/pending"),
-    apiFetch<DueItem[]>("/api/monthly-payments/overdue"),
-    apiFetch<{ notifications: NotificationItem[] }>("/api/notifications?afterSequence=0&limit=20")
+    apiFetch<GroupSummary[]>("/api/groups")
   ]);
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Centro de mando"
-        title="Tu operación, clara y a tiempo"
-        description="Desde aquí controlas cobros, riesgo vencido, actividad reciente y recordatorios del administrador."
-      />
-      <DashboardHome
-        summary={summary}
-        pending={pending}
-        overdue={overdue}
-        notifications={notificationPayload.notifications}
-      />
-    </div>
+    <DashboardHome
+      userName={session?.user?.name}
+      businessName={session?.user?.businessName ?? "Duali"}
+      summary={summary}
+      pending={pending}
+      groups={groups}
+    />
   );
 }

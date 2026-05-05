@@ -69,7 +69,25 @@ export type GroupDetailResponse = {
     anio: number;
     label: string;
   };
+  summary: {
+    totalStudents: number;
+    activeStudents: number;
+    studentsWithMonthlyFee: number;
+    estimatedIncome: number;
+    pendingCount: number;
+    overdueCount: number;
+  };
   students: GroupDetailStudent[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  filters: {
+    q: string;
+    status: "todos" | "pendientes" | "pagados" | "vencidos";
+  };
 };
 
 export type StudentListItem = {

@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
@@ -10,6 +10,7 @@ import {
   FiAlertTriangle,
   FiCheckCircle,
   FiClock,
+  FiChevronRight,
   FiDollarSign,
   FiChevronLeft,
   FiEdit2,
@@ -65,10 +66,11 @@ const PAYMENT_METHODS = [
 
 export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
   const { data: session } = useSession();
+  const pathname = usePathname();
   const router = useRouter();
   const token = session?.user.apiToken ?? "";
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<StudentPaymentFilter>("todos");
+  const [query, setQuery] = useState(group.filters.q);
+  const [filter, setFilter] = useState<StudentPaymentFilter>(group.filters.status);
   const [addStudentOpen, setAddStudentOpen] = useState(false);
   const [editGroupOpen, setEditGroupOpen] = useState(false);
 
@@ -100,41 +102,24 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
   const age = Number(watch("edad") || 0);
   const isMinor = age > 0 && age < 18;
 
-  const summary = useMemo(() => {
-    const activeStudents = group.students.filter((student) => student.estado === "ACTIVO");
-    const studentsWithMonthlyFee = activeStudents.filter((student) => Number(student.precioMensualidad ?? 0) > 0);
-    const estimatedIncome = studentsWithMonthlyFee.reduce((sum, student) => sum + Number(student.precioMensualidad ?? 0), 0);
-    const pendingCount = activeStudents.filter((student) => currentPayment(student)?.estado === "PENDIENTE").length;
-    const overdueCount = activeStudents.filter((student) => currentPayment(student)?.estado === "VENCIDO").length;
+  useEffect(() => {
+    setQuery(group.filters.q);
+    setFilter(group.filters.status);
+  }, [group.filters.q, group.filters.status]);
 
-    return {
-      estimatedIncome,
-      studentsWithMonthlyFee: studentsWithMonthlyFee.length,
-      activeStudents: activeStudents.length,
-      pendingCount,
-      overdueCount
-    };
-  }, [group.students]);
+  function updateList(params: { q?: string; status?: StudentPaymentFilter; page?: number }) {
+    const search = new URLSearchParams();
+    const nextQ = params.q ?? query;
+    const nextStatus = params.status ?? filter;
+    const nextPage = params.page ?? group.pagination.page;
 
-  const filteredStudents = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    if (nextQ.trim()) search.set("q", nextQ.trim());
+    if (nextStatus !== "todos") search.set("status", nextStatus);
+    if (nextPage > 1) search.set("page", String(nextPage));
+    search.set("pageSize", String(group.pagination.pageSize));
 
-    return group.students.filter((student) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        `${student.nombre} ${student.apellido}`.toLowerCase().includes(normalizedQuery) ||
-        (student.celular ?? "").toLowerCase().includes(normalizedQuery) ||
-        (student.telefonoPadre ?? "").toLowerCase().includes(normalizedQuery);
-
-      if (!matchesQuery) return false;
-
-      const payment = currentPayment(student);
-      if (filter === "pagados") return payment?.estado === "PAGADO";
-      if (filter === "vencidos") return payment?.estado === "VENCIDO";
-      if (filter === "pendientes") return payment?.estado === "PENDIENTE" || payment?.estado === "VENCIDO";
-      return true;
-    });
-  }, [filter, group.students, query]);
+    router.replace(search.toString() ? `${pathname}?${search.toString()}` : pathname);
+  }
 
   function openAddStudentModal() {
     reset(createStudentDefaults());
@@ -250,28 +235,28 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <MiniStatCard
                 title="Ingreso estimado"
-                value={currency(summary.estimatedIncome)}
-                helper={`${summary.activeStudents} alumnos activos`}
+                value={currency(group.summary.estimatedIncome)}
+                helper={`${group.summary.activeStudents} alumnos activos`}
                 tone="success"
                 icon={<FiDollarSign className="size-4" />}
               />
               <MiniStatCard
                 title="Con mensualidad"
-                value={String(summary.studentsWithMonthlyFee)}
+                value={String(group.summary.studentsWithMonthlyFee)}
                 helper="alumnos con valor"
                 tone="blue"
                 icon={<FiUsers className="size-4" />}
               />
               <MiniStatCard
                 title="Pendientes"
-                value={String(summary.pendingCount)}
+                value={String(group.summary.pendingCount)}
                 helper="mensualidades"
                 tone="warning"
                 icon={<FiClock className="size-4" />}
               />
               <MiniStatCard
                 title="Vencidos"
-                value={String(summary.overdueCount)}
+                value={String(group.summary.overdueCount)}
                 helper="mensualidades"
                 tone="danger"
                 icon={<FiAlertTriangle className="size-4" />}
@@ -296,28 +281,39 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             <div>
               <h2 className="text-[1.7rem] font-black tracking-tight text-ink-950">Alumnos</h2>
               <p className="mt-1 text-sm font-semibold text-ink-400">
-                {filteredStudents.length}/{group.students.length}
+                {group.pagination.total}/{group.summary.totalStudents}
               </p>
             </div>
           </div>
 
           <div className="mt-5 space-y-4">
-            <label className="relative block">
-              <FiSearch className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar en este grupo"
-                className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
-              />
-            </label>
+            <form
+              className="flex flex-col gap-3 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                updateList({ q: query, page: 1 });
+              }}
+            >
+              <label className="relative block flex-1">
+                <FiSearch className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Buscar en este grupo"
+                  className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
+                />
+              </label>
+              <Button type="submit" className="min-h-11 rounded-[18px] px-5 text-sm font-semibold">
+                Buscar
+              </Button>
+            </form>
 
             <div className="flex flex-wrap gap-2">
               {FILTER_OPTIONS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setFilter(option.value)}
+                  onClick={() => updateList({ status: option.value, page: 1 })}
                   className={cn(
                     "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
                     filter === option.value
@@ -331,8 +327,8 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             </div>
 
             <div className="space-y-3">
-              {filteredStudents.length ? (
-                filteredStudents.map((student) => {
+              {group.students.length ? (
+                group.students.map((student) => {
                   const payment = currentPayment(student);
                   return (
                     <article
@@ -382,6 +378,41 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
                 </div>
               )}
             </div>
+
+            {group.pagination.totalPages > 1 ? (
+              <div className="flex flex-col gap-3 border-t border-ink-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-medium text-ink-500 sm:text-sm">
+                  Mostrando {group.students.length} de {group.pagination.total} alumnos del filtro actual
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="flex items-center justify-center rounded-[12px] border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 sm:text-sm">
+                    {group.pagination.page} / {group.pagination.totalPages}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
+                      disabled={group.pagination.page <= 1}
+                      onClick={() => updateList({ page: group.pagination.page - 1 })}
+                    >
+                      <FiChevronLeft className="size-4" />
+                      <span className="truncate">Anterior</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
+                      disabled={group.pagination.page >= group.pagination.totalPages}
+                      onClick={() => updateList({ page: group.pagination.page + 1 })}
+                    >
+                      <span className="truncate">Siguiente</span>
+                      <FiChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

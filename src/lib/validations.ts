@@ -160,6 +160,21 @@ export const savePushTokenSchema = z.object({
   deviceName: z.string().optional()
 });
 
+export const webPushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  expirationTime: z.number().int().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().min(10),
+    auth: z.string().min(5)
+  }),
+  userAgent: z.string().optional(),
+  deviceName: z.string().optional()
+});
+
+export const deleteWebPushSubscriptionSchema = z.object({
+  endpoint: z.string().url()
+});
+
 export const sendNotificationSchema = z.object({
   title: z.string().min(2),
   body: z.string().min(2),

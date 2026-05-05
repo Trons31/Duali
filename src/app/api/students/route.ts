@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     const q = (url.searchParams.get("q") ?? "").trim();
     const status = (url.searchParams.get("status") ?? "todos").toLowerCase();
     const page = Math.max(Number(url.searchParams.get("page") ?? "1") || 1, 1);
-    const pageSize = Math.min(Math.max(Number(url.searchParams.get("pageSize") ?? "12") || 12, 1), 50);
+    const pageSize = Math.min(Math.max(Number(url.searchParams.get("pageSize") ?? "10") || 10, 1), 50);
 
     const where: Prisma.StudentWhereInput = {
       clientId,

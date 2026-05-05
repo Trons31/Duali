@@ -66,6 +66,7 @@ enum NotificationDeliveryStatus {
 enum NotificationChannel {
   INBOX_SYNC
   EXPO
+  WEB_PUSH
 }
 
 model Client {
@@ -90,9 +91,21 @@ model Client {
   notificationDeliveries NotificationDelivery[]
   reminders        Reminder[]
   pushTokens       PushToken[]
+  webPushSubscriptions WebPushSubscription[]
 
   @@index([email])
   @@map("clients")
+}
+
+model WebPushConfig {
+  id          String   @id
+  publicKey   String   @unique
+  privateKey  String
+  subject     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("web_push_config")
 }
 
 model Group {
@@ -268,6 +281,27 @@ model PushToken {
 
   @@index([clientId])
   @@map("push_tokens")
+}
+
+model WebPushSubscription {
+  id              String   @id @default(cuid())
+  clientId        String
+  endpoint        String   @unique
+  p256dh          String
+  auth            String
+  expirationTime  BigInt?
+  userAgent       String?
+  deviceName      String?
+  isActive        Boolean  @default(true)
+  lastUsedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([clientId, isActive])
+  @@map("web_push_subscriptions")
 }
 
 model Notification {

@@ -431,33 +431,35 @@ export function StudentsPanelCards({
               </div>
 
               <div className="flex flex-col gap-3 border-t border-ink-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <p className="text-sm text-ink-500">
+                <p className="text-xs font-medium text-ink-500 sm:text-sm">
                   Mostrando {visibleStudents.length} de {students.pagination.total} alumnos
                 </p>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="min-h-10 rounded-[14px] px-3 text-[13px]"
-                    disabled={pagination.page <= 1}
-                    onClick={() => updateList({ page: pagination.page - 1 })}
-                  >
-                    <FiChevronLeft className="size-4" />
-                    Anterior
-                  </Button>
-                  <div className="rounded-[14px] border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700">
-                    Página {pagination.page} de {pagination.totalPages}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="flex items-center justify-center rounded-[12px] border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 sm:text-sm">
+                    {pagination.page} / {pagination.totalPages}
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="min-h-10 rounded-[14px] px-3 text-[13px]"
-                    disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => updateList({ page: pagination.page + 1 })}
-                  >
-                    Siguiente
-                    <FiChevronRight className="size-4" />
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
+                      disabled={pagination.page <= 1}
+                      onClick={() => updateList({ page: pagination.page - 1 })}
+                    >
+                      <FiChevronLeft className="size-4" />
+                      <span className="truncate">Anterior</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => updateList({ page: pagination.page + 1 })}
+                    >
+                      <span className="truncate">Siguiente</span>
+                      <FiChevronRight className="size-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </>
@@ -725,28 +727,28 @@ export function StudentsPanelCards({
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-sm font-black text-ink-900">Dia de cobro mensual</p>
-                <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
-                    <ChipButton
-                      key={day}
-                      selected={selectedBillingDay === day}
-                      onClick={() => {
-                        reset(
-                          {
-                            ...watch(),
-                            diaCobro: day
-                          },
-                          { keepDirty: true, keepTouched: true }
-                        );
-                      }}
-                    >
-                      {day}
-                    </ChipButton>
-                  ))}
-                </div>
-              </div>
+            <div className="space-y-3">
+              <p className="text-sm font-black text-ink-900">Dia de cobro mensual</p>
+              <select
+                value={selectedBillingDay}
+                onChange={(event) => {
+                  reset(
+                    {
+                      ...watch(),
+                      diaCobro: event.target.value
+                    },
+                    { keepDirty: true, keepTouched: true }
+                  );
+                }}
+                className="field-base h-11 rounded-[18px] text-[14px]"
+              >
+                {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
+                  <option key={day} value={day}>
+                    Día {day}
+                  </option>
+                ))}
+              </select>
+            </div>
 
               <Field label="Mensualidad del alumno" error={errors.precioMensualidad?.message}>
                 <input
@@ -756,37 +758,28 @@ export function StudentsPanelCards({
                 />
               </Field>
 
-              <div className="space-y-3">
-                <p className="text-sm font-black text-ink-900">Grupo</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {groups.map((group) => (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => {
-                        reset(
-                          {
-                            ...watch(),
-                            grupoId: group.id
-                          },
-                          { keepDirty: true, keepTouched: true }
-                        );
-                      }}
-                      className={cn(
-                        "rounded-[22px] border px-4 py-4 text-left transition",
-                        selectedGroup === group.id
-                          ? "border-brand-600 bg-brand-600 text-white shadow-soft"
-                          : "border-ink-200 bg-white text-ink-900 hover:border-brand-200 hover:text-brand-700"
-                      )}
-                    >
-                      <p className="font-black">{group.nombre}</p>
-                      <p className={cn("mt-1 text-sm font-medium", selectedGroup === group.id ? "text-white/85" : "text-ink-500")}>
-                        {group._count.students} alumnos
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="space-y-3">
+              <p className="text-sm font-black text-ink-900">Grupo</p>
+              <select
+                value={selectedGroup}
+                onChange={(event) => {
+                  reset(
+                    {
+                      ...watch(),
+                      grupoId: event.target.value
+                    },
+                    { keepDirty: true, keepTouched: true }
+                  );
+                }}
+                className="field-base h-11 rounded-[18px] text-[14px]"
+              >
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.nombre} · {group._count.students} alumnos
+                  </option>
+                ))}
+              </select>
+            </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
@@ -874,9 +867,7 @@ function DecisionCard({
       onClick={onClick}
       className={cn(
         "flex w-full items-start gap-4 rounded-[24px] border px-4 py-4 text-left transition",
-        selected
-          ? "border-brand-200 bg-brand-50 shadow-soft"
-          : "border-ink-200 bg-white hover:border-brand-200 hover:bg-brand-50/40"
+        selected ? "border-brand-200 bg-brand-50" : "border-ink-200 bg-white hover:border-brand-200 hover:bg-brand-50/40"
       )}
     >
       <span
@@ -912,9 +903,7 @@ function ChipButton({
       onClick={onClick}
       className={cn(
         "rounded-[18px] border px-4 py-2.5 text-sm font-black transition",
-        selected
-          ? "border-brand-600 bg-brand-600 text-white shadow-soft"
-          : "border-ink-200 bg-white text-ink-800 hover:border-brand-200 hover:text-brand-700"
+        selected ? "border-brand-600 bg-brand-600 text-white" : "border-ink-200 bg-white text-ink-800 hover:border-brand-200 hover:text-brand-700"
       )}
     >
       {children}

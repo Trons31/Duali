@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
 import { FiCheck, FiChevronDown, FiChevronUp, FiMessageCircle, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency, formatDate } from "@/lib/web-utils";
@@ -38,6 +38,8 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [selectedMonth, setSelectedMonth] = useState(defaultMonthValue());
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
   const [payTarget, setPayTarget] = useState<EnrollmentPaymentItem | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   const pendingPayments = useMemo(
     () => payments.filter((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO"),
@@ -114,19 +116,31 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
     [filteredPaid]
   );
 
+  function openPayModal(payment: EnrollmentPaymentItem) {
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPayTarget(payment);
+  }
+
+  function closePayModal() {
+    setPayTarget(null);
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+  }
+
   async function payCurrent() {
     if (!payTarget) return;
+    setSubmittingPayment(true);
 
     await clientApiFetch(`/api/enrollment-payments/${payTarget.id}/pay`, token, {
       method: "PUT",
-      body: JSON.stringify({})
+      body: JSON.stringify({ metodoPago: paymentMethod })
     })
       .then(() => {
         sileo.success({ title: "Inscripcion marcada como pagada" });
-        setPayTarget(null);
+        closePayModal();
         router.refresh();
       })
-      .catch((error: Error) => sileo.error({ title: error.message }));
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingPayment(false));
   }
 
   function toggleDay(key: string) {
@@ -255,7 +269,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                           <FiMessageCircle className="size-5" />
                           Notificar por WhatsApp
                         </Button>
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => setPayTarget(payment)}>
+                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(payment)}>
                           <FiCheck className="size-5" />
                           Marcar pagada
                         </Button>
@@ -339,16 +353,18 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
         )}
       </div>
 
-      <ConfirmDialog
+      <PaymentMethodModal
         open={Boolean(payTarget)}
-        title="Confirmar pago de inscripcion"
+        title="Marcar inscripcion como pagada"
         description={`Registrarás el pago de la inscripción de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
-        variant="primary"
-        notice="Confirma este pago solo si el estudiante ya pago la inscripcion y quieres dejarla registrada en caja."
-        noticeTone="success"
+        amount={payTarget?.monto ?? null}
+        notice="Confirma este pago solo si ya recibiste el dinero de la inscripcion y quieres dejarlo registrado en caja."
+        selectedMethod={paymentMethod}
         confirmText="Confirmar pago"
-        onClose={() => setPayTarget(null)}
+        loading={submittingPayment}
+        onClose={closePayModal}
         onConfirm={payCurrent}
+        onSelectMethod={setPaymentMethod}
       />
     </div>
   );

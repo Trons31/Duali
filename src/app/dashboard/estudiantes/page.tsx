@@ -10,7 +10,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Sea
   const q = first(params.q) ?? "";
   const status = first(params.status) ?? "todos";
   const groupId = first(params.groupId);
-  const pageSize = first(params.pageSize) ?? "12";
+  const pageSize = first(params.pageSize) ?? "10";
 
   const query = new URLSearchParams({
     page,

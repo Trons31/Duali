@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { getPushFailureDetails, sendExpoPushNotifications } from "./push";
 import { prisma } from "./prisma";
+import { sendWebPushNotifications } from "./web-push";
 
 const MAX_PROCESSING_ATTEMPTS = 5;
 const STALE_PROCESSING_MINUTES = 5;
@@ -44,6 +45,7 @@ type DispatchSummary = {
   providerMessageId?: string;
   error?: string;
   invalidTokens: string[];
+  invalidSubscriptions: string[];
 };
 
 function isPermanentExpoFailure(message: string) {
@@ -181,7 +183,8 @@ function summarizeExpoDispatch(
       success: false,
       shouldRetry: false,
       error: "No hay Expo Push Tokens validos",
-      invalidTokens: []
+      invalidTokens: [],
+      invalidSubscriptions: []
     };
   }
 
@@ -203,7 +206,8 @@ function summarizeExpoDispatch(
       shouldRetry: false,
       providerMessageId: providerMessageId || String(successTickets.length),
       error: failures.length ? failures.map(({ message }) => message).join(" | ") : undefined,
-      invalidTokens
+      invalidTokens,
+      invalidSubscriptions: []
     };
   }
 
@@ -214,8 +218,66 @@ function summarizeExpoDispatch(
       ({ message }) => !/DeviceNotRegistered/i.test(message) && !isPermanentExpoFailure(message)
     ),
     error: failures.map(({ token, message }) => `${token}: ${message}`).join(" ; "),
-    invalidTokens
+    invalidTokens,
+    invalidSubscriptions: []
   };
+}
+
+function summarizeWebPushDispatch(
+  results: Awaited<ReturnType<typeof sendWebPushNotifications>>
+): DispatchSummary {
+  if (!results.length) {
+    return {
+      attempted: false,
+      success: false,
+      shouldRetry: false,
+      error: "No hay suscripciones web push activas",
+      invalidTokens: [],
+      invalidSubscriptions: []
+    };
+  }
+
+  const successes = results.filter((result) => result.success);
+  const failures = results.filter((result) => !result.success);
+  const invalidSubscriptions = failures.filter((result) => result.invalidSubscription).map((result) => result.endpoint);
+
+  if (successes.length > 0) {
+    return {
+      attempted: true,
+      success: true,
+      shouldRetry: false,
+      providerMessageId: successes
+        .map((result) => result.providerMessageId)
+        .filter((value): value is string => Boolean(value))
+        .join(","),
+      error: failures.length ? failures.map((result) => result.error).filter(Boolean).join(" | ") : undefined,
+      invalidTokens: [],
+      invalidSubscriptions
+    };
+  }
+
+  return {
+    attempted: true,
+    success: false,
+    shouldRetry: failures.some((result) => result.shouldRetry),
+    error: failures.map((result) => `${result.endpoint}: ${result.error ?? "Error desconocido"}`).join(" ; "),
+    invalidTokens: [],
+    invalidSubscriptions
+  };
+}
+
+function notificationTargetHref(data: Prisma.JsonValue | null | undefined) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "/dashboard/notificaciones";
+
+  const record = data as Record<string, unknown>;
+  const explicitHref = typeof record.href === "string" ? record.href : null;
+  if (explicitHref) return explicitHref;
+
+  const type = String(record.type ?? "");
+  if (type.includes("ENROLLMENT")) return "/dashboard/inscripciones";
+  if (type.includes("OVERDUE")) return "/dashboard/cobros/vencidos";
+  if (type.includes("DUE")) return "/dashboard/cobros/pendientes";
+  return "/dashboard/notificaciones";
 }
 
 async function updateNotificationForFailure(input: {
@@ -402,12 +464,23 @@ async function processSingleOutboxEntry(outboxId: string) {
     }
   });
 
-  const tokens = await prisma.pushToken.findMany({
-    where: { clientId: notification.clientId, isActive: true },
-    select: { token: true }
-  });
+  const [tokens, webSubscriptions] = await Promise.all([
+    prisma.pushToken.findMany({
+      where: { clientId: notification.clientId, isActive: true },
+      select: { token: true }
+    }),
+    prisma.webPushSubscription.findMany({
+      where: { clientId: notification.clientId, isActive: true },
+      select: {
+        endpoint: true,
+        p256dh: true,
+        auth: true,
+        expirationTime: true
+      }
+    })
+  ]);
 
-  if (!tokens.length) {
+  if (!tokens.length && !webSubscriptions.length) {
     const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
     const error = "No hay dispositivos registrados para push";
     const nextAttemptAt = exhausted ? now : retryDate(currentAttempt);
@@ -416,6 +489,15 @@ async function processSingleOutboxEntry(outboxId: string) {
       clientId: notification.clientId,
       notificationId: notification.id,
       channel: "EXPO",
+      attempt: currentAttempt,
+      status: "OMITIDA",
+      error,
+      failedAt: now
+    });
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "WEB_PUSH",
       attempt: currentAttempt,
       status: "OMITIDA",
       error,
@@ -455,163 +537,189 @@ async function processSingleOutboxEntry(outboxId: string) {
     };
   }
 
-  try {
-    const tickets = await sendExpoPushNotifications(
-      tokens.map((entry) => entry.token),
-      notification.title,
-      notification.body,
-      {
-        ...((notification.data as Record<string, unknown> | null) ?? {}),
-        notificationId: notification.id,
-        sequence: notification.sequence
-      }
-    );
+  const payloadData = {
+    ...((notification.data as Record<string, unknown> | null) ?? {}),
+    href: notificationTargetHref(notification.data),
+    notificationId: notification.id,
+    sequence: notification.sequence
+  };
 
-    const dispatch = summarizeExpoDispatch(tickets);
+  let expoDispatch: DispatchSummary = {
+    attempted: false,
+    success: false,
+    shouldRetry: false,
+    invalidTokens: [],
+    invalidSubscriptions: []
+  };
+  let webDispatch: DispatchSummary = {
+    attempted: false,
+    success: false,
+    shouldRetry: false,
+    invalidTokens: [],
+    invalidSubscriptions: []
+  };
 
-    if (dispatch.invalidTokens.length) {
-      await prisma.pushToken.updateMany({
-        where: {
-          clientId: notification.clientId,
-          token: { in: dispatch.invalidTokens }
-        },
-        data: { isActive: false }
-      });
+  if (tokens.length) {
+    try {
+      const tickets = await sendExpoPushNotifications(
+        tokens.map((entry) => entry.token),
+        notification.title,
+        notification.body,
+        payloadData
+      );
+      expoDispatch = summarizeExpoDispatch(tickets);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo enviar por Expo";
+      expoDispatch = {
+        attempted: true,
+        success: false,
+        shouldRetry: !isPermanentExpoFailure(message),
+        error: message,
+        invalidTokens: [],
+        invalidSubscriptions: []
+      };
     }
-
-    if (dispatch.success) {
-      const sentAt = new Date();
-
-      await upsertDeliveryResult({
-        clientId: notification.clientId,
-        notificationId: notification.id,
-        channel: "EXPO",
-        attempt: currentAttempt,
-        status: "ENVIADA",
-        providerMessageId: dispatch.providerMessageId,
-        error: dispatch.error ?? null,
-        sentAt
-      });
-
-      await prisma.notificationOutbox.update({
-        where: { id: outbox.id },
-        data: {
-          status: "ENVIADA",
-          processingStartedAt: null,
-          sentAt,
-          lastError: dispatch.error ?? null
-        }
-      });
-
-      await prisma.notification.update({
-        where: { id: notification.id },
-        data: {
-          status: "ENVIADA",
-          attempts: currentAttempt,
-          nextAttemptAt: sentAt,
-          sentAt,
-          error: dispatch.error ?? null
-        }
-      });
-
-      return { processed: true, sent: true, retried: false, failed: false, skippedNoTokens: false };
-    }
-
-    const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
-    const shouldRetry = !exhausted && dispatch.shouldRetry;
-    const error = dispatch.error ?? "Expo no pudo enviar la notificacion";
-    const nextAttemptAt = shouldRetry ? retryDate(currentAttempt) : now;
-
-    await upsertDeliveryResult({
-      clientId: notification.clientId,
-      notificationId: notification.id,
-      channel: "EXPO",
-      attempt: currentAttempt,
-      status: "FALLIDA",
-      providerMessageId: dispatch.providerMessageId,
-      error,
-      failedAt: now
-    });
-
-    await prisma.notificationOutbox.update({
-      where: { id: outbox.id },
-      data: shouldRetry
-        ? {
-            status: "REINTENTANDO",
-            processingStartedAt: null,
-            nextAttemptAt,
-            lastError: error
-          }
-        : {
-            status: "FALLIDA",
-            processingStartedAt: null,
-            lastError: error
-          }
-    });
-
-    await updateNotificationForFailure({
-      notificationId: notification.id,
-      status: shouldRetry ? "PENDIENTE" : "FALLIDA",
-      attemptCount: currentAttempt,
-      nextAttemptAt,
-      error
-    });
-
-    return {
-      processed: true,
-      sent: false,
-      retried: shouldRetry,
-      failed: !shouldRetry,
-      skippedNoTokens: false
-    };
-  } catch (error) {
-    const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
-    const shouldRetry = !exhausted;
-    const message = error instanceof Error ? error.message : "No se pudo procesar la notificacion";
-    const nextAttemptAt = shouldRetry ? retryDate(currentAttempt) : now;
-
-    await upsertDeliveryResult({
-      clientId: notification.clientId,
-      notificationId: notification.id,
-      channel: "EXPO",
-      attempt: currentAttempt,
-      status: "FALLIDA",
-      error: message,
-      failedAt: now
-    });
-
-    await prisma.notificationOutbox.update({
-      where: { id: outbox.id },
-      data: shouldRetry
-        ? {
-            status: "REINTENTANDO",
-            processingStartedAt: null,
-            nextAttemptAt,
-            lastError: message
-          }
-        : {
-            status: "FALLIDA",
-            processingStartedAt: null,
-            lastError: message
-          }
-    });
-
-    await updateNotificationForFailure({
-      notificationId: notification.id,
-      status: shouldRetry ? "PENDIENTE" : "FALLIDA",
-      attemptCount: currentAttempt,
-      nextAttemptAt,
-      error: message
-    });
-
-    return {
-      processed: true,
-      sent: false,
-      retried: shouldRetry,
-      failed: !shouldRetry,
-      skippedNoTokens: false
-    };
   }
+
+  if (webSubscriptions.length) {
+    try {
+      const results = await sendWebPushNotifications(webSubscriptions, {
+        notificationId: notification.id,
+        sequence: notification.sequence,
+        title: notification.title,
+        body: notification.body,
+        data: payloadData
+      });
+      webDispatch = summarizeWebPushDispatch(results);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo enviar por Web Push";
+      webDispatch = {
+        attempted: true,
+        success: false,
+        shouldRetry: true,
+        error: message,
+        invalidTokens: [],
+        invalidSubscriptions: []
+      };
+    }
+  }
+
+  if (expoDispatch.invalidTokens.length) {
+    await prisma.pushToken.updateMany({
+      where: {
+        clientId: notification.clientId,
+        token: { in: expoDispatch.invalidTokens }
+      },
+      data: { isActive: false }
+    });
+  }
+
+  if (webDispatch.invalidSubscriptions.length) {
+    await prisma.webPushSubscription.updateMany({
+      where: {
+        clientId: notification.clientId,
+        endpoint: { in: webDispatch.invalidSubscriptions }
+      },
+      data: { isActive: false }
+    });
+  }
+
+  if (expoDispatch.attempted) {
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "EXPO",
+      attempt: currentAttempt,
+      status: expoDispatch.success ? "ENVIADA" : "FALLIDA",
+      providerMessageId: expoDispatch.providerMessageId,
+      error: expoDispatch.error ?? null,
+      sentAt: expoDispatch.success ? now : null,
+      failedAt: expoDispatch.success ? null : now
+    });
+  }
+
+  if (webDispatch.attempted) {
+    await upsertDeliveryResult({
+      clientId: notification.clientId,
+      notificationId: notification.id,
+      channel: "WEB_PUSH",
+      attempt: currentAttempt,
+      status: webDispatch.success ? "ENVIADA" : "FALLIDA",
+      providerMessageId: webDispatch.providerMessageId,
+      error: webDispatch.error ?? null,
+      sentAt: webDispatch.success ? now : null,
+      failedAt: webDispatch.success ? null : now
+    });
+  }
+
+  const anySuccess = expoDispatch.success || webDispatch.success;
+
+  if (anySuccess) {
+    const sentAt = new Date();
+    const combinedError = [expoDispatch.error, webDispatch.error].filter(Boolean).join(" | ") || null;
+
+    await prisma.notificationOutbox.update({
+      where: { id: outbox.id },
+      data: {
+        status: "ENVIADA",
+        processingStartedAt: null,
+        sentAt,
+        lastError: combinedError
+      }
+    });
+
+    await prisma.notification.update({
+      where: { id: notification.id },
+      data: {
+        status: "ENVIADA",
+        attempts: currentAttempt,
+        nextAttemptAt: sentAt,
+        sentAt,
+        error: combinedError
+      }
+    });
+
+    return { processed: true, sent: true, retried: false, failed: false, skippedNoTokens: false };
+  }
+
+  const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;
+  const shouldRetry = !exhausted && (expoDispatch.shouldRetry || webDispatch.shouldRetry);
+  const error =
+    [expoDispatch.error, webDispatch.error].filter(Boolean).join(" | ") ||
+    "No se pudo enviar la notificacion por ningun canal push";
+  const nextAttemptAt = shouldRetry ? retryDate(currentAttempt) : now;
+
+  await prisma.notificationOutbox.update({
+    where: { id: outbox.id },
+    data: shouldRetry
+      ? {
+          status: "REINTENTANDO",
+          processingStartedAt: null,
+          nextAttemptAt,
+          lastError: error
+        }
+      : {
+          status: "FALLIDA",
+          processingStartedAt: null,
+          lastError: error
+        }
+  });
+
+  await updateNotificationForFailure({
+    notificationId: notification.id,
+    status: shouldRetry ? "PENDIENTE" : "FALLIDA",
+    attemptCount: currentAttempt,
+    nextAttemptAt,
+    error
+  });
+
+  return {
+    processed: true,
+    sent: false,
+    retried: shouldRetry,
+    failed: !shouldRetry,
+    skippedNoTokens: false
+  };
 }
 
 async function processClientQueue(clientId: string, limit: number) {
@@ -911,7 +1019,7 @@ export async function acknowledgeDeliveredNotifications(
     await tx.notificationDelivery.updateMany({
       where: {
         notificationId: { in: targetIds },
-        channel: { in: ["INBOX_SYNC", "EXPO"] }
+        channel: { in: ["INBOX_SYNC", "EXPO", "WEB_PUSH"] }
       },
       data: {
         status: "ENTREGADA",
@@ -960,7 +1068,7 @@ export async function markNotificationsRead(
     await tx.notificationDelivery.updateMany({
       where: {
         notificationId: { in: targetIds },
-        channel: { in: ["INBOX_SYNC", "EXPO"] }
+        channel: { in: ["INBOX_SYNC", "EXPO", "WEB_PUSH"] }
       },
       data: {
         status: "ENTREGADA",
