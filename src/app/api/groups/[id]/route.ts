@@ -9,21 +9,48 @@ export async function GET(request: Request, context: Params) {
   try {
     const { id } = await context.params;
     const { clientId } = await requireClient(request);
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
     const group = await prisma.group.findFirst({
       where: { id, clientId, deletedAt: null },
       include: {
-        students: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
-        monthlyPayments: {
+        students: {
           where: { deletedAt: null },
-          orderBy: { fechaVencimiento: "desc" },
-          take: 50,
-          include: { student: true }
+          orderBy: [{ estado: "asc" }, { nombre: "asc" }, { apellido: "asc" }],
+          include: {
+            monthlyPayments: {
+              where: {
+                deletedAt: null,
+                mes: currentMonth,
+                anio: currentYear
+              },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                mes: true,
+                anio: true,
+                monto: true,
+                estado: true,
+                fechaVencimiento: true,
+                fechaPago: true
+              }
+            }
+          }
         },
         _count: { select: { students: true, monthlyPayments: true } }
       }
     });
     if (!group) throw new ApiError(404, "Grupo no encontrado");
-    return ok(group);
+    return ok({
+      ...group,
+      period: {
+        mes: currentMonth,
+        anio: currentYear,
+        label: `${currentMonth}/${currentYear}`
+      }
+    });
   } catch (error) {
     return handleError(error);
   }

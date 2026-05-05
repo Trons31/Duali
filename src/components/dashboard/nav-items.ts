@@ -1,7 +1,7 @@
 import {
   FiBell,
   FiBookOpen,
-  FiCreditCard,
+  FiCheckCircle,
   FiDollarSign,
   FiGrid,
   FiLayers,
@@ -28,11 +28,10 @@ export const navSections = [
   {
     title: "Cobros",
     items: [
-      { href: "/dashboard/mensualidades", label: "Mensualidades", icon: FiCreditCard },
+      { href: "/dashboard/cobros/pagos", label: "Pagos", icon: FiCheckCircle },
       { href: "/dashboard/cobros/pendientes", label: "Pendientes", icon: FiBookOpen },
       { href: "/dashboard/cobros/vencidos", label: "Vencidos", icon: FiTrendingUp },
-      { href: "/dashboard/inscripciones", label: "Inscripciones", icon: FiBookOpen },
-      { href: "/dashboard/utiles", label: "Utiles", icon: FiLayers }
+      { href: "/dashboard/inscripciones", label: "Inscripciones", icon: FiBookOpen }
     ]
   },
   {

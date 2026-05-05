@@ -169,11 +169,22 @@ export function GroupsPanel({ groups }: { groups: GroupSummary[] }) {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
-                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openEditModal(group)}>
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => router.push(`/dashboard/grupos/${group.id}`)}
+                        >
                           <h3 className="text-[15px] font-semibold text-ink-950">{group.nombre}</h3>
                           <p className="mt-1 text-sm text-ink-500">{group.descripcion || "Sin descripción registrada."}</p>
                         </button>
-                        <FiArrowRight className="mt-0.5 size-4 shrink-0 text-ink-300" />
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/dashboard/grupos/${group.id}`)}
+                          className="rounded-full p-1.5 text-ink-300 transition hover:bg-ink-50 hover:text-ink-600"
+                          aria-label={`Ver detalle de ${group.nombre}`}
+                        >
+                          <FiArrowRight className="size-4 shrink-0" />
+                        </button>
                       </div>
 
                       <div className="mt-4 grid gap-3">
@@ -244,6 +255,7 @@ export function GroupsPanel({ groups }: { groups: GroupSummary[] }) {
         open={Boolean(deleteTarget)}
         title="Eliminar grupo"
         description={`Eliminarás "${deleteTarget?.nombre}". Los históricos se conservan, pero el grupo dejará de verse en la operación activa.`}
+        notice="Elimina este grupo solo si ya no lo vas a usar en la organizacion activa del negocio."
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteGroup}
       />

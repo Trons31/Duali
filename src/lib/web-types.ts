@@ -30,6 +30,48 @@ export type GroupSummary = {
   };
 };
 
+export type GroupDetailStudent = {
+  id: string;
+  nombre: string;
+  apellido: string;
+  edad: number;
+  celular: string | null;
+  esMenorDeEdad: boolean;
+  telefonoPadre: string | null;
+  estado: StudentStatus;
+  precioMensualidad: number | string | null;
+  diaCobro: number | null;
+  modalidadMensualidad: MonthlyBillingMode;
+  createdAt: string;
+  monthlyPayments: Array<{
+    id: string;
+    mes: number;
+    anio: number;
+    monto: number | string;
+    estado: PaymentStatus;
+    fechaVencimiento: string;
+    fechaPago: string | null;
+  }>;
+};
+
+export type GroupDetailResponse = {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  clientId: string;
+  createdAt: string;
+  _count: {
+    students: number;
+    monthlyPayments: number;
+  };
+  period: {
+    mes: number;
+    anio: number;
+    label: string;
+  };
+  students: GroupDetailStudent[];
+};
+
 export type StudentListItem = {
   id: string;
   nombre: string;
@@ -115,6 +157,7 @@ export type EnrollmentPaymentItem = {
     id: string;
     nombre: string;
     apellido: string;
+    esMenorDeEdad?: boolean;
     telefonoPadre: string | null;
     celular: string | null;
     group?: {
@@ -175,6 +218,41 @@ export type NotificationItem = {
   createdAt: string;
 };
 
+export type PaymentHistoryFilter = "week" | "month";
+
+export type PaymentHistoryItem = {
+  id: string;
+  kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
+  label: "Mensualidad" | "Inscripcion";
+  monto: number;
+  fechaPago: string;
+  mes?: number | null;
+  anio?: number | null;
+  student: {
+    id: string;
+    nombre: string;
+    apellido: string;
+  };
+  group?: {
+    id: string;
+    nombre: string;
+  } | null;
+};
+
+export type PaymentHistoryResponse = {
+  filters: {
+    period: PaymentHistoryFilter;
+    month: string;
+  };
+  summary: {
+    totalCount: number;
+    totalAmount: number;
+    from: string;
+    to: string;
+  };
+  items: PaymentHistoryItem[];
+};
+
 export type AccountingSummary = {
   ingresosMensualidades: number;
   ingresosUtiles: number;
@@ -189,4 +267,41 @@ export type AccountingSummary = {
   mensualidadesVencidas: number;
   inscripcionesPendientes: number;
   inscripcionesVencidas: number;
+};
+
+export type AccountingPeriod = {
+  year: number;
+  month: number;
+  monthLabel: string;
+  from: string;
+  to: string;
+};
+
+export type AccountingPaymentMethod = {
+  method: string;
+  amount: number;
+  count: number;
+  percentage: number;
+};
+
+export type AccountingMovement = {
+  id: string;
+  date: string;
+  type: "MENSUALIDAD" | "INSCRIPCION" | "EGRESO";
+  title: string;
+  subtitle: string;
+  amount: number;
+  direction: "income" | "expense";
+};
+
+export type AccountingOverview = {
+  period: AccountingPeriod;
+  summary: {
+    ingresos: number;
+    egresos: number;
+    balance: number;
+    movimientos: number;
+  };
+  paymentMethods: AccountingPaymentMethod[];
+  movements: AccountingMovement[];
 };

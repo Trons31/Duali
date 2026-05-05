@@ -226,6 +226,8 @@ export function MonthlyPaymentsPanel({
         description={`Marcarás como pagada la mensualidad de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
         confirmText="Confirmar pago"
         variant="primary"
+        notice="Marca esta mensualidad como pagada solo si el estudiante ya realizo el pago pendiente."
+        noticeTone="success"
         onClose={() => setPayTarget(null)}
         onConfirm={payPayment}
       />
@@ -234,6 +236,7 @@ export function MonthlyPaymentsPanel({
         open={Boolean(deleteTarget)}
         title="Eliminar mensualidad"
         description={`Se eliminará el cobro ${deleteTarget?.mes}/${deleteTarget?.anio} de ${deleteTarget?.student.nombre} ${deleteTarget?.student.apellido}.`}
+        notice="Elimina esta mensualidad solo si fue creada por error y no debe seguir afectando la cartera."
         onClose={() => setDeleteTarget(null)}
         onConfirm={deletePayment}
       />

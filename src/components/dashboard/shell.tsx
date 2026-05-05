@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { FiLogOut, FiMenu, FiX } from "react-icons/fi";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { Button } from "@/components/ui/button";
 import { navSections } from "@/components/dashboard/nav-items";
@@ -26,6 +26,21 @@ export function DashboardShell({
   const [open, setOpen] = useState(false);
 
   const flatItems = useMemo(() => navSections.flatMap((section) => section.items), []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const htmlOverflow = document.documentElement.style.overflow;
+    const bodyOverflow = document.body.style.overflow;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = htmlOverflow;
+      document.body.style.overflow = bodyOverflow;
+    };
+  }, [open]);
 
   async function handleLogout() {
     await signOut({ redirect: false });
@@ -147,8 +162,8 @@ export function DashboardShell({
       </nav>
 
       {open ? (
-        <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm xl:hidden">
-          <div className="h-full w-[86vw] max-w-sm bg-white shadow-soft">
+        <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm xl:hidden" onClick={() => setOpen(false)}>
+          <div className="h-full w-[86vw] max-w-sm bg-white shadow-soft" onClick={(event) => event.stopPropagation()}>
             <div className="flex justify-end px-4 pt-4">
               <button
                 type="button"

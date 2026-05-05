@@ -28,8 +28,8 @@ export const metadata: Metadata = {
     statusBarStyle: "default"
   },
   icons: {
-    icon: "/logo/icon.png",
-    shortcut: "/logo/icon.png",
+    icon: "/logo/icon-metadata.png",
+    shortcut: "/logo/icon-metadata.png",
     apple: "/logo/icon.png"
   },
   openGraph: {

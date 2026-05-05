@@ -1,20 +1,5 @@
 import { EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
 
-const monthNames = [
-  "enero",
-  "febrero",
-  "marzo",
-  "abril",
-  "mayo",
-  "junio",
-  "julio",
-  "agosto",
-  "septiembre",
-  "octubre",
-  "noviembre",
-  "diciembre"
-];
-
 export function resolveWhatsappPhone(student: Pick<Student, "esMenorDeEdad" | "telefonoPadre" | "celular">) {
   if (student.esMenorDeEdad && student.telefonoPadre) return student.telefonoPadre;
   return student.celular ?? student.telefonoPadre ?? "";
@@ -32,20 +17,24 @@ export function normalizeWhatsappPhone(phone: string) {
 
 export function buildPaymentReminderMessage(params: {
   studentName: string;
-  mes: number;
-  anio: number;
   monto: string | number;
-  fechaVencimiento: Date;
+  isMinor?: boolean;
+  isOverdue?: boolean;
+  fechaVencimiento?: Date;
 }) {
-  const month = monthNames[params.mes - 1] ?? String(params.mes);
   const amount = Number(params.monto).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
     maximumFractionDigits: 0
   });
-  const dueDate = params.fechaVencimiento.toLocaleDateString("es-CO");
+  const ownerText = params.isMinor ? `la mensualidad de ${params.studentName}` : "tu mensualidad";
 
-  return `Hola, te recordamos que la mensualidad de ${params.studentName} correspondiente al mes de ${month} de ${params.anio} está pendiente por valor de ${amount}. Por favor realizar el pago antes de ${dueDate}.`;
+  if (params.isOverdue) {
+    const days = calculateOverdueDays(params.fechaVencimiento);
+    return `Hola, te recordamos que ${ownerText} esta vencida por un valor de ${amount}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
+  }
+
+  return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
 }
 
 export function createWhatsappUrl(phone: string, message: string) {
@@ -56,16 +45,23 @@ export function createWhatsappUrl(phone: string, message: string) {
 export function buildEnrollmentReminderMessage(params: {
   studentName: string;
   monto: string | number;
-  fechaVencimiento: Date;
+  isMinor?: boolean;
+  isOverdue?: boolean;
+  fechaVencimiento?: Date;
 }) {
   const amount = Number(params.monto).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
     maximumFractionDigits: 0
   });
-  const dueDate = params.fechaVencimiento.toLocaleDateString("es-CO");
+  const ownerText = params.isMinor ? `la inscripcion de ${params.studentName}` : "tu inscripcion";
 
-  return `Hola, te recordamos que la inscripcion de ${params.studentName} esta pendiente por valor de ${amount}. Por favor realizar el pago antes de ${dueDate}.`;
+  if (params.isOverdue) {
+    const days = calculateOverdueDays(params.fechaVencimiento);
+    return `Hola, te recordamos que ${ownerText} esta vencida por un valor de ${amount}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
+  }
+
+  return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
 }
 
 export function buildReminderForPayment(
@@ -74,9 +70,9 @@ export function buildReminderForPayment(
   const phone = resolveWhatsappPhone(payment.student);
   const message = buildPaymentReminderMessage({
     studentName: `${payment.student.nombre} ${payment.student.apellido}`,
-    mes: payment.mes,
-    anio: payment.anio,
     monto: payment.monto.toString(),
+    isMinor: payment.student.esMenorDeEdad,
+    isOverdue: payment.estado === "VENCIDO",
     fechaVencimiento: payment.fechaVencimiento
   });
 
@@ -94,6 +90,8 @@ export function buildReminderForEnrollment(
   const message = buildEnrollmentReminderMessage({
     studentName: `${payment.student.nombre} ${payment.student.apellido}`,
     monto: payment.monto.toString(),
+    isMinor: payment.student.esMenorDeEdad,
+    isOverdue: payment.estado === "VENCIDO",
     fechaVencimiento: payment.fechaVencimiento
   });
 
@@ -102,4 +100,18 @@ export function buildReminderForEnrollment(
     message,
     whatsappUrl: createWhatsappUrl(phone, message)
   };
+}
+
+function calculateOverdueDays(fechaVencimiento?: Date) {
+  if (!fechaVencimiento) return 1;
+
+  const dueUtc = Date.UTC(
+    fechaVencimiento.getFullYear(),
+    fechaVencimiento.getMonth(),
+    fechaVencimiento.getDate()
+  );
+  const now = new Date();
+  const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+
+  return Math.max(1, Math.floor((nowUtc - dueUtc) / 86400000));
 }

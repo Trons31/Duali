@@ -65,6 +65,7 @@ export function StudentsPanelCards({
   const [query, setQuery] = useState(students.filters.q);
   const [step, setStep] = useState<CreateStep>("TYPE");
   const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<StudentListItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentListItem | null>(null);
   const {
     register,
@@ -121,14 +122,23 @@ export function StudentsPanelCards({
       sileo.error({ title: "Primero crea un grupo", description: "Necesitas al menos un grupo para registrar alumnos." });
       return;
     }
+    setEditTarget(null);
     reset(createDefaultValues(groups[0]?.id ?? ""));
     setStep("TYPE");
+    setCreateOpen(true);
+  }
+
+  function openEditModal(student: StudentListItem) {
+    setEditTarget(student);
+    reset(createEditValues(student));
+    setStep("FORM");
     setCreateOpen(true);
   }
 
   function closeCreateModal() {
     if (isSubmitting) return;
     setCreateOpen(false);
+    setEditTarget(null);
     setStep("TYPE");
     reset(createDefaultValues(groups[0]?.id ?? ""));
   }
@@ -149,6 +159,10 @@ export function StudentsPanelCards({
   }
 
   function goBackStep() {
+    if (editTarget) {
+      closeCreateModal();
+      return;
+    }
     if (step === "FORM") {
       setStep(registrationType === "ANTIGUO" ? "PAID" : "ENROLLMENT");
       return;
@@ -197,17 +211,41 @@ export function StudentsPanelCards({
         isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
     };
 
-    await clientApiFetch("/api/students", token, {
-      method: "POST",
-      body: JSON.stringify(payload)
+    const isEditing = Boolean(editTarget);
+    const requestPayload = isEditing
+      ? {
+          nombre: payload.nombre,
+          apellido: payload.apellido,
+          edad: payload.edad,
+          celular: payload.celular,
+          esMenorDeEdad: payload.esMenorDeEdad,
+          nombrePadre: payload.nombrePadre,
+          telefonoPadre: payload.telefonoPadre,
+          parentesco: payload.parentesco,
+          grupoId: payload.grupoId,
+          diaCobro: payload.diaCobro,
+          precioMensualidad: payload.precioMensualidad,
+          modalidadMensualidad: payload.modalidadMensualidad
+        }
+      : payload;
+
+    await clientApiFetch(isEditing ? `/api/students/${editTarget?.id}` : "/api/students", token, {
+      method: isEditing ? "PUT" : "POST",
+      body: JSON.stringify(requestPayload)
     })
       .then(() => {
-        sileo.success({ title: "Alumno creado", description: "El alumno ya quedo registrado en Duali." });
+        sileo.success({
+          title: isEditing ? "Alumno actualizado" : "Alumno creado",
+          description: isEditing ? "Los cambios del alumno ya quedaron guardados." : "El alumno ya quedo registrado en Duali."
+        });
         closeCreateModal();
         router.refresh();
       })
       .catch((error: Error) => {
-        sileo.error({ title: "No se pudo guardar", description: error.message });
+        sileo.error({
+          title: isEditing ? "No se pudo actualizar" : "No se pudo guardar",
+          description: error.message
+        });
       });
   });
 
@@ -327,7 +365,7 @@ export function StudentsPanelCards({
                             <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-brand-50 text-sm font-bold text-brand-700">
                               {getInitials(student.nombre, student.apellido)}
                             </div>
-                            <div>
+                            <button type="button" className="text-left" onClick={() => openEditModal(student)}>
                               <div className="flex flex-wrap items-center gap-2">
                                 <h3 className="text-[15px] font-semibold text-ink-950">
                                   {student.nombre} {student.apellido}
@@ -337,16 +375,26 @@ export function StudentsPanelCards({
                               <p className="mt-1 text-sm text-ink-500">
                                 {student.group?.nombre ?? "Sin grupo"} · {student.edad} años · {studentPaymentLabel(student)}
                               </p>
-                            </div>
+                            </button>
                           </div>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="min-h-9 rounded-[14px] px-3.5 py-2 text-[13px] font-semibold sm:self-start"
-                            onClick={() => setDeleteTarget(student)}
-                          >
-                            Desactivar
-                          </Button>
+                          <div className="flex flex-wrap gap-2 sm:self-start">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="min-h-9 rounded-[14px] px-3.5 py-2 text-[13px] font-semibold"
+                              onClick={() => openEditModal(student)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="min-h-9 rounded-[14px] px-3.5 py-2 text-[13px] font-semibold"
+                              onClick={() => setDeleteTarget(student)}
+                            >
+                              Desactivar
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -417,18 +465,31 @@ export function StudentsPanelCards({
         </section>
       </div>
 
-      <Modal open={createOpen} onClose={closeCreateModal} title="Nuevo alumno" description={`Paso ${stepNumber(step)} de 3`}>
+      <Modal
+        open={createOpen}
+        onClose={closeCreateModal}
+        title={editTarget ? "Editar alumno" : "Nuevo alumno"}
+        description={
+          editTarget
+            ? "Actualiza los datos personales, el grupo y la configuracion de cobro del alumno."
+            : `Paso ${stepNumber(step)} de 3`
+        }
+      >
         <div className="space-y-6">
-          <div>
-            <h3 className="text-xl font-black tracking-tight text-ink-950 sm:text-2xl">{stepTitle(step)}</h3>
-            <p className="mt-2 text-sm font-medium leading-6 text-ink-500">{stepCopy(step)}</p>
-          </div>
+          {editTarget ? null : (
+            <>
+              <div>
+                <h3 className="text-xl font-black tracking-tight text-ink-950 sm:text-2xl">{stepTitle(step)}</h3>
+                <p className="mt-2 text-sm font-medium leading-6 text-ink-500">{stepCopy(step)}</p>
+              </div>
 
-          <div className="flex gap-2">
-            <div className={progressDotClass(true)} />
-            <div className={progressDotClass(step !== "TYPE")} />
-            <div className={progressDotClass(step === "FORM")} />
-          </div>
+              <div className="flex gap-2">
+                <div className={progressDotClass(true)} />
+                <div className={progressDotClass(step !== "TYPE")} />
+                <div className={progressDotClass(step === "FORM")} />
+              </div>
+            </>
+          )}
 
           {step === "TYPE" ? (
             <div className="space-y-4">
@@ -588,13 +649,7 @@ export function StudentsPanelCards({
 
           {step === "FORM" ? (
             <form className="space-y-5" onSubmit={submitStudent}>
-              <div className="rounded-[24px] border border-brand-100 bg-brand-50 px-4 py-4">
-                <p className="text-sm font-black text-ink-950">Primer cobro</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-ink-600">
-                  {billingStartCopy(registrationType, paidCurrentMonth, billingMode)}
-                </p>
-              </div>
-
+    
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nombre" error={errors.nombre?.message}>
                   <input className="field-base" {...register("nombre", { required: "Ingresa el nombre" })} />
@@ -735,10 +790,10 @@ export function StudentsPanelCards({
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
-                  Atras
+                  {editTarget ? "Cancelar" : "Atras"}
                 </Button>
                 <Button className="min-h-12 flex-1" type="submit" loading={isSubmitting}>
-                  Guardar alumno
+                  {editTarget ? "Guardar cambios" : "Guardar alumno"}
                 </Button>
               </div>
             </form>
@@ -750,6 +805,7 @@ export function StudentsPanelCards({
         open={Boolean(deleteTarget)}
         title="Desactivar alumno"
         description={`El alumno ${deleteTarget?.nombre ?? ""} ${deleteTarget?.apellido ?? ""} dejara de aparecer como activo en cobros nuevos.`}
+        notice="Desactiva este alumno solo si ya no debe participar en nuevos cobros ni en la operacion activa."
         confirmText="Desactivar"
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteStudent}
@@ -884,6 +940,27 @@ function createDefaultValues(groupId: string): StudentFormValues {
     grupoId: groupId,
     diaCobro: "10",
     precioMensualidad: ""
+  };
+}
+
+function createEditValues(student: StudentListItem): StudentFormValues {
+  return {
+    tipoRegistro: student.enrollmentPayment ? "NUEVO" : "ANTIGUO",
+    pagoMesActual: currentPayment(student)?.estado === "PAGADO" ? "SI" : "NO",
+    inscripcionPagada: student.enrollmentPayment?.estado === "PAGADO" ? "SI" : "NO",
+    inscripcionMonto: student.enrollmentPayment?.monto ? String(student.enrollmentPayment.monto) : "",
+    inscripcionMetodoPago: student.enrollmentPayment?.metodoPago ?? "EFECTIVO",
+    modalidadMensualidad: student.modalidadMensualidad ?? "ANTICIPADA",
+    nombre: student.nombre,
+    apellido: student.apellido,
+    edad: String(student.edad ?? ""),
+    celular: student.celular ?? "",
+    nombrePadre: student.nombrePadre ?? "",
+    telefonoPadre: student.telefonoPadre ?? "",
+    parentesco: student.parentesco ?? "",
+    grupoId: student.grupoId,
+    diaCobro: String(student.diaCobro ?? 10),
+    precioMensualidad: student.precioMensualidad ? String(student.precioMensualidad) : ""
   };
 }
 

@@ -1,35 +1,22 @@
-import { PageHeader } from "@/components/ui/page-header";
-import { StatCard } from "@/components/ui/stat-card";
+import { AccountingOverviewPanel } from "@/components/dashboard/accounting-overview-panel";
 import { apiFetch } from "@/lib/server-api";
-import { currency } from "@/lib/web-utils";
-import type { AccountingSummary } from "@/lib/web-types";
+import type { AccountingOverview } from "@/lib/web-types";
 
-export default async function AccountingPage() {
-  const [summary, incomeBreakdown] = await Promise.all([
-    apiFetch<AccountingSummary>("/api/accounting/summary"),
-    apiFetch<{ mensualidades: number; utiles: number; inscripciones: number }>("/api/accounting/income")
-  ]);
+export default async function AccountingPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolved = searchParams ? await searchParams : {};
+  const year = typeof resolved.year === "string" ? resolved.year : "";
+  const month = typeof resolved.month === "string" ? resolved.month : "";
+  const query = new URLSearchParams();
 
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Finanzas"
-        title="Contabilidad"
-        description="Consulta el estado financiero general del negocio, desde ingresos por categoría hasta el balance actual."
-      />
+  if (year) query.set("year", year);
+  if (month) query.set("month", month);
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Ingresos totales" value={currency(summary.ingresosTotales)} tone="success" />
-        <StatCard label="Gastos totales" value={currency(summary.gastosTotales)} tone="danger" />
-        <StatCard label="Balance actual" value={currency(summary.balance)} tone={summary.balance >= 0 ? "success" : "danger"} />
-        <StatCard label="Cobros del mes" value={currency(summary.pagosRecibidosEsteMes)} />
-      </section>
+  const path = `/api/accounting/overview${query.toString() ? `?${query.toString()}` : ""}`;
+  const data = await apiFetch<AccountingOverview>(path);
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <StatCard label="Mensualidades pagadas" value={currency(incomeBreakdown.mensualidades)} />
-        <StatCard label="Inscripciones pagadas" value={currency(incomeBreakdown.inscripciones)} />
-        <StatCard label="Útiles pagados" value={currency(incomeBreakdown.utiles)} />
-      </section>
-    </div>
-  );
+  return <AccountingOverviewPanel data={data} />;
 }

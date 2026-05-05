@@ -178,6 +178,8 @@ export function SuppliesPaymentsPanel({
         title="Registrar pago de útiles"
         description={`Confirmarás el pago de "${payTarget?.nombreConcepto}".`}
         variant="primary"
+        notice="Confirma este pago solo si ese cobro adicional ya fue pagado y debe registrarse en caja."
+        noticeTone="success"
         confirmText="Confirmar pago"
         onClose={() => setPayTarget(null)}
         onConfirm={payCurrent}
@@ -187,6 +189,7 @@ export function SuppliesPaymentsPanel({
         open={Boolean(deleteTarget)}
         title="Eliminar cobro de útiles"
         description={`Eliminarás el cobro "${deleteTarget?.nombreConcepto}".`}
+        notice="Elimina este cobro adicional solo si fue creado por error o ya no debe existir."
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteCurrent}
       />

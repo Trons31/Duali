@@ -1,5 +1,33 @@
 import { z } from "zod";
 
+const localDateInputSchema = z.union([z.string(), z.date()]).transform((value, ctx) => {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Fecha inválida" });
+      return z.NEVER;
+    }
+
+    return value;
+  }
+
+  const trimmed = value.trim();
+  const localDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+
+  if (localDateMatch) {
+    const [, year, month, day] = localDateMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  }
+
+  const parsed = new Date(trimmed);
+
+  if (Number.isNaN(parsed.getTime())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Fecha inválida" });
+    return z.NEVER;
+  }
+
+  return parsed;
+});
+
 export const registerSchema = z.object({
   nombre: z.string().min(2),
   email: z.string().email().transform((v) => v.toLowerCase()),
@@ -122,7 +150,7 @@ export const expenseSchema = z.object({
   concepto: z.string().min(2),
   descripcion: z.string().optional().nullable(),
   monto: z.coerce.number().positive(),
-  fecha: z.coerce.date(),
+  fecha: localDateInputSchema,
   categoria: z.string().optional().nullable()
 });
 
