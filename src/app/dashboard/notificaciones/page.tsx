@@ -7,7 +7,7 @@ export default async function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="shell-card px-6 py-6 sm:px-8">
+      <section className="px-1 py-1 sm:px-0">
         <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-ink-400">Bandeja</p>
         <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-ink-950 sm:text-4xl">
           Notificaciones del administrador
