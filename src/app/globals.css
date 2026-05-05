@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-mesh-brand text-ink-950 antialiased;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+::selection {
+  background: rgba(20, 184, 126, 0.18);
+}
+
+@layer components {
+  .shell-card {
+    @apply rounded-3xl border border-white/70 bg-white/90 shadow-card backdrop-blur;
+  }
+
+  .soft-divider {
+    @apply border-t border-ink-100/80;
+  }
+
+  .field-base {
+    @apply w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm text-ink-900 outline-none transition placeholder:text-ink-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-100;
+  }
+}

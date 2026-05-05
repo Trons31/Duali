@@ -44,7 +44,8 @@ const studentBaseSchema = z.object({
   grupoId: z.string().min(1),
   estado: z.enum(["ACTIVO", "INACTIVO"]).optional(),
   precioMensualidad: z.coerce.number().positive().optional().nullable(),
-  diaCobro: z.coerce.number().int().min(1).max(28).optional().nullable()
+  diaCobro: z.coerce.number().int().min(1).max(28).optional().nullable(),
+  modalidadMensualidad: z.enum(["ANTICIPADA", "VENCIDA"]).default("ANTICIPADA")
 });
 
 const studentCreateSchema = studentBaseSchema.extend({

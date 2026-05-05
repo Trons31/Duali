@@ -1,4 +1,4 @@
-import { currentMonthlyPeriod, localDateAtNoon, paymentStatusForDueDate, startOfLocalDay } from "./dates";
+import { currentMonthlyPeriod, monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "./dates";
 import { prisma } from "./prisma";
 
 export async function ensureCurrentMonthlyPayments(clientId: string) {
@@ -21,13 +21,24 @@ export async function ensureCurrentMonthlyPayments(clientId: string) {
         }
       }
     }
-  });
+  }) as Array<{
+    id: string;
+    grupoId: string;
+    precioMensualidad: number | string | null;
+    diaCobro: number | null;
+    modalidadMensualidad?: "ANTICIPADA" | "VENCIDA";
+  }>;
 
   if (students.length === 0) return;
 
   await prisma.monthlyPayment.createMany({
     data: students.map((student) => {
-      const fechaVencimiento = localDateAtNoon(anio, mes, student.diaCobro ?? 10);
+      const fechaVencimiento = monthlyDueDateForPeriod(
+        mes,
+        anio,
+        student.diaCobro ?? 10,
+        student.modalidadMensualidad ?? "ANTICIPADA"
+      );
       return {
         estudianteId: student.id,
         grupoId: student.grupoId,

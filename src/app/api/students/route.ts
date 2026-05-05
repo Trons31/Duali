@@ -1,5 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { requireClient } from "@/lib/auth";
-import { currentMonthlyPeriod, localDateAtNoon, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
+import { currentMonthlyPeriod, monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, created, handleError, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { studentSchema } from "@/lib/validations";
@@ -9,37 +10,85 @@ export async function GET(request: Request) {
     const { clientId } = await requireClient(request);
     const url = new URL(request.url);
     const groupId = url.searchParams.get("groupId") ?? undefined;
-    const q = url.searchParams.get("q") ?? undefined;
+    const q = (url.searchParams.get("q") ?? "").trim();
+    const status = (url.searchParams.get("status") ?? "todos").toLowerCase();
+    const page = Math.max(Number(url.searchParams.get("page") ?? "1") || 1, 1);
+    const pageSize = Math.min(Math.max(Number(url.searchParams.get("pageSize") ?? "12") || 12, 1), 50);
 
-    const students = await prisma.student.findMany({
-      where: {
-        clientId,
-        deletedAt: null,
-        ...(groupId ? { grupoId: groupId } : {}),
-        ...(q
-          ? {
-              OR: [
-                { nombre: { contains: q, mode: "insensitive" } },
-                { apellido: { contains: q, mode: "insensitive" } },
-                { celular: { contains: q, mode: "insensitive" } },
-                { telefonoPadre: { contains: q, mode: "insensitive" } }
-              ]
+    const where: Prisma.StudentWhereInput = {
+      clientId,
+      deletedAt: null,
+      ...(groupId ? { grupoId: groupId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { nombre: { contains: q, mode: "insensitive" as const } },
+              { apellido: { contains: q, mode: "insensitive" as const } },
+              { celular: { contains: q, mode: "insensitive" as const } },
+              { telefonoPadre: { contains: q, mode: "insensitive" as const } }
+            ]
+          }
+        : {}),
+      ...(status === "activos" ? { estado: "ACTIVO" as const } : {}),
+      ...(status === "inactivos" ? { estado: "INACTIVO" as const } : {}),
+      ...(status === "aldia"
+        ? {
+            monthlyPayments: {
+              some: {
+                deletedAt: null,
+                mes: new Date().getMonth() + 1,
+                anio: new Date().getFullYear(),
+                estado: "PAGADO" as const
+              }
             }
-          : {})
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        enrollmentPayment: true,
-        group: true,
-        monthlyPayments: {
-          where: { deletedAt: null },
-          orderBy: [{ anio: "desc" }, { mes: "desc" }],
-          take: 6
+          }
+        : {}),
+      ...(status === "pendientes"
+        ? {
+            estado: "ACTIVO" as const,
+            monthlyPayments: {
+              some: {
+                deletedAt: null,
+                estado: { in: ["PENDIENTE", "VENCIDO"] }
+              }
+            }
+          }
+        : {})
+    };
+
+    const [total, students] = await Promise.all([
+      prisma.student.count({ where }),
+      prisma.student.findMany({
+        where,
+        orderBy: [{ estado: "asc" }, { createdAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          enrollmentPayment: true,
+          group: true,
+          monthlyPayments: {
+            where: { deletedAt: null },
+            orderBy: [{ anio: "desc" }, { mes: "desc" }],
+            take: 6
+          }
         }
+      })
+    ]);
+
+    return ok({
+      items: students,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(Math.ceil(total / pageSize), 1)
+      },
+      filters: {
+        q,
+        status: ["todos", "activos", "aldia", "pendientes", "inactivos"].includes(status) ? status : "todos",
+        groupId
       }
     });
-
-    return ok(students);
   } catch (error) {
     return handleError(error);
   }
@@ -62,7 +111,7 @@ export async function POST(request: Request) {
         inscripcionMetodoPago,
         ...studentData
       } = body;
-      const createdStudent = await tx.student.create({ data: { ...studentData, clientId } });
+      const createdStudent = await tx.student.create({ data: { ...studentData, clientId } as never });
 
       if (tipoRegistro === "NUEVO" && inscripcionMonto) {
         const fechaVencimiento = new Date();
@@ -84,7 +133,12 @@ export async function POST(request: Request) {
         const firstPeriod = tipoRegistro === "NUEVO" || pagoMesActual
           ? nextMonthlyPeriod(currentPeriod.mes, currentPeriod.anio)
           : currentPeriod;
-        const fechaVencimiento = localDateAtNoon(firstPeriod.anio, firstPeriod.mes, body.diaCobro);
+        const fechaVencimiento = monthlyDueDateForPeriod(
+          firstPeriod.mes,
+          firstPeriod.anio,
+          body.diaCobro,
+          body.modalidadMensualidad
+        );
 
         await tx.monthlyPayment.create({
           data: {

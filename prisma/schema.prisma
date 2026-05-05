@@ -13,6 +13,11 @@ enum StudentStatus {
   INACTIVO
 }
 
+enum MonthlyBillingMode {
+  ANTICIPADA
+  VENCIDA
+}
+
 enum MonthlyPaymentStatus {
   PENDIENTE
   PAGADO
@@ -125,6 +130,7 @@ model Student {
   estado          StudentStatus @default(ACTIVO)
   precioMensualidad Decimal?    @db.Decimal(12, 2)
   diaCobro        Int?
+  modalidadMensualidad MonthlyBillingMode @default(ANTICIPADA)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?

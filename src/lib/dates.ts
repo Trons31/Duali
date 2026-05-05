@@ -33,6 +33,24 @@ export function nextMonthlyPeriod(mes: number, anio: number) {
   return mes === 12 ? { mes: 1, anio: anio + 1 } : { mes: mes + 1, anio };
 }
 
+export function previousMonthlyPeriod(mes: number, anio: number) {
+  return mes === 1 ? { mes: 12, anio: anio - 1 } : { mes: mes - 1, anio };
+}
+
+export function monthlyDueDateForPeriod(
+  mes: number,
+  anio: number,
+  diaCobro: number,
+  modalidadMensualidad: "ANTICIPADA" | "VENCIDA"
+) {
+  if (modalidadMensualidad === "ANTICIPADA") {
+    return localDateAtNoon(anio, mes, diaCobro);
+  }
+
+  const nextPeriod = nextMonthlyPeriod(mes, anio);
+  return addDays(localDateAtNoon(nextPeriod.anio, nextPeriod.mes, diaCobro), -1);
+}
+
 export function paymentStatusForDueDate(fechaVencimiento: Date) {
   return fechaVencimiento < startOfLocalDay() ? "VENCIDO" : "PENDIENTE";
 }

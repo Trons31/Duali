@@ -1,8 +1,57 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import { Toaster } from "sileo";
+import Providers from "@/app/providers";
+import "@/app/globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap"
+});
+
+const appUrl =
+  process.env.NEXT_PUBLIC_BASE_URL ??
+  process.env.NEXTAUTH_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 export const metadata: Metadata = {
-  title: "Pagos SaaS API",
-  description: "Backend API for Pagos SaaS"
+  metadataBase: new URL(appUrl),
+  title: {
+    default: "Duali",
+    template: "%s | Duali"
+  },
+  description: "Controla estudiantes, grupos, cobros, gastos y recordatorios desde la web.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Duali",
+    statusBarStyle: "default"
+  },
+  icons: {
+    icon: "/logo/icon.png",
+    shortcut: "/logo/icon.png",
+    apple: "/logo/icon.png"
+  },
+  openGraph: {
+    title: "Duali",
+    description: "Sistema de gestion academica y cobros para negocios educativos.",
+    images: [
+      {
+        url: "/logo/icon.png",
+        width: 512,
+        height: 512,
+        alt: "Duali"
+      }
+    ]
+  }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#14b87e"
 };
 
 export default function RootLayout({
@@ -12,7 +61,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body className={inter.className}>
+        <Providers>{children}</Providers>
+        <Toaster position="top-right" />
+      </body>
     </html>
   );
 }

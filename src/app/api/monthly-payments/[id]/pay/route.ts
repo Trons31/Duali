@@ -1,5 +1,5 @@
 import { requireClient } from "@/lib/auth";
-import { localDateAtNoon, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
+import { monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, handleError, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { payMonthlySchema } from "@/lib/validations";
@@ -16,6 +16,8 @@ export async function PUT(request: Request, context: Params) {
       include: { student: true }
     });
     if (!exists) throw new ApiError(404, "Mensualidad no encontrada");
+    const studentBillingMode =
+      (exists.student as { modalidadMensualidad?: "ANTICIPADA" | "VENCIDA" }).modalidadMensualidad ?? "ANTICIPADA";
 
     const payment = await prisma.$transaction(async (tx) => {
       const paidPayment = await tx.monthlyPayment.update({
@@ -32,7 +34,12 @@ export async function PUT(request: Request, context: Params) {
       if (exists.student.estado === "ACTIVO") {
         const nextPeriod = nextMonthlyPeriod(exists.mes, exists.anio);
         const billingDay = exists.student.diaCobro ?? exists.fechaVencimiento.getDate();
-        const fechaVencimiento = localDateAtNoon(nextPeriod.anio, nextPeriod.mes, billingDay);
+        const fechaVencimiento = monthlyDueDateForPeriod(
+          nextPeriod.mes,
+          nextPeriod.anio,
+          billingDay,
+          studentBillingMode
+        );
         const existingNextPayment = await tx.monthlyPayment.findUnique({
           where: {
             estudianteId_mes_anio: {

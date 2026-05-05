@@ -1,8 +1,7 @@
-export default function Page() {
-  return (
-    <main style={{ fontFamily: "system-ui", padding: 32 }}>
-      <h1>Pagos SaaS API</h1>
-      <p>Backend Next.js activo. Usa <code>/api/health</code> para comprobar estado.</p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/web-auth";
+
+export default async function Page() {
+  const session = await auth();
+  redirect(session ? "/dashboard" : "/auth/login");
 }
