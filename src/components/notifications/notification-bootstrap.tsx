@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { sileo } from "sileo";
 import { clientApiFetch } from "@/lib/client-api";
 import { getNotificationCursor, setNotificationCursor } from "@/lib/notification-store";
 
@@ -25,6 +24,11 @@ export function NotificationBootstrap() {
   const { data: session, status } = useSession();
   const runningRef = useRef(false);
   const [permissionPrompted, setPermissionPrompted] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (typeof window === "undefined") return "unsupported";
+    if (!("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  });
 
   const token = session?.user?.apiToken ?? null;
 
@@ -35,21 +39,27 @@ export function NotificationBootstrap() {
     if (permissionPrompted) return;
 
     setPermissionPrompted(true);
+    setPermission(Notification.permission);
 
     if (Notification.permission === "default") {
-      Notification.requestPermission().catch(() => undefined);
+      Notification.requestPermission()
+        .then((result) => setPermission(result))
+        .catch(() => undefined);
     }
   }, [permissionPrompted, status]);
 
   useEffect(() => {
     if (status !== "authenticated" || !token) return;
+    if (permission !== "granted") return;
 
     const apiToken = token;
-
     let mounted = true;
 
     async function syncNotifications() {
       if (!mounted || runningRef.current) return;
+      if (typeof window === "undefined" || !("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+
       runningRef.current = true;
 
       try {
@@ -65,10 +75,9 @@ export function NotificationBootstrap() {
 
         const unseen = payload.notifications;
         const maxSequence = Math.max(afterSequence, ...unseen.map((item) => item.sequence));
-        await setNotificationCursor(maxSequence);
 
-        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-          unseen.forEach((notification) => {
+        unseen.forEach((notification) => {
+          try {
             const browserNotification = new Notification(notification.title, {
               body: notification.body,
               icon: "/logo/icon.png",
@@ -81,15 +90,12 @@ export function NotificationBootstrap() {
               window.location.assign(href);
               browserNotification.close();
             };
-          });
-        }
-
-        sileo.success({
-          title:
-            unseen.length === 1
-              ? unseen[0].title
-              : `${unseen.length} recordatorios nuevos listos para revisar`
+          } catch {
+            return;
+          }
         });
+
+        await setNotificationCursor(maxSequence);
 
         await clientApiFetch(
           "/api/notifications",
@@ -112,9 +118,13 @@ export function NotificationBootstrap() {
 
     const intervalId = window.setInterval(() => {
       void syncNotifications();
-    }, 45_000);
+    }, 90_000);
 
     const visibilityHandler = () => {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        setPermission(Notification.permission);
+      }
+
       if (document.visibilityState === "visible") {
         void syncNotifications();
       }
@@ -129,19 +139,7 @@ export function NotificationBootstrap() {
       window.removeEventListener("online", syncNotifications);
       document.removeEventListener("visibilitychange", visibilityHandler);
     };
-  }, [status, token]);
+  }, [permission, status, token]);
 
-  const banner = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    if (!("Notification" in window)) return null;
-    if (Notification.permission === "granted") return null;
-
-    return (
-      <div className="mb-6 shell-card border border-brand-100 bg-brand-50/80 px-4 py-4 text-sm text-brand-900">
-        Activa las notificaciones del navegador para recibir recordatorios del administrador también en web.
-      </div>
-    );
-  }, []);
-
-  return banner;
+  return null;
 }

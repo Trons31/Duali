@@ -105,12 +105,12 @@ export function DashboardShell({
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-80 border-r border-white/60 bg-white/88 backdrop-blur xl:block">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-80 border-r border-ink-100 bg-white xl:block">
         {nav}
       </aside>
 
       <div className="xl:pl-80">
-        <header className="sticky top-0 z-30 border-b border-white/60 bg-white/75 backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-ink-100 bg-white">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
             <div className="flex items-center gap-3">
               <button
@@ -139,7 +139,7 @@ export function DashboardShell({
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/70 bg-white/92 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur xl:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-100 bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 xl:hidden">
         <div className="grid grid-cols-4 gap-2">
           {flatItems.slice(0, 4).map((item) => {
             const Icon = item.icon;
@@ -162,7 +162,7 @@ export function DashboardShell({
       </nav>
 
       {open ? (
-        <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm xl:hidden" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-ink-950/40 xl:hidden" onClick={() => setOpen(false)}>
           <div className="h-full w-[86vw] max-w-sm bg-white shadow-soft" onClick={(event) => event.stopPropagation()}>
             <div className="flex justify-end px-4 pt-4">
               <button
