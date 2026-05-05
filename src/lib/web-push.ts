@@ -98,8 +98,8 @@ export async function sendWebPushNotifications(
   const message = JSON.stringify({
     title: payload.title,
     body: payload.body,
-    icon: "/logo/icon.png",
-    badge: "/logo/icon.png",
+    icon: "/logo/icon-metadata.png",
+    badge: "/logo/icon-metadata.png",
     tag: `notification-${payload.notificationId}`,
     data: {
       ...payload.data,

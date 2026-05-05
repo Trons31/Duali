@@ -11,8 +11,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Duali";
   const options = {
     body: payload.body || "",
-    icon: payload.icon || "/logo/icon.png",
-    badge: payload.badge || "/logo/icon.png",
+    icon: payload.icon || "/logo/icon-metadata.png",
+    badge: payload.badge || "/logo/icon-metadata.png",
     tag: payload.tag || undefined,
     data: payload.data || {}
   };

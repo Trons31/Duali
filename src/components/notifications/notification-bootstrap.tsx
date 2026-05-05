@@ -183,7 +183,7 @@ export function NotificationBootstrap() {
           try {
             const browserNotification = new Notification(notification.title, {
               body: notification.body,
-              icon: "/logo/icon.png",
+              icon: "/logo/icon-metadata.png",
               data: { href: notificationHref(notification) }
             });
 

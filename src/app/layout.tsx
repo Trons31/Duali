@@ -30,14 +30,14 @@ export const metadata: Metadata = {
   icons: {
     icon: "/logo/icon-metadata.png",
     shortcut: "/logo/icon-metadata.png",
-    apple: "/logo/icon.png"
+    apple: "/logo/icon-metadata.png"
   },
   openGraph: {
     title: "Duali",
     description: "Sistema de gestion academica y cobros para negocios educativos.",
     images: [
       {
-        url: "/logo/icon.png",
+        url: "/logo/icon-metadata.png",
         width: 512,
         height: 512,
         alt: "Duali"
