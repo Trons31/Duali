@@ -24,19 +24,40 @@ export async function middleware(request: NextRequest) {
     }));
 
   const isLoggedIn = Boolean(token);
+  const isAdmin = token?.role === "ADMIN" || token?.sub === "duali-admin";
   const { pathname } = request.nextUrl;
   const isPublicRoute = publicRoutes.has(pathname);
 
+  if (pathname.startsWith("/admin")) {
+    if (pathname === "/admin/login") {
+      return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/auth/login", request.url));
+    }
+
+    if (!isAdmin) {
+      return NextResponse.redirect(new URL("/auth/login", request.url));
+    }
+
+    return NextResponse.next();
+  }
+
   if (pathname === "/") {
-    return NextResponse.redirect(new URL(isLoggedIn ? "/dashboard" : "/auth/login", request.url));
+    return NextResponse.redirect(new URL(isAdmin ? "/admin" : isLoggedIn ? "/dashboard" : "/auth/login", request.url));
+  }
+
+  if (isAdmin && pathname.startsWith("/dashboard")) {
+    return NextResponse.redirect(new URL("/admin", request.url));
   }
 
   if (!isLoggedIn && !isPublicRoute) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
+  if (isLoggedIn && pathname === "/auth/login" && request.nextUrl.searchParams.get("session") === "expired") {
+    return NextResponse.next();
+  }
+
   if (isLoggedIn && (pathname === "/auth/login" || pathname === "/auth/register")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/dashboard", request.url));
   }
 
   return NextResponse.next();

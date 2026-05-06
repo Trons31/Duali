@@ -14,10 +14,10 @@ export async function POST(request: Request) {
         include: { student: true }
       });
 
-      if (!payment) throw new ApiError(404, "Inscripcion no encontrada");
+      if (!payment) throw new ApiError(404, "Inscripción no encontrada");
 
       const reminderData = buildReminderForEnrollment(payment);
-      if (!reminderData.phone) throw new ApiError(422, "El estudiante no tiene telÃ©fono disponible para WhatsApp");
+      if (!reminderData.phone) throw new ApiError(422, "El estudiante no tiene teléfono disponible para WhatsApp");
 
       const reminder = await prisma.reminder.create({
         data: {

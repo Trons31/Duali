@@ -323,3 +323,60 @@ export type AccountingOverview = {
   paymentMethods: AccountingPaymentMethod[];
   movements: AccountingMovement[];
 };
+
+export type SubscriptionStatus = "ACTIVA" | "PENDIENTE" | "SUSPENDIDA" | "CANCELADA" | "VENCIDA";
+
+export type SubscriptionPaymentItem = {
+  id: string;
+  amount: number;
+  periodStart: string;
+  periodEnd: string;
+  paidAt: string;
+  paymentMethod: string | null;
+  notes: string | null;
+};
+
+export type ClientSubscriptionSummary = {
+  id: string;
+  status: SubscriptionStatus | string;
+  price: number;
+  startedAt: string;
+  endsAt: string;
+  nextBillingAt: string;
+  daysUntilNextBilling: number;
+  notes: string | null;
+  plan: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string;
+    price: number;
+    features: unknown[];
+  };
+  payments: SubscriptionPaymentItem[];
+};
+
+export type ClientPlanResponse = {
+  client: SafeClient;
+  subscription: ClientSubscriptionSummary;
+};
+
+export type AdminSubscriptionClient = {
+  id: string;
+  nombre: string;
+  email: string;
+  telefono: string | null;
+  businessName: string;
+  createdAt: string;
+  subscription: ClientSubscriptionSummary;
+};
+
+export type AdminSubscriptionsResponse = {
+  clients: AdminSubscriptionClient[];
+  summary: {
+    totalClients: number;
+    active: number;
+    overdue: number;
+    monthlyRevenue: number;
+  };
+};

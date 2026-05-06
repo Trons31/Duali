@@ -83,7 +83,7 @@ export default async function OpenGraphImage() {
                 Controla estudiantes, grupos y cobros desde una sola plataforma.
               </div>
               <div style={{ fontSize: 32, lineHeight: 1.35, color: "#475569" }}>
-                Recordatorios, pagos, contabilidad y operacion diaria con una experiencia clara para academias y
+                Recordatorios, pagos, contabilidad y operación diaria con una experiencia clara para academias y
                 negocios educativos.
               </div>
             </div>

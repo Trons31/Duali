@@ -4,6 +4,7 @@ import { NotificationBootstrap } from "@/components/notifications/notification-b
 import { startOfLocalDay, startOfNextLocalDay } from "@/lib/dates";
 import { ensureCurrentMonthlyPayments } from "@/lib/monthly-payments";
 import { prisma } from "@/lib/prisma";
+import { ensureClientSubscription, serializeSubscription } from "@/lib/subscriptions";
 import { auth } from "@/lib/web-auth";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -13,13 +14,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/auth/login");
   }
 
+  if (session.user.role === "ADMIN") {
+    redirect("/admin");
+  }
+
+  if (session.user.role !== "CLIENT" || !session.user.apiToken) {
+    redirect("/auth/login?session=expired");
+  }
+
   const clientId = session.user.id;
   await ensureCurrentMonthlyPayments(clientId);
 
   const todayStart = startOfLocalDay();
   const tomorrowStart = startOfNextLocalDay();
 
-  const [pendingMonthlyCount, overdueMonthlyCount, enrollmentPendingCount] = await Promise.all([
+  const [pendingMonthlyCount, overdueMonthlyCount, enrollmentPendingCount, subscription] = await Promise.all([
     prisma.monthlyPayment.count({
       where: {
         clientId,
@@ -44,8 +53,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
         student: { estado: "ACTIVO", deletedAt: null },
         OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE" }]
       }
-    })
+    }),
+    ensureClientSubscription(clientId)
   ]);
+
+  const plan = serializeSubscription(subscription);
 
   const alerts = [
     overdueMonthlyCount > 0
@@ -62,7 +74,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       : null,
     enrollmentPendingCount > 0
       ? {
-          label: `${enrollmentPendingCount} inscripcion${enrollmentPendingCount === 1 ? "" : "es"} por cobrar`,
+          label: `${enrollmentPendingCount} inscripción${enrollmentPendingCount === 1 ? "" : "es"} por cobrar`,
           tone: "info" as const
         }
       : null
@@ -71,7 +83,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <DashboardShell
       user={session.user}
-      alerts={alerts.length ? alerts : [{ label: "Todo al dia", tone: "success" as const }]}
+      planDays={plan.daysUntilNextBilling}
+      planStatus={String(plan.status)}
+      alerts={alerts.length ? alerts : [{ label: "Todo al día", tone: "success" as const }]}
     >
       <NotificationBootstrap />
       {children}

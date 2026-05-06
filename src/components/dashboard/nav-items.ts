@@ -2,6 +2,7 @@ import {
   FiBell,
   FiBookOpen,
   FiCheckCircle,
+  FiCreditCard,
   FiDollarSign,
   FiGrid,
   FiLayers,
@@ -43,6 +44,10 @@ export const navSections = [
   },
   {
     title: "Cuenta",
-    items: [{ href: "/dashboard/perfil", label: "Perfil", icon: FiSettings }]
+    items: [
+      { href: "/dashboard/cliente", label: "Cliente", icon: FiUsers },
+      { href: "/dashboard/mi-plan", label: "Mi plan", icon: FiCreditCard },
+      { href: "/dashboard/perfil", label: "Perfil", icon: FiSettings }
+    ]
   }
 ];

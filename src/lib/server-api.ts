@@ -1,5 +1,4 @@
 import { headers } from "next/headers";
-import { signToken } from "@/lib/auth";
 import { auth } from "@/lib/web-auth";
 import { WebApiError } from "@/lib/web-api-errors";
 import { getAppBaseUrl } from "@/lib/web-utils";
@@ -11,15 +10,7 @@ async function getServerBaseUrl() {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const session = await auth();
-  const userId = session?.user?.id;
-  const email = session?.user?.email;
-  const token =
-    userId && email
-      ? signToken({
-          id: userId,
-          email
-        })
-      : "";
+  const token = session?.user?.role === "CLIENT" ? session.user.apiToken : "";
 
   if (!token) {
     throw new WebApiError("No autenticado", 401);

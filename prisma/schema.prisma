@@ -69,6 +69,14 @@ enum NotificationChannel {
   WEB_PUSH
 }
 
+enum SubscriptionStatus {
+  ACTIVA
+  PENDIENTE
+  SUSPENDIDA
+  CANCELADA
+  VENCIDA
+}
+
 model Client {
   id              String           @id @default(cuid())
   nombre          String
@@ -92,9 +100,73 @@ model Client {
   reminders        Reminder[]
   pushTokens       PushToken[]
   webPushSubscriptions WebPushSubscription[]
+  subscriptions    ClientSubscription[]
+  subscriptionPayments SubscriptionPayment[]
 
   @@index([email])
   @@map("clients")
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String
+  price       Decimal  @db.Decimal(12, 2)
+  features    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions ClientSubscription[]
+
+  @@index([isActive])
+  @@map("plans")
+}
+
+model ClientSubscription {
+  id            String             @id @default(cuid())
+  clientId      String
+  planId        String
+  status        SubscriptionStatus @default(ACTIVA)
+  price         Decimal            @db.Decimal(12, 2)
+  startedAt     DateTime
+  endsAt        DateTime
+  nextBillingAt DateTime
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  client        Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  plan          Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments      SubscriptionPayment[]
+
+  @@index([clientId])
+  @@index([planId])
+  @@index([status, nextBillingAt])
+  @@map("client_subscriptions")
+}
+
+model SubscriptionPayment {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  clientId       String
+  amount         Decimal  @db.Decimal(12, 2)
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime @default(now())
+  paymentMethod  String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscription   ClientSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  client         Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([clientId])
+  @@index([clientId, paidAt])
+  @@map("subscription_payments")
 }
 
 model WebPushConfig {

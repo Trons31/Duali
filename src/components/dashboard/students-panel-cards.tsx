@@ -40,7 +40,7 @@ type StudentFormValues = {
 const FILTER_OPTIONS: Array<{ label: string; value: StudentListFilter }> = [
   { label: "Todos", value: "todos" },
   { label: "Activos", value: "activos" },
-  { label: "Al dia", value: "aldia" },
+  { label: "Al día", value: "aldia" },
   { label: "Pendientes", value: "pendientes" },
   { label: "Inactivos", value: "inactivos" }
 ];
@@ -178,8 +178,8 @@ export function StudentsPanelCards({
   function goNextFromEnrollment() {
     if (!Number(watch("inscripcionMonto"))) {
       sileo.error({
-        title: "Inscripcion requerida",
-        description: "Ingresa el valor de la inscripcion para continuar."
+        title: "Inscripción requerida",
+        description: "Ingresa el valor de la inscripción para continuar."
       });
       return;
     }
@@ -189,8 +189,8 @@ export function StudentsPanelCards({
   function goNextFromCurrentPayment() {
     if (paidCurrentMonth === "SI" && !currentMonthPaymentMethod) {
       sileo.error({
-        title: "Metodo de pago requerido",
-        description: "Selecciona como pagaron la mensualidad actual."
+        title: "Método de pago requerido",
+        description: "Selecciona cómo pagaron la mensualidad actual."
       });
       return;
     }
@@ -209,8 +209,8 @@ export function StudentsPanelCards({
 
     if (!Number(watch("diaCobro"))) {
       sileo.error({
-        title: "Dia de cobro requerido",
-        description: "Selecciona el dia de cobro mensual."
+        title: "Día de cobro requerido",
+        description: "Selecciona el día de cobro mensual."
       });
       return;
     }
@@ -321,7 +321,7 @@ export function StudentsPanelCards({
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Buscar por nombre, apellido o telÃ©fono"
+                  placeholder="Buscar por nombre, apellido o teléfono"
                   className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
                 />
               </div>
@@ -367,10 +367,10 @@ export function StudentsPanelCards({
             <div>
               <h2 className="text-lg font-bold text-ink-950">Listado de alumnos</h2>
               <p className="mt-1 text-sm text-ink-500">
-                {students.pagination.total} total · pÃ¡g. {students.pagination.page}/{students.pagination.totalPages}
+                {students.pagination.total} total · pág. {students.pagination.page}/{students.pagination.totalPages}
               </p>
             </div>
-            <p className="text-sm text-ink-500">Fichas organizadas por alumno con la informaciÃ³n clave bien alineada.</p>
+            <p className="text-sm text-ink-500">Fichas organizadas por alumno con la información clave bien alineada.</p>
           </div>
 
           {!visibleStudents.length ? (
@@ -405,7 +405,7 @@ export function StudentsPanelCards({
                                 <StatusBadge value={student.estado} />
                               </div>
                               <p className="mt-1 text-sm text-ink-500">
-                                {student.group?.nombre ?? "Sin grupo"} · {student.edad} aÃ±os · {studentPaymentLabel(student)}
+                                {student.group?.nombre ?? "Sin grupo"} · {student.edad} años · {studentPaymentLabel(student)}
                               </p>
                             </button>
                           </div>
@@ -441,18 +441,18 @@ export function StudentsPanelCards({
                           />
                           <InfoBlock
                             label="Cobro"
-                            value={`Dia ${student.diaCobro ?? 10}`}
+                            value={`Día ${student.diaCobro ?? 10}`}
                             helper={monthlyModeCopy(student.modalidadMensualidad)}
                           />
                           <InfoBlock
-                            label="InscripciÃ³n"
-                            value={student.enrollmentPayment?.estado ?? "Sin inscripciÃ³n"}
+                            label="Inscripción"
+                            value={student.enrollmentPayment?.estado ?? "Sin inscripción"}
                             helper={student.enrollmentPayment ? currency(student.enrollmentPayment.monto) : "No aplica"}
                           />
                           <InfoBlock
                             label="Contacto"
                             value={contact || "Sin contacto"}
-                            helper={student.esMenorDeEdad ? "Acudiente o alumno" : "TelÃ©fono principal"}
+                            helper={student.esMenorDeEdad ? "Acudiente o alumno" : "Teléfono principal"}
                             icon={<FiPhone className="size-3.5 text-brand-600" />}
                           />
                         </div>
@@ -505,7 +505,7 @@ export function StudentsPanelCards({
         title={editTarget ? "Editar alumno" : "Nuevo alumno"}
         description={
           editTarget
-            ? "Actualiza los datos personales, el grupo y la configuracion de cobro del alumno."
+            ? "Actualiza los datos personales, el grupo y la configuración de cobro del alumno."
             : stepProgressLabel(step, registrationType)
         }
       >
@@ -529,7 +529,7 @@ export function StudentsPanelCards({
             <div className="space-y-4">
               <DecisionCard
                 title="Estudiante nuevo"
-                subtitle="Tendra inscripcion y luego definiras si ya cubrio la mensualidad de este mes."
+                subtitle="Tendrá inscripción y luego definirás si ya cubrió la mensualidad de este mes."
                 selected={registrationType === "NUEVO"}
                 onClick={() => {
                   reset(
@@ -544,7 +544,7 @@ export function StudentsPanelCards({
               />
               <DecisionCard
                 title="Estudiante antiguo"
-                subtitle="Ya venia asistiendo antes de registrarlo en Duali."
+                subtitle="Ya venía asistiendo antes de registrarlo en Duali."
                 selected={registrationType === "ANTIGUO"}
                 onClick={() => {
                   reset(
@@ -566,25 +566,25 @@ export function StudentsPanelCards({
             <div className="space-y-4">
               <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
                 <div>
-                  <p className="text-sm font-black text-ink-950">Inscripcion del alumno</p>
+                  <p className="text-sm font-black text-ink-950">Inscripción del alumno</p>
                   <p className="mt-1 text-sm text-ink-500">
-                    Define el valor de la inscripcion y si ya entro a caja o quedara pendiente por cobrar.
+                    Define el valor de la inscripción y si ya entró a caja o quedará pendiente por cobrar.
                   </p>
                 </div>
 
-                <Field label="Valor de inscripcion" error={errors.inscripcionMonto?.message}>
+                <Field label="Valor de inscripción" error={errors.inscripcionMonto?.message}>
                   <input
                     className="field-base"
                     inputMode="numeric"
                     {...register("inscripcionMonto", {
-                      required: registrationType === "NUEVO" ? "Ingresa el valor de la inscripcion" : false
+                      required: registrationType === "NUEVO" ? "Ingresa el valor de la inscripción" : false
                     })}
                   />
                 </Field>
 
                 <DecisionCard
-                  title="Ya pago la inscripcion"
-                  subtitle="Se registrara como ingreso del dia."
+                  title="Ya pagó la inscripción"
+                  subtitle="Se registrará como ingreso del día."
                   selected={enrollmentPaid === "SI"}
                   onClick={() => {
                     reset(
@@ -597,8 +597,8 @@ export function StudentsPanelCards({
                   }}
                 />
                 <DecisionCard
-                  title="No ha pagado la inscripcion"
-                  subtitle="Quedara pendiente para recordarle despues."
+                  title="No ha pagado la inscripción"
+                  subtitle="Quedará pendiente para recordarle después."
                   selected={enrollmentPaid === "NO"}
                   onClick={() => {
                     reset(
@@ -613,7 +613,7 @@ export function StudentsPanelCards({
 
                 {enrollmentPaid === "SI" ? (
                   <div className="space-y-3">
-                    <p className="text-sm font-black text-ink-900">Metodo de pago de inscripcion</p>
+                    <p className="text-sm font-black text-ink-900">Método de pago de inscripción</p>
                     <div className="flex flex-wrap gap-2">
                       {PAYMENT_METHODS.map((method) => (
                         <ChipButton
@@ -639,7 +639,7 @@ export function StudentsPanelCards({
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
-                  Atras
+                  Atrás
                 </Button>
                 <Button className="min-h-12 flex-1" type="button" onClick={goNextFromEnrollment}>
                   Siguiente
@@ -654,13 +654,13 @@ export function StudentsPanelCards({
                 <div>
                   <p className="text-sm font-black text-ink-950">Pago del mes actual</p>
                   <p className="mt-1 text-sm text-ink-500">
-                    Define si este mes ya entro a caja. Si marco que si, se registrara como ingreso.
+                    Define si este mes ya entró a caja. Si marcó que sí, se registrará como ingreso.
                   </p>
                 </div>
 
                 <DecisionCard
-                  title="Si, ya pago este mes"
-                  subtitle="Se registrara el mes actual como pagado y el ingreso entrara a caja."
+                  title="Sí, ya pagó este mes"
+                  subtitle="Se registrará el mes actual como pagado y el ingreso entrará a caja."
                   selected={paidCurrentMonth === "SI"}
                   onClick={() => {
                     reset(
@@ -676,8 +676,8 @@ export function StudentsPanelCards({
                   title="No ha pagado este mes"
                   subtitle={
                     registrationType === "NUEVO"
-                      ? "El primer cobro empezara en el siguiente mes para este alumno nuevo."
-                      : "Se creara el cobro del mes actual segun su dia de pago."
+                      ? "El primer cobro empezará en el siguiente mes para este alumno nuevo."
+                      : "Se creará el cobro del mes actual según su día de pago."
                   }
                   selected={paidCurrentMonth === "NO"}
                   onClick={() => {
@@ -693,7 +693,7 @@ export function StudentsPanelCards({
 
                 {paidCurrentMonth === "SI" ? (
                   <div className="space-y-3">
-                    <p className="text-sm font-black text-ink-900">Metodo de pago de la mensualidad</p>
+                    <p className="text-sm font-black text-ink-900">Método de pago de la mensualidad</p>
                     <div className="flex flex-wrap gap-2">
                       {PAYMENT_METHODS.map((method) => (
                         <ChipButton
@@ -719,7 +719,7 @@ export function StudentsPanelCards({
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
-                  Atras
+                  Atrás
                 </Button>
                 <Button className="min-h-12 flex-1" type="button" onClick={goNextFromCurrentPayment}>
                   Siguiente
@@ -734,7 +734,7 @@ export function StudentsPanelCards({
                 <div>
                   <p className="text-sm font-black text-ink-950">Mensualidad</p>
                   <p className="mt-1 text-sm text-ink-500">
-                    Configura valor, tipo de mensualidad y dia exacto en que se controla el cobro.
+                    Configura valor, tipo de mensualidad y día exacto en que se controla el cobro.
                   </p>
                 </div>
 
@@ -750,7 +750,7 @@ export function StudentsPanelCards({
                   <p className="text-sm font-black text-ink-900">Tipo de mensualidad</p>
                   <DecisionCard
                     title="Anticipada"
-                    subtitle="Se cobra el dia en que inicia el periodo mensual del alumno."
+                    subtitle="Se cobra el día en que inicia el período mensual del alumno."
                     selected={billingMode === "ANTICIPADA"}
                     onClick={() => {
                       reset(
@@ -764,7 +764,7 @@ export function StudentsPanelCards({
                   />
                   <DecisionCard
                     title="Vencida"
-                    subtitle="Se cobra al final del periodo, despues de que el alumno ya inicio."
+                    subtitle="Se cobra al final del período, después de que el alumno ya inició."
                     selected={billingMode === "VENCIDA"}
                     onClick={() => {
                       reset(
@@ -779,7 +779,7 @@ export function StudentsPanelCards({
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-sm font-black text-ink-900">Dia de cobro mensual</p>
+                  <p className="text-sm font-black text-ink-900">Día de cobro mensual</p>
                   <select
                     value={selectedBillingDay}
                     onChange={(event) => {
@@ -795,7 +795,7 @@ export function StudentsPanelCards({
                   >
                     {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
                       <option key={day} value={day}>
-                        Dia {day}
+                        Día {day}
                       </option>
                     ))}
                   </select>
@@ -807,7 +807,7 @@ export function StudentsPanelCards({
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
-                  Atras
+                  Atrás
                 </Button>
                 <Button className="min-h-12 flex-1" type="button" onClick={goNextFromMonthly}>
                   Siguiente
@@ -838,7 +838,7 @@ export function StudentsPanelCards({
                   <div>
                     <p className="text-sm font-black text-ink-950">Datos del acudiente</p>
                     <p className="mt-1 text-sm font-medium text-ink-500">
-                      Como tiene menos de 18 anos, estos datos ayudan con recordatorios y contacto.
+                      Como tiene menos de 18 años, estos datos ayudan con recordatorios y contacto.
                     </p>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -858,9 +858,9 @@ export function StudentsPanelCards({
               {editTarget ? (
                 <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
                   <div>
-                    <p className="text-sm font-black text-ink-950">Configuracion de mensualidad</p>
+                    <p className="text-sm font-black text-ink-950">Configuración de mensualidad</p>
                     <p className="mt-1 text-sm font-medium text-ink-500">
-                      Ajusta el valor, la modalidad y el dia de cobro del alumno.
+                      Ajusta el valor, la modalidad y el día de cobro del alumno.
                     </p>
                   </div>
 
@@ -875,7 +875,7 @@ export function StudentsPanelCards({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <DecisionCard
                       title="Anticipada"
-                      subtitle="Se cobra al inicio del periodo."
+                      subtitle="Se cobra al inicio del período."
                       selected={billingMode === "ANTICIPADA"}
                       onClick={() => {
                         reset(
@@ -889,7 +889,7 @@ export function StudentsPanelCards({
                     />
                     <DecisionCard
                       title="Vencida"
-                      subtitle="Se cobra al final del periodo."
+                      subtitle="Se cobra al final del período."
                       selected={billingMode === "VENCIDA"}
                       onClick={() => {
                         reset(
@@ -904,7 +904,7 @@ export function StudentsPanelCards({
                   </div>
 
                   <div className="space-y-3">
-                    <p className="text-sm font-black text-ink-900">Dia de cobro mensual</p>
+                    <p className="text-sm font-black text-ink-900">Día de cobro mensual</p>
                     <select
                       value={selectedBillingDay}
                       onChange={(event) => {
@@ -920,7 +920,7 @@ export function StudentsPanelCards({
                     >
                       {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
                         <option key={day} value={day}>
-                          Dia {day}
+                          Día {day}
                         </option>
                       ))}
                     </select>
@@ -953,7 +953,7 @@ export function StudentsPanelCards({
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
-                  {editTarget ? "Cancelar" : "Atras"}
+                  {editTarget ? "Cancelar" : "Atrás"}
                 </Button>
                 <Button className="min-h-12 flex-1" type="submit" loading={isSubmitting}>
                   {editTarget ? "Guardar cambios" : "Guardar alumno"}
@@ -967,8 +967,8 @@ export function StudentsPanelCards({
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Desactivar alumno"
-        description={`El alumno ${deleteTarget?.nombre ?? ""} ${deleteTarget?.apellido ?? ""} dejara de aparecer como activo en cobros nuevos.`}
-        notice="Desactiva este alumno solo si ya no debe participar en nuevos cobros ni en la operacion activa."
+        description={`El alumno ${deleteTarget?.nombre ?? ""} ${deleteTarget?.apellido ?? ""} dejará de aparecer como activo en cobros nuevos.`}
+        notice="Desactiva este alumno solo si ya no debe participar en nuevos cobros ni en la operación activa."
         confirmText="Desactivar"
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteStudent}
@@ -1138,7 +1138,7 @@ function hasPendingPayment(student: StudentListItem) {
 
 function studentPaymentLabel(student: StudentListItem) {
   const payment = currentPayment(student);
-  if (payment?.estado === "PAGADO") return "al dia";
+  if (payment?.estado === "PAGADO") return "al día";
   if (hasPendingPayment(student)) return "pendiente";
   return "sin cobro del mes";
 }
@@ -1175,22 +1175,22 @@ function stepProgressLabel(step: CreateStep, registrationType: StudentFormValues
 
 function stepTitle(step: CreateStep) {
   if (step === "TYPE") return "Tipo de estudiante";
-  if (step === "ENROLLMENT") return "Inscripcion";
+  if (step === "ENROLLMENT") return "Inscripción";
   if (step === "CURRENT_PAYMENT") return "Pago del mes actual";
   if (step === "MONTHLY") return "Mensualidad";
   return "Datos personales";
 }
 
 function stepCopy(step: CreateStep) {
-  if (step === "TYPE") return "Primero define si el alumno llega nuevo a la academia o si ya venia asistiendo.";
+  if (step === "TYPE") return "Primero define si el alumno llega nuevo a la academia o si ya venía asistiendo.";
   if (step === "ENROLLMENT") {
-    return "La inscripcion queda separada para que el registro y el cobro sean faciles de entender.";
+    return "La inscripción queda separada para que el registro y el cobro sean fáciles de entender.";
   }
   if (step === "CURRENT_PAYMENT") {
     return "Confirma si la mensualidad de este mes ya fue pagada antes de configurar el ciclo.";
   }
   if (step === "MONTHLY") {
-    return "Define el valor mensual, la modalidad y el dia de cobro que usara el sistema.";
+    return "Define el valor mensual, la modalidad y el día de cobro que usará el sistema.";
   }
   return "Completa los datos del alumno, el contacto y el grupo al que pertenece.";
 }
@@ -1202,25 +1202,25 @@ function billingStartCopy(
 ) {
   const modeCopy = billingModeExplanation(modalidadMensualidad);
   if (pagoMesActual === "SI") {
-    return `Como ya pago este mes, se registrara el ingreso actual y el siguiente cobro aparecera en el proximo ciclo. ${modeCopy}`.trim();
+    return `Como ya pagó este mes, se registrará el ingreso actual y el siguiente cobro aparecerá en el próximo ciclo. ${modeCopy}`.trim();
   }
 
   if (tipoRegistro === "NUEVO") {
-    return `Como es un alumno nuevo y no pago este mes, la primera mensualidad empezara desde el siguiente mes. ${modeCopy}`.trim();
+    return `Como es un alumno nuevo y no pagó este mes, la primera mensualidad empezará desde el siguiente mes. ${modeCopy}`.trim();
   }
 
-  return `Como aun no pago este mes, se creara el cobro del mes actual. Si el dia ya paso, quedara vencido; si es hoy, quedara pendiente. ${modeCopy}`.trim();
+  return `Como aún no pagó este mes, se creará el cobro del mes actual. Si el día ya pasó, quedará vencido; si es hoy, quedará pendiente. ${modeCopy}`.trim();
 }
 
 function billingModeExplanation(mode: StudentFormValues["modalidadMensualidad"]) {
   if (mode === "VENCIDA") {
-    return "Ademas, al ser vencida, el cobro se toma para el final del periodo.";
+    return "Además, al ser vencida, el cobro se toma para el final del período.";
   }
-  return "Ademas, al ser anticipada, el cobro se toma al inicio del periodo.";
+  return "Además, al ser anticipada, el cobro se toma al inicio del período.";
 }
 
 function monthlyModeCopy(mode: StudentListItem["modalidadMensualidad"]) {
-  return mode === "VENCIDA" ? "Cobro al final del periodo" : "Cobro al inicio del periodo";
+  return mode === "VENCIDA" ? "Cobro al final del período" : "Cobro al inicio del período";
 }
 
 function progressDotClass(active: boolean) {

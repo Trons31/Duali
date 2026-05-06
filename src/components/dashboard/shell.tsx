@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
-import { FiLogOut, FiMenu, FiX } from "react-icons/fi";
+import { FiZap, FiLogOut, FiMenu, FiX } from "react-icons/fi";
 import { navSections } from "@/components/dashboard/nav-items";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ type HeaderAlert = {
 
 export function DashboardShell({
   user,
+  planDays,
+  planStatus,
   alerts,
   children
 }: {
@@ -26,6 +28,8 @@ export function DashboardShell({
     email?: string | null;
     businessName: string;
   };
+  planDays: number;
+  planStatus: string;
   alerts: HeaderAlert[];
   children: React.ReactNode;
 }) {
@@ -34,6 +38,8 @@ export function DashboardShell({
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
+  const isPlanOverdue = planDays < 0 || planStatus === "VENCIDA";
+  const visiblePlanDays = Math.max(planDays, 0);
 
   const flatItems = useMemo(() => navSections.flatMap((section) => section.items), []);
 
@@ -112,14 +118,14 @@ export function DashboardShell({
             onClick={handleLogout}
           >
             <FiLogOut className="size-4" />
-            <span>Cerrar sesion</span>
+            <span>Cerrar sesión</span>
           </Button>
 
           <button
             type="button"
             onClick={() => setOpen(false)}
             className="rounded-full bg-ink-100 p-2 text-ink-700 xl:hidden"
-            aria-label="Cerrar menu"
+            aria-label="Cerrar menú"
           >
             <FiX className="size-5" />
           </button>
@@ -187,7 +193,7 @@ export function DashboardShell({
 
             <Button type="button" variant="ghost" className="shrink-0 justify-center px-3 sm:hidden" onClick={handleLogout}>
               <FiLogOut className="size-4" />
-              <span>Cerrar sesion</span>
+              <span>Cerrar sesión</span>
             </Button>
           </div>
         </div>
@@ -206,26 +212,44 @@ export function DashboardShell({
 
       <div className="xl:pl-80">
         <header className="sticky top-0 z-30 border-b border-ink-100 bg-white">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="rounded-2xl border border-ink-200 bg-white p-3 text-ink-700 xl:hidden"
-              >
-                <FiMenu className="size-5" />
-              </button>
+          <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3 xl:hidden">
+                  <BrandLogo size={40} priority />
+                  <p className="truncate text-sm font-black text-ink-950">{user.businessName}</p>
+                </div>
 
-              <div className="min-w-0">
-                <HeaderAlertRotator alerts={alerts} activeIndex={activeAlertIndex} />
+                <div className="hidden min-w-0 xl:block">
+                  <HeaderAlertRotator alerts={alerts} activeIndex={activeAlertIndex} />
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-3">
+                <PlanDaysPill days={visiblePlanDays} overdue={isPlanOverdue} />
+
+                <button
+                  type="button"
+                  onClick={() => setOpen(true)}
+                  className="rounded-2xl border border-ink-200 bg-white p-3 text-ink-700 xl:hidden"
+                  aria-label="Abrir menú"
+                >
+                  <FiMenu className="size-5" />
+                </button>
+              </div>
+
+              <div className="hidden items-center gap-2 rounded-full bg-white px-3 py-2 shadow-sm sm:flex">
+                <BrandLogo size={34} />
+                <div className="text-right">
+                  <p className="text-sm font-bold text-ink-950">{user.businessName}</p>
+                  <p className="text-xs text-ink-500">{user.name}</p>
+                </div>
               </div>
             </div>
 
-            <div className="hidden items-center gap-2 rounded-full bg-white px-3 py-2 shadow-sm sm:flex">
-              <BrandLogo size={34} />
-              <div className="text-right">
-                <p className="text-sm font-bold text-ink-950">{user.businessName}</p>
-                <p className="text-xs text-ink-500">{user.name}</p>
+            <div className="mt-2 xl:hidden">
+              <div className="flex justify-center">
+                <HeaderAlertRotator alerts={alerts} activeIndex={activeAlertIndex} />
               </div>
             </div>
           </div>
@@ -268,6 +292,22 @@ export function DashboardShell({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function PlanDaysPill({ days, overdue }: { days: number; overdue: boolean }) {
+  return (
+    <Link
+      href="/dashboard/mi-plan"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-black leading-none shadow-sm",
+        overdue ? "bg-rose-50 text-rose-700" : days <= 3 ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"
+      )}
+      aria-label={overdue ? "Plan vencido" : `Quedan ${days} días del plan`}
+    >
+      <FiZap className="size-3.5" />
+      <span>{overdue ? "Plan 0d" : `Plan ${days}d`}</span>
+    </Link>
   );
 }
 

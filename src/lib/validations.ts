@@ -195,3 +195,9 @@ export const whatsappReminderSchema = z.object({
 }).refine((data) => Boolean(data.monthlyPaymentId) !== Boolean(data.enrollmentPaymentId), {
   message: "Debes enviar una mensualidad o una inscripcion"
 });
+
+export const subscriptionPaymentSchema = z.object({
+  paymentMethod: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  paidAt: localDateInputSchema.optional()
+});

@@ -11,7 +11,7 @@ export async function PUT(request: Request, context: Params) {
     const { clientId } = await requireClient(request);
     const body = payEnrollmentSchema.parse(await readBody(request));
     const exists = await prisma.enrollmentPayment.findFirst({ where: { id, clientId, deletedAt: null } });
-    if (!exists) throw new ApiError(404, "Inscripcion no encontrada");
+    if (!exists) throw new ApiError(404, "Inscripción no encontrada");
 
     const payment = await prisma.enrollmentPayment.update({
       where: { id },
