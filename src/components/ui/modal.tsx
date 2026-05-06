@@ -32,21 +32,38 @@ export function Modal({
     if (!open || typeof window === "undefined") return;
 
     const { body, documentElement } = document;
+    const scrollY = window.scrollY;
     const previousHtmlOverflow = documentElement.style.overflow;
     const previousHtmlOverscroll = documentElement.style.overscrollBehavior;
+    const previousBodyPosition = body.style.position;
+    const previousBodyTop = body.style.top;
+    const previousBodyLeft = body.style.left;
+    const previousBodyRight = body.style.right;
+    const previousBodyWidth = body.style.width;
     const previousBodyOverflow = body.style.overflow;
     const previousBodyOverscroll = body.style.overscrollBehavior;
 
     documentElement.style.overflow = "hidden";
     documentElement.style.overscrollBehavior = "none";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
     body.style.overflow = "hidden";
     body.style.overscrollBehavior = "none";
 
     return () => {
       documentElement.style.overflow = previousHtmlOverflow;
       documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+      body.style.position = previousBodyPosition;
+      body.style.top = previousBodyTop;
+      body.style.left = previousBodyLeft;
+      body.style.right = previousBodyRight;
+      body.style.width = previousBodyWidth;
       body.style.overflow = previousBodyOverflow;
       body.style.overscrollBehavior = previousBodyOverscroll;
+      window.scrollTo(0, scrollY);
     };
   }, [open]);
 
@@ -58,7 +75,7 @@ export function Modal({
         type="button"
         aria-label="Cerrar modal"
         onClick={onClose}
-        className="absolute inset-0 bg-black/64"
+        className="absolute inset-0 bg-ink-950/60"
       />
       <div className="relative flex h-full items-end sm:justify-center sm:p-4">
         <div className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[30px] bg-white shadow-soft [transform:translateZ(0)] sm:mt-auto sm:max-h-[84vh] sm:max-w-2xl sm:rounded-[30px]">

@@ -35,6 +35,26 @@ textarea {
   background: rgba(20, 184, 126, 0.18);
 }
 
+@keyframes alert-fade {
+  0%,
+  9% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  18%,
+  82% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  92%,
+  100% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
 @layer components {
   .shell-card {
     @apply rounded-3xl border border-white/70 bg-white/90 shadow-card backdrop-blur;

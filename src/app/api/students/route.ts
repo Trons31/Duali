@@ -105,6 +105,7 @@ export async function POST(request: Request) {
       const {
         tipoRegistro,
         pagoMesActual,
+        mensualidadMetodoPagoActual,
         inscripcionMonto,
         inscripcionPagada,
         inscripcionFechaPago,
@@ -130,9 +131,10 @@ export async function POST(request: Request) {
 
       if (body.precioMensualidad && body.diaCobro) {
         const currentPeriod = currentMonthlyPeriod();
-        const firstPeriod = tipoRegistro === "NUEVO" || pagoMesActual
-          ? nextMonthlyPeriod(currentPeriod.mes, currentPeriod.anio)
-          : currentPeriod;
+        const firstPeriod =
+          tipoRegistro === "NUEVO" && !pagoMesActual
+            ? nextMonthlyPeriod(currentPeriod.mes, currentPeriod.anio)
+            : currentPeriod;
         const fechaVencimiento = monthlyDueDateForPeriod(
           firstPeriod.mes,
           firstPeriod.anio,
@@ -149,7 +151,9 @@ export async function POST(request: Request) {
             anio: firstPeriod.anio,
             monto: body.precioMensualidad,
             fechaVencimiento,
-            estado: paymentStatusForDueDate(fechaVencimiento)
+            estado: pagoMesActual ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
+            fechaPago: pagoMesActual ? new Date() : null,
+            metodoPago: pagoMesActual ? mensualidadMetodoPagoActual : null
           }
         });
       }

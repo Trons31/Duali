@@ -16,11 +16,24 @@ const appUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
+  applicationName: "Duali",
   title: {
-    default: "Duali",
+    default: "Duali | Gestion academica y cobros",
     template: "%s | Duali"
   },
-  description: "Controla estudiantes, grupos, cobros, gastos y recordatorios desde la web.",
+  description: "Controla estudiantes, grupos, cobros, gastos y recordatorios desde la web de Duali.",
+  keywords: [
+    "duali",
+    "gestion academica",
+    "cobros",
+    "mensualidades",
+    "inscripciones",
+    "recordatorios",
+    "academia"
+  ],
+  alternates: {
+    canonical: "/"
+  },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -33,16 +46,25 @@ export const metadata: Metadata = {
     apple: "/logo/icon-metadata.png"
   },
   openGraph: {
-    title: "Duali",
+    type: "website",
+    url: appUrl,
+    siteName: "Duali",
+    title: "Duali | Gestion academica y cobros",
     description: "Sistema de gestion academica y cobros para negocios educativos.",
     images: [
       {
-        url: "/logo/icon-metadata.png",
-        width: 512,
-        height: 512,
-        alt: "Duali"
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Duali | Gestion academica y cobros"
       }
     ]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Duali | Gestion academica y cobros",
+    description: "Sistema de gestion academica y cobros para negocios educativos.",
+    images: ["/twitter-image.png"]
   }
 };
 

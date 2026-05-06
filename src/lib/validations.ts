@@ -79,6 +79,7 @@ const studentBaseSchema = z.object({
 const studentCreateSchema = studentBaseSchema.extend({
   tipoRegistro: z.enum(["NUEVO", "ANTIGUO"]).default("NUEVO"),
   pagoMesActual: z.coerce.boolean().default(false),
+  mensualidadMetodoPagoActual: z.string().optional().nullable(),
   inscripcionMonto: z.coerce.number().positive().optional().nullable(),
   inscripcionPagada: z.coerce.boolean().default(false),
   inscripcionFechaPago: z.coerce.date().optional().nullable(),
@@ -98,6 +99,13 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       code: z.ZodIssueCode.custom,
       path: ["inscripcionMonto"],
       message: "La inscripcion es obligatoria para estudiantes nuevos"
+    });
+  }
+  if (data.pagoMesActual && !data.mensualidadMetodoPagoActual) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["mensualidadMetodoPagoActual"],
+      message: "Selecciona como se pago la mensualidad actual"
     });
   }
 });

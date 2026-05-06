@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import { WEB_NOTIFICATION_ICON_URL } from "@/lib/branding";
 import { prisma } from "@/lib/prisma";
 
 type StoredSubscription = {
@@ -98,8 +99,8 @@ export async function sendWebPushNotifications(
   const message = JSON.stringify({
     title: payload.title,
     body: payload.body,
-    icon: "/logo/icon-metadata.png",
-    badge: "/logo/icon-metadata.png",
+    icon: WEB_NOTIFICATION_ICON_URL,
+    badge: WEB_NOTIFICATION_ICON_URL,
     tag: `notification-${payload.notificationId}`,
     data: {
       ...payload.data,

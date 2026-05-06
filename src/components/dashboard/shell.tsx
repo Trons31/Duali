@@ -33,8 +33,23 @@ export function DashboardShell({
   const router = useRouter();
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
+  const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
   const flatItems = useMemo(() => navSections.flatMap((section) => section.items), []);
+
+  useEffect(() => {
+    setActiveAlertIndex(0);
+  }, [alerts]);
+
+  useEffect(() => {
+    if (alerts.length <= 1) return;
+
+    const interval = window.setInterval(() => {
+      setActiveAlertIndex((current) => (current + 1) % alerts.length);
+    }, 4200);
+
+    return () => window.clearInterval(interval);
+  }, [alerts.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -202,22 +217,7 @@ export function DashboardShell({
               </button>
 
               <div className="min-w-0">
-                <div className="flex flex-wrap gap-2">
-                  {alerts.map((alert) => (
-                    <span
-                      key={alert.label}
-                      className={cn(
-                        "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold",
-                        alert.tone === "danger" && "border-rose-200 bg-rose-50 text-rose-700",
-                        alert.tone === "warning" && "border-amber-200 bg-amber-50 text-amber-700",
-                        alert.tone === "info" && "border-sky-200 bg-sky-50 text-sky-700",
-                        alert.tone === "success" && "border-brand-200 bg-brand-50 text-brand-700"
-                      )}
-                    >
-                      {alert.label}
-                    </span>
-                  ))}
-                </div>
+                <HeaderAlertRotator alerts={alerts} activeIndex={activeAlertIndex} />
               </div>
             </div>
 
@@ -267,6 +267,35 @@ export function DashboardShell({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function HeaderAlertRotator({
+  alerts,
+  activeIndex
+}: {
+  alerts: HeaderAlert[];
+  activeIndex: number;
+}) {
+  const alert = alerts[activeIndex] ?? alerts[0];
+
+  if (!alert) return null;
+
+  return (
+    <div className="min-h-7 max-w-[min(68vw,22rem)] overflow-hidden" aria-live="polite">
+      <span
+        key={alert.label}
+        className={cn(
+          "inline-flex max-w-full animate-[alert-fade_4200ms_ease-in-out_infinite] items-center truncate rounded-full border px-3 py-1 text-[11px] font-bold",
+          alert.tone === "danger" && "border-rose-200 bg-rose-50 text-rose-700",
+          alert.tone === "warning" && "border-amber-200 bg-amber-50 text-amber-700",
+          alert.tone === "info" && "border-sky-200 bg-sky-50 text-sky-700",
+          alert.tone === "success" && "border-brand-200 bg-brand-50 text-brand-700"
+        )}
+      >
+        {alert.label}
+      </span>
     </div>
   );
 }

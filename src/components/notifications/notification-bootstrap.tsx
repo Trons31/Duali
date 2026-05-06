@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { clientApiFetch } from "@/lib/client-api";
+import { WEB_NOTIFICATION_ICON_URL } from "@/lib/branding";
 import { getNotificationCursor, setNotificationCursor } from "@/lib/notification-store";
 
 type NotificationItem = {
@@ -183,7 +184,7 @@ export function NotificationBootstrap() {
           try {
             const browserNotification = new Notification(notification.title, {
               body: notification.body,
-              icon: "/logo/icon-metadata.png",
+              icon: WEB_NOTIFICATION_ICON_URL,
               data: { href: notificationHref(notification) }
             });
 
