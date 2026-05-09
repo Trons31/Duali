@@ -1,9 +1,14 @@
 import { Prisma } from "@prisma/client";
 import { requireClient } from "@/lib/auth";
-import { currentMonthlyPeriod, monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
+import { currentMonthlyPeriod, localDateAtNoon, monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, created, handleError, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { studentSchema } from "@/lib/validations";
+
+type MonthlyPeriod = {
+  mes: number;
+  anio: number;
+};
 
 export async function GET(request: Request) {
   try {
@@ -110,9 +115,16 @@ export async function POST(request: Request) {
         inscripcionPagada,
         inscripcionFechaPago,
         inscripcionMetodoPago,
+        inicioClasesMes,
+        inicioClasesAnio,
+        mesesPagados,
         ...studentData
       } = body;
-      const createdStudent = await tx.student.create({ data: { ...studentData, clientId } as never });
+      const fechaInicioClases =
+        tipoRegistro === "ANTIGUO" && inicioClasesMes && inicioClasesAnio
+          ? localDateAtNoon(inicioClasesAnio, inicioClasesMes, 1)
+          : studentData.fechaInicioClases;
+      const createdStudent = await tx.student.create({ data: { ...studentData, fechaInicioClases, clientId } as never });
 
       if (tipoRegistro === "NUEVO" && inscripcionMonto) {
         const fechaVencimiento = new Date();
@@ -129,8 +141,47 @@ export async function POST(request: Request) {
         });
       }
 
-      if (body.precioMensualidad && body.diaCobro) {
+      const precioMensualidad = body.precioMensualidad;
+      const diaCobro = body.diaCobro;
+      if (precioMensualidad && diaCobro) {
         const currentPeriod = currentMonthlyPeriod();
+        if (tipoRegistro === "ANTIGUO" && inicioClasesMes && inicioClasesAnio) {
+          const paidKeys = new Set((mesesPagados ?? []).map((period) => periodKey(period)));
+          const periods = monthlyPeriodRange({ mes: inicioClasesMes, anio: inicioClasesAnio }, currentPeriod);
+
+          if (periods.length) {
+            await tx.monthlyPayment.createMany({
+              data: periods.map((period) => {
+                const fechaVencimiento = monthlyDueDateForPeriod(
+                  period.mes,
+                  period.anio,
+                  diaCobro,
+                  body.modalidadMensualidad
+                );
+                const isPaid = paidKeys.has(periodKey(period));
+                const isCurrentPeriod = period.mes === currentPeriod.mes && period.anio === currentPeriod.anio;
+
+                return {
+                  estudianteId: createdStudent.id,
+                  grupoId: createdStudent.grupoId,
+                  clientId,
+                  mes: period.mes,
+                  anio: period.anio,
+                  monto: precioMensualidad,
+                  fechaVencimiento,
+                  estado: isPaid ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
+                  fechaPago: isPaid ? (isCurrentPeriod ? new Date() : fechaVencimiento) : null,
+                  metodoPago: isPaid ? mensualidadMetodoPagoActual : null,
+                  notas: "Generado al registrar estudiante antiguo"
+                };
+              }),
+              skipDuplicates: true
+            });
+          }
+
+          return createdStudent;
+        }
+
         const firstPeriod =
           tipoRegistro === "NUEVO" && !pagoMesActual
             ? nextMonthlyPeriod(currentPeriod.mes, currentPeriod.anio)
@@ -138,7 +189,7 @@ export async function POST(request: Request) {
         const fechaVencimiento = monthlyDueDateForPeriod(
           firstPeriod.mes,
           firstPeriod.anio,
-          body.diaCobro,
+          diaCobro,
           body.modalidadMensualidad
         );
 
@@ -149,7 +200,7 @@ export async function POST(request: Request) {
             clientId,
             mes: firstPeriod.mes,
             anio: firstPeriod.anio,
-            monto: body.precioMensualidad,
+            monto: precioMensualidad,
             fechaVencimiento,
             estado: pagoMesActual ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
             fechaPago: pagoMesActual ? new Date() : null,
@@ -164,4 +215,23 @@ export async function POST(request: Request) {
   } catch (error) {
     return handleError(error);
   }
+}
+
+function monthlyPeriodRange(start: MonthlyPeriod, end: MonthlyPeriod) {
+  const periods: MonthlyPeriod[] = [];
+  let mes = start.mes;
+  let anio = start.anio;
+
+  while (anio < end.anio || (anio === end.anio && mes <= end.mes)) {
+    periods.push({ mes, anio });
+    const next = nextMonthlyPeriod(mes, anio);
+    mes = next.mes;
+    anio = next.anio;
+  }
+
+  return periods;
+}
+
+function periodKey(period: MonthlyPeriod) {
+  return `${period.anio}-${period.mes}`;
 }

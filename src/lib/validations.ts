@@ -73,7 +73,13 @@ const studentBaseSchema = z.object({
   estado: z.enum(["ACTIVO", "INACTIVO"]).optional(),
   precioMensualidad: z.coerce.number().positive().optional().nullable(),
   diaCobro: z.coerce.number().int().min(1).max(28).optional().nullable(),
-  modalidadMensualidad: z.enum(["ANTICIPADA", "VENCIDA"]).default("ANTICIPADA")
+  modalidadMensualidad: z.enum(["ANTICIPADA", "VENCIDA"]).default("ANTICIPADA"),
+  fechaInicioClases: localDateInputSchema.optional().nullable()
+});
+
+const monthlyPeriodSchema = z.object({
+  mes: z.coerce.number().int().min(1).max(12),
+  anio: z.coerce.number().int().min(2020).max(2100)
 });
 
 const studentCreateSchema = studentBaseSchema.extend({
@@ -83,7 +89,10 @@ const studentCreateSchema = studentBaseSchema.extend({
   inscripcionMonto: z.coerce.number().positive().optional().nullable(),
   inscripcionPagada: z.coerce.boolean().default(false),
   inscripcionFechaPago: z.coerce.date().optional().nullable(),
-  inscripcionMetodoPago: z.string().optional().nullable()
+  inscripcionMetodoPago: z.string().optional().nullable(),
+  inicioClasesMes: z.coerce.number().int().min(1).max(12).optional().nullable(),
+  inicioClasesAnio: z.coerce.number().int().min(2020).max(2100).optional().nullable(),
+  mesesPagados: z.array(monthlyPeriodSchema).default([])
 });
 
 export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
@@ -101,11 +110,85 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       message: "La inscripcion es obligatoria para estudiantes nuevos"
     });
   }
+  if (data.tipoRegistro === "ANTIGUO") {
+    if (!data.inicioClasesMes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["inicioClasesMes"],
+        message: "Selecciona el mes en que empezó clases"
+      });
+    }
+    if (!data.inicioClasesAnio) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["inicioClasesAnio"],
+        message: "Selecciona el año en que empezó clases"
+      });
+    }
+    if (!data.precioMensualidad) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["precioMensualidad"],
+        message: "Ingresa la mensualidad del estudiante"
+      });
+    }
+    if (!data.diaCobro) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["diaCobro"],
+        message: "Selecciona el día de cobro mensual"
+      });
+    }
+
+    if (data.inicioClasesMes && data.inicioClasesAnio) {
+      const now = new Date();
+      const currentPeriodValue = now.getFullYear() * 12 + now.getMonth() + 1;
+      const startPeriodValue = data.inicioClasesAnio * 12 + data.inicioClasesMes;
+
+      if (startPeriodValue > currentPeriodValue) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["inicioClasesMes"],
+          message: "El inicio de clases no puede estar en el futuro"
+        });
+      }
+
+      if (currentPeriodValue - startPeriodValue > 120) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["inicioClasesAnio"],
+          message: "El historial no puede superar 10 años"
+        });
+      }
+
+      const paidKeys = new Set<string>();
+      for (const period of data.mesesPagados) {
+        const periodValue = period.anio * 12 + period.mes;
+        const key = `${period.anio}-${period.mes}`;
+        if (paidKeys.has(key) || periodValue < startPeriodValue || periodValue > currentPeriodValue) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["mesesPagados"],
+            message: "Los meses pagados deben pertenecer al rango generado y no repetirse"
+          });
+          break;
+        }
+        paidKeys.add(key);
+      }
+    }
+  }
   if (data.pagoMesActual && !data.mensualidadMetodoPagoActual) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["mensualidadMetodoPagoActual"],
       message: "Selecciona como se pago la mensualidad actual"
+    });
+  }
+  if (data.tipoRegistro === "ANTIGUO" && data.mesesPagados.length > 0 && !data.mensualidadMetodoPagoActual) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["mensualidadMetodoPagoActual"],
+      message: "Selecciona como se pagaron los meses marcados"
     });
   }
 });

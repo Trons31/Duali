@@ -45,7 +45,6 @@ export const navSections = [
   {
     title: "Cuenta",
     items: [
-      { href: "/dashboard/cliente", label: "Cliente", icon: FiUsers },
       { href: "/dashboard/mi-plan", label: "Mi plan", icon: FiCreditCard },
       { href: "/dashboard/perfil", label: "Perfil", icon: FiSettings }
     ]

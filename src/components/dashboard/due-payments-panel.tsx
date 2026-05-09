@@ -15,6 +15,7 @@ type DuePayment = {
   kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
   monto: number | string;
   fechaVencimiento: string;
+  estado?: "PENDIENTE" | "PAGADO" | "VENCIDO";
   mes?: number | null;
   anio?: number | null;
   student: {
@@ -43,6 +44,8 @@ const MONTH_NAMES = [
   "noviembre",
   "diciembre"
 ];
+
+type PaymentDisplayStatus = "PAGADO" | "VENCIDO" | "PENDIENTE_HOY" | "PROXIMO_A_VENCER";
 
 export function DuePaymentsPanel({
   items,
@@ -119,7 +122,7 @@ export function DuePaymentsPanel({
       return;
     }
 
-    const message = createWhatsappPaymentMessage(item, titleAction);
+    const message = createWhatsappPaymentMessage(item, resolvePaymentDisplayStatus(item));
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 
     window.open(url, "_blank", "noopener,noreferrer");
@@ -180,23 +183,33 @@ export function DuePaymentsPanel({
           {resultsOpen ? (
             filteredItems.length ? (
               <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
-                {filteredItems.map((item) => (
+                {filteredItems.map((item) => {
+                  const displayStatus = resolvePaymentDisplayStatus(item);
+                  const isOverdue = displayStatus === "VENCIDO";
+
+                  return (
                   <article
                     key={`${item.kind}-${item.id}`}
-                    className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                    className={cn(
+                      "rounded-[28px] border px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]",
+                      isOverdue ? "border-rose-100 bg-rose-50/60" : "border-ink-100 bg-white"
+                    )}
                   >
                     <div className="space-y-5">
                       <div>
-                        <p className="text-[15px] font-semibold text-ink-950">
-                          {item.student.nombre} {item.student.apellido}
-                        </p>
-                        <p className="mt-1 text-sm text-ink-500">{paymentDateCopy(item)}</p>
-                        {titleAction === "vencido" ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[15px] font-semibold text-ink-950">
+                            {item.student.nombre} {item.student.apellido}
+                          </p>
+                          <span className={statusBadgeClassName(displayStatus)}>{paymentStatusLabel(displayStatus)}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-ink-500">{paymentDateCopy(item, displayStatus)}</p>
+                        {isOverdue ? (
                           <p className="mt-2 text-sm font-semibold text-rose-600">
-                            Lleva {overdueDays(item.fechaVencimiento)} dia{overdueDays(item.fechaVencimiento) === 1 ? "" : "s"} vencido
+                            {overdueAgeText(item.fechaVencimiento)}
                           </p>
                         ) : null}
-                        <p className={cn("mt-4 text-[1.9rem] font-black tracking-tight", amountClassName(titleAction))}>
+                        <p className={cn("mt-4 text-[1.9rem] font-black tracking-tight", amountClassName(displayStatus))}>
                           {currency(item.monto)}
                         </p>
                       </div>
@@ -218,7 +231,8 @@ export function DuePaymentsPanel({
                       </div>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="px-6 py-14 text-center">
@@ -254,16 +268,23 @@ export function DuePaymentsPanel({
 }
 
 function paymentConceptLabel(item: DuePayment) {
-  return item.kind === "MONTHLY_PAYMENT" ? "mensualidad" : "inscripcion";
+  return item.kind === "MONTHLY_PAYMENT" ? "mensualidad" : "inscripción";
 }
 
-function paymentDateCopy(item: DuePayment) {
+function paymentDateCopy(item: DuePayment, status: PaymentDisplayStatus) {
+  const dueCopy = formatDate(item.fechaVencimiento);
+  const verb = status === "VENCIDO" ? "venció" : "vence";
+
   if (item.kind === "MONTHLY_PAYMENT" && item.mes && item.anio) {
     const monthName = MONTH_NAMES[item.mes - 1] ?? String(item.mes);
-    return `${monthName}/${item.anio} - vence ${formatDate(item.fechaVencimiento)}`;
+    const concept = `${capitalize(monthName)} ${item.anio}`;
+
+    if (status === "PENDIENTE_HOY") return `${concept} vence hoy`;
+    return `${concept} ${verb} el ${dueCopy}`;
   }
 
-  return `inscripcion - vence ${formatDate(item.fechaVencimiento)}`;
+  if (status === "PENDIENTE_HOY") return `Inscripción vence hoy`;
+  return `Inscripción ${verb} el ${dueCopy}`;
 }
 
 function resolveWhatsappPhone(item: DuePayment) {
@@ -276,22 +297,85 @@ function resolveWhatsappPhone(item: DuePayment) {
   return digits.startsWith("57") ? digits : `57${digits}`;
 }
 
-function createWhatsappPaymentMessage(item: DuePayment, kind: "pendiente" | "vencido") {
+function createWhatsappPaymentMessage(item: DuePayment, status: PaymentDisplayStatus) {
   const concept = paymentConceptLabel(item);
   const studentName = `${item.student.nombre} ${item.student.apellido}`;
   const amount = currency(item.monto);
   const ownerText = item.student.esMenorDeEdad ? `la ${concept} de ${studentName}` : `tu ${concept}`;
 
-  if (kind === "vencido") {
-    const days = overdueDays(item.fechaVencimiento);
-    return `Hola, te recordamos que ${ownerText} esta vencida por valor de ${amount}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
+  if (status === "VENCIDO") {
+    return `Hola, te recordamos que ${ownerText} está vencida por valor de ${amount}. ${overdueAgeText(item.fechaVencimiento)}. Por favor realiza el pago lo antes posible.`;
   }
 
-  return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
+  if (status === "PENDIENTE_HOY") {
+    return `Hola, te recordamos que hoy es el día de pago de ${ownerText} por un valor de ${amount}.`;
+  }
+
+  return `Hola, te recordamos que ${ownerText} vence el ${formatDate(item.fechaVencimiento)} por un valor de ${amount}.`;
 }
 
-function amountClassName(kind: "pendiente" | "vencido") {
-  return kind === "vencido" ? "text-rose-700" : "text-brand-600";
+function amountClassName(status: PaymentDisplayStatus) {
+  return status === "VENCIDO" ? "text-rose-700" : "text-brand-600";
+}
+
+function resolvePaymentDisplayStatus(item: DuePayment): PaymentDisplayStatus {
+  if (item.estado === "PAGADO") return "PAGADO";
+
+  const dueDate = startOfLocalCalendarDay(new Date(item.fechaVencimiento));
+  const today = startOfLocalCalendarDay(new Date());
+
+  if (dueDate.getTime() < today.getTime() || item.estado === "VENCIDO") return "VENCIDO";
+  if (dueDate.getTime() === today.getTime()) return "PENDIENTE_HOY";
+  return "PROXIMO_A_VENCER";
+}
+
+function paymentStatusLabel(status: PaymentDisplayStatus) {
+  if (status === "PAGADO") return "Pagado";
+  if (status === "VENCIDO") return "Vencido";
+  if (status === "PENDIENTE_HOY") return "Pendiente";
+  return "Próximo a vencer";
+}
+
+function statusBadgeClassName(status: PaymentDisplayStatus) {
+  return cn(
+    "rounded-full px-2.5 py-1 text-[11px] font-black",
+    status === "VENCIDO" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+  );
+}
+
+function overdueAgeText(date: string) {
+  const elapsedDays = overdueDays(date);
+  const dueDate = new Date(date);
+  const dueMonthDays = daysInMonth(dueDate.getFullYear(), dueDate.getMonth());
+
+  if (elapsedDays <= dueMonthDays) {
+    return `Venció hace ${plural(elapsedDays, "día", "días")}`;
+  }
+
+  let months = 1;
+  let remainingDays = elapsedDays - dueMonthDays - 1;
+  let cursorMonth = dueDate.getMonth() + 1;
+  let cursorYear = dueDate.getFullYear();
+  if (cursorMonth > 11) {
+    cursorMonth = 0;
+    cursorYear += 1;
+  }
+
+  while (remainingDays > daysInMonth(cursorYear, cursorMonth)) {
+    remainingDays -= daysInMonth(cursorYear, cursorMonth);
+    months += 1;
+    cursorMonth += 1;
+
+    if (cursorMonth > 11) {
+      cursorMonth = 0;
+      cursorYear += 1;
+    }
+  }
+
+  const monthCopy = plural(months, "mes", "meses");
+  if (remainingDays <= 0) return `Venció hace ${monthCopy}`;
+
+  return `Venció hace ${monthCopy} y ${plural(remainingDays, "día", "días")}`;
 }
 
 function overdueDays(date: string) {
@@ -300,4 +384,20 @@ function overdueDays(date: string) {
   const dueUtc = Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
   const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.max(1, Math.floor((nowUtc - dueUtc) / 86400000));
+}
+
+function startOfLocalCalendarDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function daysInMonth(year: number, monthIndex: number) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function plural(value: number, singular: string, pluralText: string) {
+  return `${value} ${value === 1 ? singular : pluralText}`;
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

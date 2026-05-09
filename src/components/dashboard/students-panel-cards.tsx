@@ -15,7 +15,7 @@ import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency } from "@/lib/web-utils";
 import type { GroupSummary, StudentListFilter, StudentListItem, StudentListResponse } from "@/lib/web-types";
 
-type CreateStep = "TYPE" | "ENROLLMENT" | "CURRENT_PAYMENT" | "MONTHLY" | "FORM";
+type CreateStep = "TYPE" | "ENROLLMENT" | "CURRENT_PAYMENT" | "MONTHLY" | "HISTORY" | "FORM";
 
 type StudentFormValues = {
   tipoRegistro: "NUEVO" | "ANTIGUO";
@@ -25,6 +25,9 @@ type StudentFormValues = {
   inscripcionMonto: string;
   inscripcionMetodoPago: string;
   modalidadMensualidad: "ANTICIPADA" | "VENCIDA";
+  inicioClasesMes: string;
+  inicioClasesAnio: string;
+  mesesPagados: string[];
   nombre: string;
   apellido: string;
   edad: string;
@@ -51,6 +54,8 @@ const PAYMENT_METHODS = [
   { label: "Nequi", value: "NEQUI" },
   { label: "Daviplata", value: "DAVIPLATA" }
 ];
+
+const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 export function StudentsPanelCards({
   students,
@@ -84,10 +89,14 @@ export function StudentsPanelCards({
   const enrollmentPaid = watch("inscripcionPagada");
   const enrollmentMethod = watch("inscripcionMetodoPago");
   const billingMode = watch("modalidadMensualidad");
+  const historyStartMonth = watch("inicioClasesMes");
+  const historyStartYear = watch("inicioClasesAnio");
+  const paidHistoryMonths = watch("mesesPagados") ?? [];
   const selectedGroup = watch("grupoId");
   const selectedBillingDay = watch("diaCobro");
   const age = Number(watch("edad") || 0);
   const isMinor = age > 0 && age < 18;
+  const historyPeriods = createMonthlyPeriodRange(Number(historyStartMonth), Number(historyStartYear));
 
   const visibleStudents = students.items;
   const currentFilter = students.filters.status;
@@ -150,7 +159,7 @@ export function StudentsPanelCards({
       setStep("ENROLLMENT");
       return;
     }
-    setStep("CURRENT_PAYMENT");
+    setStep("HISTORY");
   }
 
   function goBackStep() {
@@ -159,7 +168,11 @@ export function StudentsPanelCards({
       return;
     }
     if (step === "FORM") {
-      setStep("MONTHLY");
+      setStep(registrationType === "ANTIGUO" ? "HISTORY" : "MONTHLY");
+      return;
+    }
+    if (step === "HISTORY") {
+      setStep("TYPE");
       return;
     }
     if (step === "MONTHLY") {
@@ -218,6 +231,47 @@ export function StudentsPanelCards({
     setStep("FORM");
   }
 
+  function goNextFromHistory() {
+    const startMonth = Number(watch("inicioClasesMes"));
+    const startYear = Number(watch("inicioClasesAnio"));
+    const monthlyPrice = Number(watch("precioMensualidad"));
+    const billingDay = Number(watch("diaCobro"));
+
+    if (!startMonth || !startYear) {
+      sileo.error({
+        title: "Inicio de clases requerido",
+        description: "Selecciona desde qué mes y año empezó clases el estudiante."
+      });
+      return;
+    }
+
+    if (!createMonthlyPeriodRange(startMonth, startYear).length) {
+      sileo.error({
+        title: "Fecha no valida",
+        description: "El inicio de clases no puede estar en el futuro."
+      });
+      return;
+    }
+
+    if (!monthlyPrice) {
+      sileo.error({
+        title: "Mensualidad requerida",
+        description: "Ingresa el valor de la mensualidad para generar el historial."
+      });
+      return;
+    }
+
+    if (!billingDay) {
+      sileo.error({
+        title: "Día de cobro requerido",
+        description: "Selecciona el día de cobro mensual."
+      });
+      return;
+    }
+
+    setStep("FORM");
+  }
+
   const submitStudent = handleSubmit(async (values) => {
     const parsedAge = Number(values.edad);
     const isNewStudent = values.tipoRegistro === "NUEVO";
@@ -235,8 +289,14 @@ export function StudentsPanelCards({
       precioMensualidad: Number(values.precioMensualidad),
       modalidadMensualidad: values.modalidadMensualidad,
       tipoRegistro: values.tipoRegistro,
-      pagoMesActual: values.pagoMesActual === "SI",
-      mensualidadMetodoPagoActual: values.pagoMesActual === "SI" ? values.mensualidadMetodoPagoActual : undefined,
+      pagoMesActual: isNewStudent ? values.pagoMesActual === "SI" : values.mesesPagados.includes(currentPeriodKey()),
+      mensualidadMetodoPagoActual:
+        (isNewStudent && values.pagoMesActual === "SI") || (!isNewStudent && values.mesesPagados.length)
+          ? values.mensualidadMetodoPagoActual
+          : undefined,
+      inicioClasesMes: isNewStudent ? undefined : Number(values.inicioClasesMes),
+      inicioClasesAnio: isNewStudent ? undefined : Number(values.inicioClasesAnio),
+      mesesPagados: isNewStudent ? undefined : values.mesesPagados.map(parsePeriodKey).filter(isMonthlyPeriod),
       inscripcionMonto: isNewStudent ? Number(values.inscripcionMonto) : undefined,
       inscripcionPagada: isNewStudent ? values.inscripcionPagada === "SI" : false,
       inscripcionMetodoPago:
@@ -728,6 +788,258 @@ export function StudentsPanelCards({
             </div>
           ) : null}
 
+          {step === "HISTORY" ? (
+            <div className="space-y-4">
+              <div className="space-y-4 rounded-[24px] border border-brand-100 bg-brand-50 px-4 py-4">
+                <div>
+                  <p className="text-sm font-black text-ink-950">Inicio y mensualidad</p>
+                  <p className="mt-1 text-sm text-ink-500">
+                    Define desde cuándo empezó clases, el valor mensual y el día recurrente de cobro.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Mes de inicio" error={errors.inicioClasesMes?.message}>
+                    <select
+                      value={historyStartMonth}
+                      onChange={(event) => {
+                        reset(
+                          {
+                            ...watch(),
+                            inicioClasesMes: event.target.value,
+                            mesesPagados: []
+                          },
+                          { keepDirty: true, keepTouched: true }
+                        );
+                      }}
+                      className="field-base h-11 rounded-[18px] text-[14px]"
+                    >
+                      <option value="">Selecciona mes</option>
+                      {MONTH_LABELS.map((label, index) => (
+                        <option key={label} value={String(index + 1)}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Año de inicio" error={errors.inicioClasesAnio?.message}>
+                    <select
+                      value={historyStartYear}
+                      onChange={(event) => {
+                        reset(
+                          {
+                            ...watch(),
+                            inicioClasesAnio: event.target.value,
+                            mesesPagados: []
+                          },
+                          { keepDirty: true, keepTouched: true }
+                        );
+                      }}
+                      className="field-base h-11 rounded-[18px] text-[14px]"
+                    >
+                      <option value="">Selecciona año</option>
+                      {yearOptions().map((year) => (
+                        <option key={year} value={String(year)}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
+                  <input
+                    className="field-base"
+                    inputMode="numeric"
+                    {...register("precioMensualidad", { required: "Ingresa la mensualidad" })}
+                  />
+                </Field>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DecisionCard
+                    title="Anticipada"
+                    subtitle="Se cobra al inicio del período."
+                    selected={billingMode === "ANTICIPADA"}
+                    onClick={() => {
+                      reset(
+                        {
+                          ...watch(),
+                          modalidadMensualidad: "ANTICIPADA"
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                  />
+                  <DecisionCard
+                    title="Vencida"
+                    subtitle="Se cobra al final del período."
+                    selected={billingMode === "VENCIDA"}
+                    onClick={() => {
+                      reset(
+                        {
+                          ...watch(),
+                          modalidadMensualidad: "VENCIDA"
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-black text-ink-900">Día de cobro mensual</p>
+                  <select
+                    value={selectedBillingDay}
+                    onChange={(event) => {
+                      reset(
+                        {
+                          ...watch(),
+                          diaCobro: event.target.value
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                    className="field-base h-11 rounded-[18px] text-[14px]"
+                  >
+                    {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
+                      <option key={day} value={day}>
+                        Día {day}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs font-semibold leading-5 text-ink-500">
+                    Este día define cuándo vence cada mensualidad. No es la fecha de inicio del estudiante.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-ink-950">Selecciona los meses que el estudiante ya tiene pagos/al día</p>
+                    <p className="mt-1 text-sm text-ink-500">
+                      Los meses sin marcar se guardarán como pendientes o vencidos, incluyendo el mes actual.
+                    </p>
+                  </div>
+                  {historyPeriods.length ? (
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        className="rounded-[14px] border border-brand-100 bg-brand-50 px-3 py-2 text-xs font-black text-brand-700"
+                        onClick={() => {
+                          reset(
+                            {
+                              ...watch(),
+                              mesesPagados: historyPeriods.map(periodKey)
+                            },
+                            { keepDirty: true, keepTouched: true }
+                          );
+                        }}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-[14px] border border-ink-200 bg-white px-3 py-2 text-xs font-black text-ink-600"
+                        onClick={() => {
+                          reset(
+                            {
+                              ...watch(),
+                              mesesPagados: []
+                            },
+                            { keepDirty: true, keepTouched: true }
+                          );
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {historyPeriods.length ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {historyPeriods.map((period) => {
+                        const key = periodKey(period);
+                        const selected = paidHistoryMonths.includes(key);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              const nextMonths = selected
+                                ? paidHistoryMonths.filter((value) => value !== key)
+                                : [...paidHistoryMonths, key];
+                              reset(
+                                {
+                                  ...watch(),
+                                  mesesPagados: nextMonths
+                                },
+                                { keepDirty: true, keepTouched: true }
+                              );
+                            }}
+                            className={cn(
+                              "rounded-[18px] border px-4 py-2.5 text-sm font-black transition",
+                              selected
+                                ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                                : "border-rose-100 bg-rose-50 text-rose-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
+                            )}
+                          >
+                            {formatPeriod(period)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="rounded-[18px] bg-ink-50 px-4 py-3 text-sm font-semibold text-ink-600">
+                      {historyPeriods.length} meses generados · {paidHistoryMonths.length} al día ·{" "}
+                      {historyPeriods.length - paidHistoryMonths.length} pendientes o vencidos
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-[18px] bg-ink-50 px-4 py-4 text-sm font-semibold text-ink-500">
+                    Elige mes y año de inicio para generar los chips automáticamente.
+                  </div>
+                )}
+
+                {paidHistoryMonths.length ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-black text-ink-900">Método de pago para los meses marcados</p>
+                    <div className="flex flex-wrap gap-2">
+                      {PAYMENT_METHODS.map((method) => (
+                        <ChipButton
+                          key={method.value}
+                          selected={currentMonthPaymentMethod === method.value}
+                          onClick={() => {
+                            reset(
+                              {
+                                ...watch(),
+                                mensualidadMetodoPagoActual: method.value
+                              },
+                              { keepDirty: true, keepTouched: true }
+                            );
+                          }}
+                        >
+                          {method.label}
+                        </ChipButton>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
+                  Atrás
+                </Button>
+                <Button className="min-h-12 flex-1" type="button" onClick={goNextFromHistory}>
+                  Siguiente
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {step === "MONTHLY" ? (
             <div className="space-y-4">
               <div className="space-y-4 rounded-[24px] border border-brand-100 bg-brand-50 px-4 py-4">
@@ -1090,6 +1402,9 @@ function createDefaultValues(groupId: string): StudentFormValues {
     inscripcionMonto: "",
     inscripcionMetodoPago: "EFECTIVO",
     modalidadMensualidad: "ANTICIPADA",
+    inicioClasesMes: "",
+    inicioClasesAnio: String(new Date().getFullYear()),
+    mesesPagados: [],
     nombre: "",
     apellido: "",
     edad: "",
@@ -1112,6 +1427,9 @@ function createEditValues(student: StudentListItem): StudentFormValues {
     inscripcionMonto: student.enrollmentPayment?.monto ? String(student.enrollmentPayment.monto) : "",
     inscripcionMetodoPago: student.enrollmentPayment?.metodoPago ?? "EFECTIVO",
     modalidadMensualidad: student.modalidadMensualidad ?? "ANTICIPADA",
+    inicioClasesMes: "",
+    inicioClasesAnio: String(new Date().getFullYear()),
+    mesesPagados: [],
     nombre: student.nombre,
     apellido: student.apellido,
     edad: String(student.edad ?? ""),
@@ -1152,12 +1470,73 @@ function getInitials(nombre: string, apellido: string) {
   return `${nombre.slice(0, 1)}${apellido.slice(0, 1)}`.toUpperCase();
 }
 
+type MonthlyPeriod = {
+  mes: number;
+  anio: number;
+};
+
+function createMonthlyPeriodRange(startMonth: number, startYear: number) {
+  if (!startMonth || !startYear) return [];
+
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  const startValue = startYear * 12 + startMonth;
+  const currentValue = currentYear * 12 + currentMonth;
+
+  if (startValue > currentValue || currentValue - startValue > 120) return [];
+
+  const periods: MonthlyPeriod[] = [];
+  let mes = startMonth;
+  let anio = startYear;
+
+  while (anio < currentYear || (anio === currentYear && mes <= currentMonth)) {
+    periods.push({ mes, anio });
+    if (mes === 12) {
+      mes = 1;
+      anio += 1;
+    } else {
+      mes += 1;
+    }
+  }
+
+  return periods;
+}
+
+function periodKey(period: MonthlyPeriod) {
+  return `${period.anio}-${period.mes}`;
+}
+
+function currentPeriodKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}`;
+}
+
+function parsePeriodKey(value: string): MonthlyPeriod | null {
+  const [year, month] = value.split("-").map(Number);
+  if (!year || !month) return null;
+  return { mes: month, anio: year };
+}
+
+function isMonthlyPeriod(period: MonthlyPeriod | null): period is MonthlyPeriod {
+  return Boolean(period);
+}
+
+function formatPeriod(period: MonthlyPeriod) {
+  return `${MONTH_LABELS[period.mes - 1]} ${period.anio}`;
+}
+
+function yearOptions() {
+  const currentYear = new Date().getFullYear();
+  return Array.from({ length: currentYear - 2020 + 1 }, (_, index) => currentYear - index);
+}
+
 function stepSequence(registrationType: StudentFormValues["tipoRegistro"]): CreateStep[] {
   if (registrationType === "NUEVO") {
     return ["TYPE", "ENROLLMENT", "CURRENT_PAYMENT", "MONTHLY", "FORM"];
   }
 
-  return ["TYPE", "CURRENT_PAYMENT", "MONTHLY", "FORM"];
+  return ["TYPE", "HISTORY", "FORM"];
 }
 
 function stepIndex(step: CreateStep, registrationType: StudentFormValues["tipoRegistro"]) {
@@ -1178,6 +1557,7 @@ function stepTitle(step: CreateStep) {
   if (step === "ENROLLMENT") return "Inscripción";
   if (step === "CURRENT_PAYMENT") return "Pago del mes actual";
   if (step === "MONTHLY") return "Mensualidad";
+  if (step === "HISTORY") return "Historial de mensualidades";
   return "Datos personales";
 }
 
@@ -1191,6 +1571,9 @@ function stepCopy(step: CreateStep) {
   }
   if (step === "MONTHLY") {
     return "Define el valor mensual, la modalidad y el día de cobro que usará el sistema.";
+  }
+  if (step === "HISTORY") {
+    return "Genera los meses desde que empezó clases y marca los que ya están al día.";
   }
   return "Completa los datos del alumno, el contacto y el grupo al que pertenece.";
 }

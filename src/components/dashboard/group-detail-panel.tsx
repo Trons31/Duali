@@ -35,10 +35,14 @@ type GroupFormValues = {
 type StudentFormValues = {
   tipoRegistro: "NUEVO" | "ANTIGUO";
   pagoMesActual: "SI" | "NO";
+  mensualidadMetodoPagoActual: string;
   inscripcionPagada: "SI" | "NO";
   inscripcionMonto: string;
   inscripcionMetodoPago: string;
   modalidadMensualidad: "ANTICIPADA" | "VENCIDA";
+  inicioClasesMes: string;
+  inicioClasesAnio: string;
+  mesesPagados: string[];
   nombre: string;
   apellido: string;
   edad: string;
@@ -63,6 +67,8 @@ const PAYMENT_METHODS = [
   { label: "Nequi", value: "NEQUI" },
   { label: "Daviplata", value: "DAVIPLATA" }
 ];
+
+const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
   const { data: session } = useSession();
@@ -99,6 +105,11 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
   const registrationType = watch("tipoRegistro");
   const enrollmentPaid = watch("inscripcionPagada");
   const billingMode = watch("modalidadMensualidad");
+  const currentMonthPaymentMethod = watch("mensualidadMetodoPagoActual");
+  const historyStartMonth = watch("inicioClasesMes");
+  const historyStartYear = watch("inicioClasesAnio");
+  const paidHistoryMonths = watch("mesesPagados") ?? [];
+  const historyPeriods = createMonthlyPeriodRange(Number(historyStartMonth), Number(historyStartYear));
   const age = Number(watch("edad") || 0);
   const isMinor = age > 0 && age < 18;
 
@@ -167,6 +178,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
 
   const submitStudent = handleSubmit(async (values) => {
     const parsedAge = Number(values.edad);
+    const isNewStudent = values.tipoRegistro === "NUEVO";
     const payload = {
       nombre: values.nombre.trim(),
       apellido: values.apellido.trim(),
@@ -181,19 +193,36 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
       precioMensualidad: Number(values.precioMensualidad),
       modalidadMensualidad: values.modalidadMensualidad,
       tipoRegistro: values.tipoRegistro,
-      pagoMesActual: values.pagoMesActual === "SI",
-      inscripcionMonto: values.tipoRegistro === "NUEVO" ? Number(values.inscripcionMonto) : undefined,
-      inscripcionPagada: values.tipoRegistro === "NUEVO" ? values.inscripcionPagada === "SI" : false,
+      pagoMesActual: isNewStudent ? values.pagoMesActual === "SI" : values.mesesPagados.includes(currentPeriodKey()),
+      mensualidadMetodoPagoActual:
+        (isNewStudent && values.pagoMesActual === "SI") || (!isNewStudent && values.mesesPagados.length)
+          ? values.mensualidadMetodoPagoActual
+          : undefined,
+      inicioClasesMes: isNewStudent ? undefined : Number(values.inicioClasesMes),
+      inicioClasesAnio: isNewStudent ? undefined : Number(values.inicioClasesAnio),
+      mesesPagados: isNewStudent ? undefined : values.mesesPagados.map(parsePeriodKey).filter(isMonthlyPeriod),
+      inscripcionMonto: isNewStudent ? Number(values.inscripcionMonto) : undefined,
+      inscripcionPagada: isNewStudent ? values.inscripcionPagada === "SI" : false,
       inscripcionMetodoPago:
-        values.tipoRegistro === "NUEVO" && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
+        isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
     };
 
     if (!payload.precioMensualidad || !payload.diaCobro) {
-      sileo.error({ title: "Faltan datos", description: "Configura la mensualidad y el dia de cobro del alumno." });
+      sileo.error({ title: "Faltan datos", description: "Configura la mensualidad y el día de cobro del alumno." });
       return;
     }
 
-    if (values.tipoRegistro === "NUEVO" && !Number(values.inscripcionMonto)) {
+    if (!isNewStudent && (!Number(values.inicioClasesMes) || !Number(values.inicioClasesAnio))) {
+      sileo.error({ title: "Inicio requerido", description: "Selecciona desde qué mes y año empezó clases." });
+      return;
+    }
+
+    if (!isNewStudent && !createMonthlyPeriodRange(Number(values.inicioClasesMes), Number(values.inicioClasesAnio)).length) {
+      sileo.error({ title: "Fecha no valida", description: "El inicio de clases no puede estar en el futuro." });
+      return;
+    }
+
+    if (isNewStudent && !Number(values.inscripcionMonto)) {
       sileo.error({ title: "Inscripcion requerida", description: "Ingresa el valor de la inscripcion del alumno nuevo." });
       return;
     }
@@ -362,7 +391,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
                                   ? "Ya pago"
                                   : payment?.fechaVencimiento
                                     ? `Vence ${formatShortDate(payment.fechaVencimiento)}`
-                                    : `Dia ${student.diaCobro ?? "-"}`
+                                    : `Día ${student.diaCobro ?? "-"}`
                               }
                             />
                           </div>
@@ -466,8 +495,8 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
               <Field label="Mensualidad" error={errors.precioMensualidad?.message}>
                 <input type="number" className="field-base" {...register("precioMensualidad", { required: "Ingresa la mensualidad" })} />
               </Field>
-              <Field label="Dia de cobro" error={errors.diaCobro?.message}>
-                <input type="number" min={1} max={28} className="field-base" {...register("diaCobro", { required: "Ingresa el dia de cobro" })} />
+              <Field label="Día de cobro" error={errors.diaCobro?.message}>
+                <input type="number" min={1} max={28} className="field-base" {...register("diaCobro", { required: "Ingresa el día de cobro" })} />
               </Field>
             </div>
 
@@ -476,14 +505,14 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
                 <SelectChip
                   checked={billingMode === "ANTICIPADA"}
                   onClick={() => reset({ ...watch(), modalidadMensualidad: "ANTICIPADA" })}
-                  helper="Se paga cuando inicia el periodo."
+                  helper="Se paga cuando inicia el período."
                 >
                   Anticipada
                 </SelectChip>
                 <SelectChip
                   checked={billingMode === "VENCIDA"}
                   onClick={() => reset({ ...watch(), modalidadMensualidad: "VENCIDA" })}
-                  helper="Se paga al final del periodo."
+                  helper="Se paga al final del período."
                 >
                   Vencida
                 </SelectChip>
@@ -491,16 +520,102 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             </Field>
 
             {registrationType === "ANTIGUO" ? (
-              <Field label="Pago del mes actual">
-                <div className="grid grid-cols-2 gap-2">
-                  <SelectChip checked={watch("pagoMesActual") === "SI"} onClick={() => reset({ ...watch(), pagoMesActual: "SI" })}>
-                    Ya pago
-                  </SelectChip>
-                  <SelectChip checked={watch("pagoMesActual") === "NO"} onClick={() => reset({ ...watch(), pagoMesActual: "NO" })}>
-                    Aun no
-                  </SelectChip>
+              <div className="space-y-4 rounded-[22px] border border-brand-100 bg-brand-50/70 px-4 py-4">
+                <div>
+                  <p className="text-sm font-black text-ink-950">Historial de mensualidades</p>
+                  <p className="mt-1 text-sm text-ink-500">
+                    Selecciona el inicio de clases y marca los meses que el estudiante ya tiene pagos/al día.
+                  </p>
                 </div>
-              </Field>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Mes de inicio" error={errors.inicioClasesMes?.message}>
+                    <select
+                      value={historyStartMonth}
+                      onChange={(event) => reset({ ...watch(), inicioClasesMes: event.target.value, mesesPagados: [] })}
+                      className="field-base"
+                    >
+                      <option value="">Selecciona mes</option>
+                      {MONTH_LABELS.map((label, index) => (
+                        <option key={label} value={String(index + 1)}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Año de inicio" error={errors.inicioClasesAnio?.message}>
+                    <select
+                      value={historyStartYear}
+                      onChange={(event) => reset({ ...watch(), inicioClasesAnio: event.target.value, mesesPagados: [] })}
+                      className="field-base"
+                    >
+                      <option value="">Selecciona año</option>
+                      {yearOptions().map((year) => (
+                        <option key={year} value={String(year)}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                {historyPeriods.length ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {historyPeriods.map((period) => {
+                        const key = periodKey(period);
+                        const selected = paidHistoryMonths.includes(key);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              reset({
+                                ...watch(),
+                                mesesPagados: selected
+                                  ? paidHistoryMonths.filter((value) => value !== key)
+                                  : [...paidHistoryMonths, key]
+                              });
+                            }}
+                            className={cn(
+                              "rounded-[16px] border px-3 py-2 text-xs font-black transition",
+                              selected
+                                ? "border-brand-600 bg-brand-600 text-white"
+                                : "border-rose-100 bg-rose-50 text-rose-700 hover:border-brand-200 hover:bg-white"
+                            )}
+                          >
+                            {formatPeriod(period)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="rounded-[16px] bg-white/80 px-3 py-2 text-xs font-semibold text-ink-600">
+                      {historyPeriods.length} meses generados · {paidHistoryMonths.length} al día ·{" "}
+                      {historyPeriods.length - paidHistoryMonths.length} pendientes o vencidos
+                    </p>
+                  </>
+                ) : (
+                  <p className="rounded-[16px] bg-white/80 px-3 py-3 text-sm font-semibold text-ink-500">
+                    Elige mes y año de inicio para generar los meses automáticamente.
+                  </p>
+                )}
+
+                {paidHistoryMonths.length ? (
+                  <Field label="Método de pago para meses marcados">
+                    <div className="grid grid-cols-2 gap-2">
+                      {PAYMENT_METHODS.map((method) => (
+                        <SelectChip
+                          key={method.value}
+                          checked={currentMonthPaymentMethod === method.value}
+                          onClick={() => reset({ ...watch(), mensualidadMetodoPagoActual: method.value })}
+                        >
+                          {method.label}
+                        </SelectChip>
+                      ))}
+                    </div>
+                  </Field>
+                ) : null}
+              </div>
             ) : (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -520,7 +635,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
                 </div>
 
                 {enrollmentPaid === "SI" ? (
-                  <Field label="Metodo de pago">
+                  <Field label="Método de pago">
                     <div className="grid grid-cols-2 gap-2">
                       {PAYMENT_METHODS.map((method) => (
                         <SelectChip
@@ -682,7 +797,7 @@ function currentPayment(student: GroupDetailStudent) {
 }
 
 function paymentStateCopy(status?: PaymentStatus) {
-  if (status === "PAGADO") return "Pago del mes al dia";
+  if (status === "PAGADO") return "Pago del mes al día";
   if (status === "VENCIDO") return "Pago vencido";
   if (status === "PENDIENTE") return "Pago pendiente";
   return "Sin cobro generado";
@@ -697,14 +812,79 @@ function getInitials(nombre: string, apellido: string) {
   return `${nombre.charAt(0)}${apellido.charAt(0)}`.toUpperCase();
 }
 
+type MonthlyPeriod = {
+  mes: number;
+  anio: number;
+};
+
+function createMonthlyPeriodRange(startMonth: number, startYear: number) {
+  if (!startMonth || !startYear) return [];
+
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  const startValue = startYear * 12 + startMonth;
+  const currentValue = currentYear * 12 + currentMonth;
+
+  if (startValue > currentValue || currentValue - startValue > 120) return [];
+
+  const periods: MonthlyPeriod[] = [];
+  let mes = startMonth;
+  let anio = startYear;
+
+  while (anio < currentYear || (anio === currentYear && mes <= currentMonth)) {
+    periods.push({ mes, anio });
+    if (mes === 12) {
+      mes = 1;
+      anio += 1;
+    } else {
+      mes += 1;
+    }
+  }
+
+  return periods;
+}
+
+function periodKey(period: MonthlyPeriod) {
+  return `${period.anio}-${period.mes}`;
+}
+
+function currentPeriodKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}`;
+}
+
+function parsePeriodKey(value: string): MonthlyPeriod | null {
+  const [year, month] = value.split("-").map(Number);
+  if (!year || !month) return null;
+  return { mes: month, anio: year };
+}
+
+function isMonthlyPeriod(period: MonthlyPeriod | null): period is MonthlyPeriod {
+  return Boolean(period);
+}
+
+function formatPeriod(period: MonthlyPeriod) {
+  return `${MONTH_LABELS[period.mes - 1]} ${period.anio}`;
+}
+
+function yearOptions() {
+  const currentYear = new Date().getFullYear();
+  return Array.from({ length: currentYear - 2020 + 1 }, (_, index) => currentYear - index);
+}
+
 function createStudentDefaults(): StudentFormValues {
   return {
     tipoRegistro: "NUEVO",
     pagoMesActual: "NO",
+    mensualidadMetodoPagoActual: "EFECTIVO",
     inscripcionPagada: "NO",
     inscripcionMonto: "",
-    inscripcionMetodoPago: "",
+    inscripcionMetodoPago: "EFECTIVO",
     modalidadMensualidad: "ANTICIPADA",
+    inicioClasesMes: "",
+    inicioClasesAnio: String(new Date().getFullYear()),
+    mesesPagados: [],
     nombre: "",
     apellido: "",
     edad: "",
