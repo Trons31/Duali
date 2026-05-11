@@ -4,18 +4,30 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronDown, FiChevronUp, FiMessageCircle, FiSearch } from "react-icons/fi";
+import { FiCheck, FiChevronDown, FiChevronUp, FiDollarSign, FiMessageCircle, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import {
+  PaymentInstallmentModal,
+  type InstallmentModalPayment,
+  type InstallmentSubmitValues
+} from "@/components/ui/payment-installment-modal";
 import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency, formatDate } from "@/lib/web-utils";
+import type { PaymentInstallmentItem } from "@/lib/web-types";
 
 type DuePayment = {
   id: string;
   kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
   monto: number | string;
+  montoAbonado?: number | string;
+  saldoPendiente?: number | string;
+  cantidadAbonos?: number;
   fechaVencimiento: string;
-  estado?: "PENDIENTE" | "PAGADO" | "VENCIDO";
+  estado?: "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO";
+  ultimoMetodoAbono?: string | null;
+  fechaUltimoAbono?: string | null;
+  installments?: PaymentInstallmentItem[];
   mes?: number | null;
   anio?: number | null;
   student: {
@@ -56,7 +68,7 @@ const MONTH_NAMES = [
   "diciembre"
 ];
 
-type PaymentDisplayStatus = "PAGADO" | "VENCIDO" | "PENDIENTE_HOY" | "PROXIMO_A_VENCER";
+type PaymentDisplayStatus = "PAGADO" | "ABONADO" | "VENCIDO" | "PENDIENTE_HOY" | "PROXIMO_A_VENCER";
 
 export function DuePaymentsPanel({
   items,
@@ -68,8 +80,10 @@ export function DuePaymentsPanel({
   const { data: session } = useSession();
   const router = useRouter();
   const [payTarget, setPayTarget] = useState<PaymentCard | null>(null);
+  const [installmentTarget, setInstallmentTarget] = useState<InstallmentModalPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [submittingInstallment, setSubmittingInstallment] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
   const [query, setQuery] = useState("");
   const token = session?.user.apiToken ?? "";
@@ -93,9 +107,12 @@ export function DuePaymentsPanel({
   }, [items, query]);
 
   const paymentCards = useMemo(() => {
-    if (titleAction === "vencido") return groupOverduePaymentCards(filteredItems);
-    return filteredItems.map(createSinglePaymentCard);
+    const collectibleItems = filteredItems.filter((item) => !isAbonablePayment(item));
+    if (titleAction === "vencido") return groupOverduePaymentCards(collectibleItems);
+    return collectibleItems.map(createSinglePaymentCard);
   }, [filteredItems, titleAction]);
+
+  const abonableItems = useMemo(() => filteredItems.filter(isAbonablePayment).map(createSinglePaymentCard), [filteredItems]);
 
   function openPayModal(card: PaymentCard) {
     setPaymentMethod(PAYMENT_METHODS[0].value);
@@ -105,6 +122,18 @@ export function DuePaymentsPanel({
   function closePayModal() {
     setPayTarget(null);
     setPaymentMethod(PAYMENT_METHODS[0].value);
+  }
+
+  function openInstallmentModal(item: DuePayment, mode: "history" | "payment" = "payment") {
+    setInstallmentTarget({ ...toInstallmentModalPayment(item), mode });
+  }
+
+  function openPayBalanceModal(item: DuePayment) {
+    setInstallmentTarget({ ...toInstallmentModalPayment(item), mode: "payment", prefillRemaining: true });
+  }
+
+  function closeInstallmentModal() {
+    setInstallmentTarget(null);
   }
 
   async function payCurrent() {
@@ -135,6 +164,28 @@ export function DuePaymentsPanel({
       })
       .catch((error: Error) => sileo.error({ title: error.message }))
       .finally(() => setSubmittingPayment(false));
+  }
+
+  async function saveInstallment(values: InstallmentSubmitValues) {
+    if (!installmentTarget) return;
+
+    const endpoint =
+      installmentTarget.kind === "MONTHLY_PAYMENT"
+        ? `/api/monthly-payments/${installmentTarget.id}/installments`
+        : `/api/enrollment-payments/${installmentTarget.id}/installments`;
+
+    setSubmittingInstallment(true);
+    await clientApiFetch(endpoint, token, {
+      method: "POST",
+      body: JSON.stringify(values)
+    })
+      .then(() => {
+        sileo.success({ title: "Abono registrado" });
+        closeInstallmentModal();
+        router.refresh();
+      })
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingInstallment(false));
   }
 
   async function notifyByWhatsapp(card: PaymentCard) {
@@ -249,10 +300,19 @@ export function DuePaymentsPanel({
                             {card.items.map((payment) => (
                               <div
                                 key={`${payment.kind}-${payment.id}`}
-                                className="flex items-center justify-between gap-3 text-sm"
+                                className="flex flex-wrap items-center justify-between gap-3 text-sm"
                               >
                                 <span className="font-semibold text-ink-700">{paymentConceptCopy(payment)}</span>
-                                <span className="shrink-0 font-black text-ink-950">{currency(payment.monto)}</span>
+                                <div className="flex items-center gap-3">
+                                  <span className="shrink-0 font-black text-ink-950">{currency(paymentRemainingAmount(payment))}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openInstallmentModal(payment)}
+                                    className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-black text-brand-700 transition hover:bg-brand-100"
+                                  >
+                                    Abonar
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -272,6 +332,17 @@ export function DuePaymentsPanel({
                           <FiMessageCircle className="size-5" />
                           Notificar por WhatsApp
                         </Button>
+                        {!card.isConsolidated ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="min-h-14 rounded-[22px] border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            onClick={() => openInstallmentModal(item)}
+                          >
+                            <FiDollarSign className="size-5" />
+                            Abonar
+                          </Button>
+                        ) : null}
                         <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(card)}>
                           <FiCheck className="size-5" />
                           Marcar pagado
@@ -295,6 +366,79 @@ export function DuePaymentsPanel({
               </div>
             )
           ) : null}
+        </section>
+
+        <section className="rounded-[28px] border border-sky-100 bg-white shadow-soft">
+          <div className="border-b border-sky-100 px-5 py-4 sm:px-6">
+            <h2 className="text-lg font-bold text-ink-950">Abonables</h2>
+            <p className="mt-1 text-sm text-ink-500">
+              {abonableItems.length} {abonableItems.length === 1 ? "pago con abonos activos" : "pagos con abonos activos"}
+            </p>
+          </div>
+
+          {abonableItems.length ? (
+            <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+              {abonableItems.map((card) => {
+                const item = card.primaryItem;
+
+                return (
+                  <article
+                    key={`abonable-${card.key}`}
+                    className="rounded-[28px] border border-sky-100 bg-sky-50/50 px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                  >
+                    <div className="space-y-5">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[15px] font-semibold text-ink-950">
+                            {item.student.nombre} {item.student.apellido}
+                          </p>
+                          <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-700">
+                            Pago por abono
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-ink-500">{paymentConceptCopy(item)}</p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <MiniAmount label="Valor total" value={currency(item.monto)} />
+                        <MiniAmount label="Total abonado" value={currency(paymentPaidAmount(item))} />
+                        <MiniAmount label="Saldo restante" value={currency(paymentRemainingAmount(item))} highlight />
+                      </div>
+
+                      <div className="grid gap-2 text-sm font-semibold text-ink-600 sm:grid-cols-3">
+                        <span>{item.cantidadAbonos ?? item.installments?.length ?? 0} abono(s)</span>
+                        <span>Ultimo metodo: {item.ultimoMetodoAbono ?? "Sin dato"}</span>
+                        <span>Ultimo abono: {item.fechaUltimoAbono ? formatDate(item.fechaUltimoAbono) : "Sin fecha"}</span>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="min-h-14 rounded-[22px] border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                          onClick={() => openInstallmentModal(item, "history")}
+                        >
+                          Ver historial
+                        </Button>
+                        <Button
+                          type="button"
+                          className="min-h-14 rounded-[22px]"
+                          onClick={() => openPayBalanceModal(item)}
+                        >
+                          Pagar saldo
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-6 py-10 text-center">
+              <h3 className="text-lg font-bold text-ink-950">No hay pagos abonables</h3>
+              <p className="mt-2 text-sm text-ink-500">Cuando registres un primer abono, aparecera aqui hasta completar el saldo.</p>
+            </div>
+          )}
         </section>
       </div>
 
@@ -323,6 +467,14 @@ export function DuePaymentsPanel({
         onConfirm={payCurrent}
         onSelectMethod={setPaymentMethod}
       />
+
+      <PaymentInstallmentModal
+        open={Boolean(installmentTarget)}
+        payment={installmentTarget}
+        loading={submittingInstallment}
+        onClose={closeInstallmentModal}
+        onSubmit={saveInstallment}
+      />
     </div>
   );
 }
@@ -332,7 +484,7 @@ function createSinglePaymentCard(item: DuePayment): PaymentCard {
     key: `${item.kind}-${item.id}`,
     items: [item],
     primaryItem: item,
-    totalAmount: Number(item.monto ?? 0),
+    totalAmount: paymentRemainingAmount(item),
     displayStatus: resolvePaymentDisplayStatus(item),
     oldestDueDate: item.fechaVencimiento,
     isConsolidated: false
@@ -358,13 +510,52 @@ function groupOverduePaymentCards(items: DuePayment[]) {
         key,
         items: sortedItems,
         primaryItem,
-        totalAmount: sortedItems.reduce((total, item) => total + Number(item.monto ?? 0), 0),
+        totalAmount: sortedItems.reduce((total, item) => total + paymentRemainingAmount(item), 0),
         displayStatus: "VENCIDO" as PaymentDisplayStatus,
         oldestDueDate: primaryItem.fechaVencimiento,
         isConsolidated: sortedItems.length > 1
       };
     })
     .sort((a, b) => new Date(a.oldestDueDate).getTime() - new Date(b.oldestDueDate).getTime());
+}
+
+function MiniAmount({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className={cn("rounded-[18px] border px-4 py-3", highlight ? "border-amber-100 bg-amber-50" : "border-white bg-white/80")}>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-ink-400">{label}</p>
+      <p className="mt-2 text-base font-black text-ink-950">{value}</p>
+    </div>
+  );
+}
+
+function isAbonablePayment(item: DuePayment) {
+  return item.estado === "ABONADO" && paymentRemainingAmount(item) > 0;
+}
+
+function paymentPaidAmount(item: DuePayment) {
+  if (item.montoAbonado !== undefined && item.montoAbonado !== null) return Number(item.montoAbonado);
+  return item.installments?.reduce((sum, installment) => sum + Number(installment.monto), 0) ?? 0;
+}
+
+function paymentRemainingAmount(item: DuePayment) {
+  if (item.saldoPendiente !== undefined && item.saldoPendiente !== null) return Number(item.saldoPendiente);
+  return Math.max(Number(item.monto ?? 0) - paymentPaidAmount(item), 0);
+}
+
+function toInstallmentModalPayment(item: DuePayment): InstallmentModalPayment {
+  return {
+    id: item.id,
+    kind: item.kind,
+    studentName: `${item.student.nombre} ${item.student.apellido}`,
+    concept: paymentConceptCopy(item),
+    totalAmount: Number(item.monto ?? 0),
+    paidAmount: paymentPaidAmount(item),
+    remainingAmount: paymentRemainingAmount(item),
+    installmentCount: item.cantidadAbonos ?? item.installments?.length ?? 0,
+    lastMethod: item.ultimoMetodoAbono,
+    lastDate: item.fechaUltimoAbono,
+    installments: item.installments ?? []
+  };
 }
 
 function studentGroupKey(item: DuePayment) {
@@ -472,11 +663,13 @@ function createWhatsappPaymentMessage(card: PaymentCard, isGuardian: boolean) {
 }
 
 function amountClassName(status: PaymentDisplayStatus) {
+  if (status === "ABONADO") return "text-sky-700";
   return status === "VENCIDO" ? "text-rose-700" : "text-brand-600";
 }
 
 function resolvePaymentDisplayStatus(item: DuePayment): PaymentDisplayStatus {
   if (item.estado === "PAGADO") return "PAGADO";
+  if (item.estado === "ABONADO") return "ABONADO";
 
   const dueDate = startOfLocalCalendarDay(new Date(item.fechaVencimiento));
   const today = startOfLocalCalendarDay(new Date());
@@ -488,6 +681,7 @@ function resolvePaymentDisplayStatus(item: DuePayment): PaymentDisplayStatus {
 
 function paymentStatusLabel(status: PaymentDisplayStatus) {
   if (status === "PAGADO") return "Pagado";
+  if (status === "ABONADO") return "Pago por abono";
   if (status === "VENCIDO") return "Vencido";
   if (status === "PENDIENTE_HOY") return "Pendiente";
   return "Próximo a vencer";
@@ -496,7 +690,11 @@ function paymentStatusLabel(status: PaymentDisplayStatus) {
 function statusBadgeClassName(status: PaymentDisplayStatus) {
   return cn(
     "rounded-full px-2.5 py-1 text-[11px] font-black",
-    status === "VENCIDO" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+    status === "VENCIDO"
+      ? "bg-rose-100 text-rose-700"
+      : status === "ABONADO"
+        ? "bg-sky-100 text-sky-700"
+        : "bg-amber-100 text-amber-700"
   );
 }
 

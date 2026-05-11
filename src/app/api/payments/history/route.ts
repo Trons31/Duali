@@ -1,6 +1,7 @@
 import { requireClient } from "@/lib/auth";
 import { handleError, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { calculateTotalDebtAfterInstallment, getOpenDebtByStudent } from "@/lib/student-debt";
 
 function startOfWeek(date: Date) {
   const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
@@ -37,12 +38,13 @@ export async function GET(request: Request) {
     const from = period === "week" ? startOfWeek(now) : monthFrom;
     const to = period === "week" ? endOfWeek(now) : monthTo;
 
-    const [monthlyPayments, enrollmentPayments] = await Promise.all([
+    const [monthlyPayments, enrollmentPayments, installments] = await Promise.all([
       prisma.monthlyPayment.findMany({
         where: {
           clientId,
           deletedAt: null,
           estado: "PAGADO",
+          cantidadAbonos: 0,
           fechaPago: { gte: from, lte: to }
         },
         orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
@@ -56,6 +58,7 @@ export async function GET(request: Request) {
           clientId,
           deletedAt: null,
           estado: "PAGADO",
+          cantidadAbonos: 0,
           fechaPago: { gte: from, lte: to }
         },
         orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
@@ -66,8 +69,36 @@ export async function GET(request: Request) {
             }
           }
         }
+      }),
+      prisma.paymentInstallment.findMany({
+        where: {
+          clientId,
+          fechaAbono: { gte: from, lte: to }
+        },
+        orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
+        include: {
+          student: true,
+          monthlyPayment: {
+            include: {
+              group: true
+            }
+          },
+          enrollmentPayment: {
+            include: {
+              student: {
+                include: {
+                  group: true
+                }
+              }
+            }
+          }
+        }
       })
     ]);
+    const debtByStudent = await getOpenDebtByStudent(
+      clientId,
+      installments.map((installment) => installment.estudianteId)
+    );
 
     const items = [
       ...monthlyPayments.map((payment) => ({
@@ -109,7 +140,36 @@ export async function GET(request: Request) {
               nombre: payment.student.group.nombre
             }
           : null
-      }))
+      })),
+      ...installments.map((installment) => {
+        const monthlyPayment = installment.monthlyPayment;
+        const enrollmentPayment = installment.enrollmentPayment;
+        const group = monthlyPayment?.group ?? enrollmentPayment?.student.group ?? null;
+
+        return {
+          id: installment.id,
+          kind: "PAYMENT_INSTALLMENT" as const,
+          label: "Abono" as const,
+          monto: Number(installment.monto),
+          fechaPago: installment.fechaAbono.toISOString(),
+          mes: monthlyPayment?.mes ?? null,
+          anio: monthlyPayment?.anio ?? null,
+          concept: installment.concepto,
+          paymentMethod: installment.metodoPago,
+          remainingBalance: calculateTotalDebtAfterInstallment(installment, debtByStudent),
+          student: {
+            id: installment.student.id,
+            nombre: installment.student.nombre,
+            apellido: installment.student.apellido
+          },
+          group: group
+            ? {
+                id: group.id,
+                nombre: group.nombre
+              }
+            : null
+        };
+      })
     ].sort((a, b) => new Date(b.fechaPago).getTime() - new Date(a.fechaPago).getTime());
 
     const totalAmount = items.reduce((sum, item) => sum + Number(item.monto), 0);

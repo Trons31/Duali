@@ -54,7 +54,7 @@ export async function GET(request: Request) {
             monthlyPayments: {
               some: {
                 deletedAt: null,
-                estado: { in: ["PENDIENTE", "VENCIDO"] }
+                estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] }
               }
             }
           }
@@ -133,6 +133,8 @@ export async function POST(request: Request) {
             estudianteId: createdStudent.id,
             clientId,
             monto: inscripcionMonto,
+            montoAbonado: inscripcionPagada ? inscripcionMonto : 0,
+            saldoPendiente: inscripcionPagada ? 0 : inscripcionMonto,
             fechaVencimiento,
             estado: inscripcionPagada ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
             fechaPago: inscripcionPagada ? inscripcionFechaPago ?? new Date() : null,
@@ -168,6 +170,8 @@ export async function POST(request: Request) {
                   mes: period.mes,
                   anio: period.anio,
                   monto: precioMensualidad,
+                  montoAbonado: isPaid ? precioMensualidad : 0,
+                  saldoPendiente: isPaid ? 0 : precioMensualidad,
                   fechaVencimiento,
                   estado: isPaid ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
                   fechaPago: isPaid ? (isCurrentPeriod ? new Date() : fechaVencimiento) : null,
@@ -201,6 +205,8 @@ export async function POST(request: Request) {
             mes: firstPeriod.mes,
             anio: firstPeriod.anio,
             monto: precioMensualidad,
+            montoAbonado: pagoMesActual ? precioMensualidad : 0,
+            saldoPendiente: pagoMesActual ? 0 : precioMensualidad,
             fechaVencimiento,
             estado: pagoMesActual ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
             fechaPago: pagoMesActual ? new Date() : null,

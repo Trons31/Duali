@@ -41,7 +41,7 @@ export async function queueAdminPaymentReminders() {
         include: { student: true, group: true }
       }),
       prisma.monthlyPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
+        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
         include: { student: true, group: true }
       }),
       prisma.enrollmentPayment.findMany({
@@ -49,7 +49,7 @@ export async function queueAdminPaymentReminders() {
         include: { student: { include: { group: true } } }
       }),
       prisma.enrollmentPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
+        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
         include: { student: { include: { group: true } } }
       })
     ]);
@@ -76,7 +76,7 @@ export async function queueAdminPaymentReminders() {
         type: "MONTHLY_OVERDUE",
         dedupKey: `${client.id}:monthly-overdue:${payment.id}:${today}`,
         title: "Mensualidad vencida",
-        body: `${name} aun no paga. Lleva ${days} dia${days === 1 ? "" : "s"} vencido. Valor: ${money(payment.monto)}.`,
+        body: `${name} aun tiene saldo pendiente. Lleva ${days} dia${days === 1 ? "" : "s"} vencido. Saldo: ${money(payment.saldoPendiente || payment.monto)}.`,
         data: { type: "MONTHLY_OVERDUE", monthlyPaymentId: payment.id, studentId: payment.estudianteId, daysOverdue: days }
       });
       if (queued.deduped) result.deduped += 1;
@@ -105,7 +105,7 @@ export async function queueAdminPaymentReminders() {
         type: "ENROLLMENT_OVERDUE",
         dedupKey: `${client.id}:enrollment-overdue:${payment.id}:${today}`,
         title: "Inscripcion vencida",
-        body: `${name} aun no paga la inscripcion. Lleva ${days} dia${days === 1 ? "" : "s"} vencida. Valor: ${money(payment.monto)}.`,
+        body: `${name} aun tiene saldo pendiente de inscripcion. Lleva ${days} dia${days === 1 ? "" : "s"} vencida. Saldo: ${money(payment.saldoPendiente || payment.monto)}.`,
         data: { type: "ENROLLMENT_OVERDUE", enrollmentPaymentId: payment.id, studentId: payment.estudianteId, daysOverdue: days }
       });
       if (queued.deduped) result.deduped += 1;

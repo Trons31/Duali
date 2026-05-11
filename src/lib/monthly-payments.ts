@@ -46,6 +46,7 @@ export async function ensureCurrentMonthlyPayments(clientId: string) {
         mes,
         anio,
         monto: student.precioMensualidad ?? 0,
+        saldoPendiente: student.precioMensualidad ?? 0,
         fechaVencimiento,
         estado: paymentStatusForDueDate(fechaVencimiento)
       };

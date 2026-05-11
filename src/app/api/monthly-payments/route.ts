@@ -21,7 +21,7 @@ export async function GET(request: Request) {
         ...(groupId ? { grupoId: groupId } : {})
       },
       orderBy: { fechaVencimiento: "desc" },
-      include: { student: true, group: true }
+      include: { student: true, group: true, installments: { orderBy: { numero: "asc" } } }
     });
 
     return ok(payments);
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
         ...body,
         grupoId: student.grupoId,
         clientId,
+        saldoPendiente: body.monto,
         estado: paymentStatusForDueDate(body.fechaVencimiento)
       }
     });

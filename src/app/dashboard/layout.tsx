@@ -43,7 +43,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         clientId,
         deletedAt: null,
         student: { estado: "ACTIVO", deletedAt: null },
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
+        OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
       }
     }),
     prisma.enrollmentPayment.count({
@@ -51,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         clientId,
         deletedAt: null,
         student: { estado: "ACTIVO", deletedAt: null },
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE" }]
+        OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE" }]
       }
     }),
     ensureClientSubscription(clientId)

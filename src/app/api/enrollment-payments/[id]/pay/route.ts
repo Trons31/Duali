@@ -19,6 +19,8 @@ export async function PUT(request: Request, context: Params) {
         estado: "PAGADO",
         fechaPago: body.fechaPago ?? new Date(),
         metodoPago: body.metodoPago,
+        montoAbonado: exists.monto,
+        saldoPendiente: 0,
         notas: body.notas
       },
       include: { student: { include: { group: true } } }

@@ -1,6 +1,7 @@
 import { requireClient } from "@/lib/auth";
 import { handleError, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { calculateTotalDebtAfterInstallment, getOpenDebtByStudent } from "@/lib/student-debt";
 
 const MONTH_NAMES = [
   "Enero",
@@ -52,18 +53,27 @@ function normalizeMethod(method: string | null) {
   }
 }
 
+function money(value: number | string | { toString(): string }) {
+  return Number(value).toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const { clientId } = await requireClient(request);
     const url = new URL(request.url);
     const period = resolvePeriod(url.searchParams.get("year"), url.searchParams.get("month"));
 
-    const [monthlyPayments, enrollmentPayments, expenses] = await Promise.all([
+    const [monthlyPayments, enrollmentPayments, installments, expenses] = await Promise.all([
       prisma.monthlyPayment.findMany({
         where: {
           clientId,
           deletedAt: null,
           estado: "PAGADO",
+          cantidadAbonos: 0,
           fechaPago: { gte: period.from, lte: period.to }
         },
         orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
@@ -77,6 +87,7 @@ export async function GET(request: Request) {
           clientId,
           deletedAt: null,
           estado: "PAGADO",
+          cantidadAbonos: 0,
           fechaPago: { gte: period.from, lte: period.to }
         },
         orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
@@ -84,6 +95,30 @@ export async function GET(request: Request) {
           student: {
             include: {
               group: true
+            }
+          }
+        }
+      }),
+      prisma.paymentInstallment.findMany({
+        where: {
+          clientId,
+          fechaAbono: { gte: period.from, lte: period.to }
+        },
+        orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
+        include: {
+          student: true,
+          monthlyPayment: {
+            include: {
+              group: true
+            }
+          },
+          enrollmentPayment: {
+            include: {
+              student: {
+                include: {
+                  group: true
+                }
+              }
             }
           }
         }
@@ -97,10 +132,15 @@ export async function GET(request: Request) {
         orderBy: [{ fecha: "desc" }, { createdAt: "desc" }]
       })
     ]);
+    const debtByStudent = await getOpenDebtByStudent(
+      clientId,
+      installments.map((installment) => installment.estudianteId)
+    );
 
     const ingresosMensualidades = monthlyPayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
     const ingresosInscripciones = enrollmentPayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
-    const ingresos = ingresosMensualidades + ingresosInscripciones;
+    const ingresosAbonos = installments.reduce((sum, installment) => sum + Number(installment.monto), 0);
+    const ingresos = ingresosMensualidades + ingresosInscripciones + ingresosAbonos;
     const egresos = expenses.reduce((sum, expense) => sum + Number(expense.monto), 0);
 
     const methodMap = new Map<string, { amount: number; count: number }>();
@@ -119,6 +159,15 @@ export async function GET(request: Request) {
       const current = methodMap.get(key) ?? { amount: 0, count: 0 };
       methodMap.set(key, {
         amount: current.amount + Number(payment.monto),
+        count: current.count + 1
+      });
+    }
+
+    for (const installment of installments) {
+      const key = normalizeMethod(installment.metodoPago);
+      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
+      methodMap.set(key, {
+        amount: current.amount + Number(installment.monto),
         count: current.count + 1
       });
     }
@@ -151,6 +200,23 @@ export async function GET(request: Request) {
         amount: Number(payment.monto),
         direction: "income" as const
       })),
+      ...installments.map((installment) => {
+        const monthlyPayment = installment.monthlyPayment;
+        const enrollmentPayment = installment.enrollmentPayment;
+        const group = monthlyPayment?.group ?? enrollmentPayment?.student.group ?? null;
+        const totalDebtAfterInstallment = calculateTotalDebtAfterInstallment(installment, debtByStudent);
+
+        return {
+          id: installment.id,
+          date: installment.fechaAbono.toISOString(),
+          type: "ABONO" as const,
+          title: `${installment.student.nombre} ${installment.student.apellido}`,
+          subtitle: `${installment.concepto} · ${normalizeMethod(installment.metodoPago)}${group?.nombre ? ` · ${group.nombre}` : ""} · Deuda total ${money(totalDebtAfterInstallment)}`,
+          amount: Number(installment.monto),
+          remainingBalance: totalDebtAfterInstallment,
+          direction: "income" as const
+        };
+      }),
       ...expenses.map((expense) => ({
         id: expense.id,
         date: expense.fecha.toISOString(),

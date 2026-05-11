@@ -15,23 +15,27 @@ export async function GET(request: Request) {
         where: {
           clientId,
           deletedAt: null,
-          estado: "PENDIENTE",
-          fechaVencimiento: { gte: todayStart, lt: tomorrowStart },
+          OR: [
+            { estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart } },
+            { estado: "ABONADO", saldoPendiente: { gt: 0 } }
+          ],
           student: { estado: "ACTIVO", deletedAt: null }
         },
         orderBy: { fechaVencimiento: "asc" },
-        include: { student: true, group: true }
+        include: { student: true, group: true, installments: { orderBy: { numero: "asc" } } }
       }),
       prisma.enrollmentPayment.findMany({
         where: {
           clientId,
           deletedAt: null,
-          estado: "PENDIENTE",
-          fechaVencimiento: { gte: todayStart, lt: tomorrowStart },
+          OR: [
+            { estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart } },
+            { estado: "ABONADO", saldoPendiente: { gt: 0 } }
+          ],
           student: { estado: "ACTIVO", deletedAt: null }
         },
         orderBy: { fechaVencimiento: "asc" },
-        include: { student: { include: { group: true } } }
+        include: { student: { include: { group: true } }, installments: { orderBy: { numero: "asc" } } }
       })
     ]);
 

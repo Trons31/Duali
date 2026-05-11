@@ -64,6 +64,44 @@ export function buildEnrollmentReminderMessage(params: {
   return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
 }
 
+export function buildPaymentInstallmentMessage(params: {
+  studentName: string;
+  concept: string;
+  amount: string | number;
+  paymentMethod: string;
+  paidAt: Date;
+  totalPaid: string | number;
+  remainingBalance: string | number;
+  installmentNumber: number;
+}) {
+  const amount = formatCop(params.amount);
+  const totalPaid = formatCop(params.totalPaid);
+  const remainingBalance = formatCop(params.remainingBalance);
+  const date = params.paidAt.toLocaleDateString("es-CO");
+
+  if (Number(params.remainingBalance) <= 0 && params.installmentNumber > 1) {
+    return `Hola, ${params.studentName}. Tu pago de ${params.concept} ha sido completado correctamente. Ultimo abono: ${amount}. Metodo de pago: ${params.paymentMethod}. Fecha del abono: ${date}. Total abonado acumulado: ${totalPaid}. Saldo restante: ${remainingBalance}.`;
+  }
+
+  if (params.installmentNumber === 1) {
+    return `Hola, ${params.studentName}. Hemos registrado tu primer abono para ${params.concept}. Valor abonado: ${amount}. Metodo de pago: ${params.paymentMethod}. Fecha del abono: ${date}. Total abonado hasta ahora: ${totalPaid}. Saldo restante: ${remainingBalance}.`;
+  }
+
+  return `Hola, ${params.studentName}. Hemos registrado un nuevo abono para ${params.concept}. Valor abonado: ${amount}. Metodo de pago: ${params.paymentMethod}. Fecha del abono: ${date}. Total abonado acumulado: ${totalPaid}. Saldo restante: ${remainingBalance}.`;
+}
+
+export function buildPendingBalanceMessage(params: {
+  studentName: string;
+  concept: string;
+  lastAmount: string | number;
+  paymentMethod: string;
+  paidAt: Date;
+  totalPaid: string | number;
+  remainingBalance: string | number;
+}) {
+  return `Hola, ${params.studentName}. Te recordamos que tienes un saldo pendiente para ${params.concept}. Ultimo abono registrado: ${formatCop(params.lastAmount)}. Metodo de pago: ${params.paymentMethod}. Fecha del abono: ${params.paidAt.toLocaleDateString("es-CO")}. Total abonado acumulado: ${formatCop(params.totalPaid)}. Saldo restante: ${formatCop(params.remainingBalance)}.`;
+}
+
 export function buildReminderForPayment(
   payment: MonthlyPayment & { student: Pick<Student, "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"> }
 ) {
@@ -114,4 +152,12 @@ function calculateOverdueDays(fechaVencimiento?: Date) {
   const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
 
   return Math.max(1, Math.floor((nowUtc - dueUtc) / 86400000));
+}
+
+function formatCop(value: string | number) {
+  return Number(value).toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0
+  });
 }

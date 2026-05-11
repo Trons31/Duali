@@ -177,10 +177,24 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
                               {item.kind === "MONTHLY_PAYMENT" && item.mes && item.anio
                                 ? ` · ${formatMonthYear(item.mes, item.anio)}`
                                 : ""}
+                              {item.kind === "PAYMENT_INSTALLMENT" && item.concept ? ` · ${item.concept}` : ""}
+                              {item.kind === "PAYMENT_INSTALLMENT" && item.paymentMethod ? ` · ${formatMethod(item.paymentMethod)}` : ""}
                               {item.group?.nombre ? ` · ${item.group.nombre}` : ""}
                             </p>
+                            {item.kind === "PAYMENT_INSTALLMENT" ? (
+                              <p className="mt-2 text-sm font-bold text-sky-700">
+                                Abono: {currency(item.monto)} · Quedo debiendo: {currency(item.remainingBalance ?? 0)}
+                              </p>
+                            ) : null}
                           </div>
-                          <p className="shrink-0 text-[1.8rem] font-black tracking-tight text-brand-600">{currency(item.monto)}</p>
+                          <p
+                            className={cn(
+                              "shrink-0 text-[1.8rem] font-black tracking-tight",
+                              item.kind === "PAYMENT_INSTALLMENT" ? "text-sky-700" : "text-brand-600"
+                            )}
+                          >
+                            {currency(item.monto)}
+                          </p>
                         </div>
                       </article>
                     ))}
@@ -201,4 +215,13 @@ function formatSectionDate(date: Date) {
 
 function formatMonthYear(month: number, year: number) {
   return `${MONTH_NAMES[month - 1] ?? month}/${year}`;
+}
+
+function formatMethod(method: string) {
+  const upper = method.toUpperCase();
+  if (upper === "EFECTIVO") return "Efectivo";
+  if (upper === "TRANSFERENCIA") return "Transferencia";
+  if (upper === "NEQUI") return "Nequi";
+  if (upper === "DAVIPLATA") return "Daviplata";
+  return method;
 }

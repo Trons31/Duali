@@ -20,6 +20,7 @@ enum MonthlyBillingMode {
 
 enum MonthlyPaymentStatus {
   PENDIENTE
+  ABONADO
   PAGADO
   VENCIDO
 }
@@ -31,6 +32,7 @@ enum SuppliesPaymentStatus {
 
 enum EnrollmentPaymentStatus {
   PENDIENTE
+  ABONADO
   PAGADO
   VENCIDO
 }
@@ -93,6 +95,7 @@ model Client {
   monthlyPayments MonthlyPayment[]
   suppliesPayments SuppliesPayment[]
   enrollmentPayments EnrollmentPayment[]
+  paymentInstallments PaymentInstallment[]
   expenses        Expense[]
   notifications   Notification[]
   notificationOutboxes NotificationOutbox[]
@@ -226,6 +229,7 @@ model Student {
   monthlyPayments MonthlyPayment[]
   suppliesPayments SuppliesPayment[]
   enrollmentPayment EnrollmentPayment?
+  paymentInstallments PaymentInstallment[]
   reminders       Reminder[]
 
   @@index([clientId])
@@ -241,10 +245,15 @@ model EnrollmentPayment {
   estudianteId     String                  @unique
   clientId         String
   monto            Decimal                 @db.Decimal(12, 2)
+  montoAbonado     Decimal                 @default(0) @db.Decimal(12, 2)
+  saldoPendiente   Decimal                 @default(0) @db.Decimal(12, 2)
+  cantidadAbonos   Int                     @default(0)
   estado           EnrollmentPaymentStatus @default(PENDIENTE)
   fechaVencimiento DateTime
   fechaPago        DateTime?
   metodoPago       String?
+  ultimoMetodoAbono String?
+  fechaUltimoAbono DateTime?
   notas            String?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
@@ -252,6 +261,7 @@ model EnrollmentPayment {
 
   client           Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   student          Student                 @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  installments     PaymentInstallment[]
   reminders        Reminder[]
 
   @@index([clientId])
@@ -269,10 +279,15 @@ model MonthlyPayment {
   mes              Int
   anio             Int
   monto            Decimal              @db.Decimal(12, 2)
+  montoAbonado     Decimal              @default(0) @db.Decimal(12, 2)
+  saldoPendiente   Decimal              @default(0) @db.Decimal(12, 2)
+  cantidadAbonos   Int                  @default(0)
   fechaVencimiento DateTime
   fechaPago        DateTime?
   estado           MonthlyPaymentStatus @default(PENDIENTE)
   metodoPago       String?
+  ultimoMetodoAbono String?
+  fechaUltimoAbono DateTime?
   comprobanteUrl   String?
   notas            String?
   createdAt        DateTime             @default(now())
@@ -282,6 +297,7 @@ model MonthlyPayment {
   client           Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   student          Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
   group            Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  installments     PaymentInstallment[]
   reminders        Reminder[]
 
   @@unique([estudianteId, mes, anio])
@@ -291,6 +307,40 @@ model MonthlyPayment {
   @@index([clientId, estado])
   @@index([clientId, fechaVencimiento])
   @@map("monthly_payments")
+}
+
+model PaymentInstallment {
+  id                  String             @id @default(cuid())
+  clientId            String
+  estudianteId        String
+  monthlyPaymentId    String?
+  enrollmentPaymentId String?
+  numero              Int
+  concepto            String
+  monto               Decimal            @db.Decimal(12, 2)
+  metodoPago          String
+  fechaAbono          DateTime
+  saldoAnterior       Decimal            @db.Decimal(12, 2)
+  saldoRestante       Decimal            @db.Decimal(12, 2)
+  registradoPorUserId String?
+  registradoPorNombre String?
+  notas               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  client              Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student             Student            @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  monthlyPayment      MonthlyPayment?    @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
+  enrollmentPayment   EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([estudianteId])
+  @@index([monthlyPaymentId])
+  @@index([enrollmentPaymentId])
+  @@index([clientId, fechaAbono])
+  @@unique([monthlyPaymentId, numero])
+  @@unique([enrollmentPaymentId, numero])
+  @@map("payment_installments")
 }
 
 model SuppliesPayment {

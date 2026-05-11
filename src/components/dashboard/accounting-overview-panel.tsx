@@ -292,6 +292,11 @@ function MovementCard({ movement }: { movement: AccountingMovement }) {
             <div className="min-w-0">
               <h3 className="truncate text-[14px] font-bold leading-tight text-ink-950 sm:text-[15px]">{movement.title}</h3>
               <p className="mt-1 text-[12px] font-semibold leading-snug text-ink-500 sm:text-[13px]">{movement.subtitle}</p>
+              {movement.type === "ABONO" ? (
+                <p className="mt-2 text-[12px] font-bold text-sky-700">
+                  Abono: {currency(movement.amount)} · Quedo debiendo: {currency(movement.remainingBalance ?? 0)}
+                </p>
+              ) : null}
               <p className="mt-2 text-[12px] font-semibold text-ink-400">{formatMovementDate(movement.date)}</p>
             </div>
             <div className="shrink-0 text-right">

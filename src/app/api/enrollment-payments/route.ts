@@ -20,7 +20,7 @@ export async function GET(request: Request) {
         ...(from || to ? { fechaPago: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {})
       },
       orderBy: { createdAt: "desc" },
-      include: { student: { include: { group: true } } }
+      include: { student: { include: { group: true } }, installments: { orderBy: { numero: "asc" } } }
     });
 
     return ok(payments);

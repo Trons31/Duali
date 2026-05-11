@@ -16,16 +16,21 @@ export async function POST(request: Request) {
     });
 
     const result = await prisma.monthlyPayment.createMany({
-      data: students.map((student) => ({
-        estudianteId: student.id,
-        grupoId: group.id,
-        clientId,
-        mes: body.mes,
-        anio: body.anio,
-        monto: body.monto ?? Number(student.precioMensualidad ?? group.precioMensualidadDefault),
-        fechaVencimiento: body.fechaVencimiento,
-        estado: paymentStatusForDueDate(body.fechaVencimiento)
-      })),
+      data: students.map((student) => {
+        const amount = body.monto ?? Number(student.precioMensualidad ?? group.precioMensualidadDefault);
+
+        return {
+          estudianteId: student.id,
+          grupoId: group.id,
+          clientId,
+          mes: body.mes,
+          anio: body.anio,
+          monto: amount,
+          saldoPendiente: amount,
+          fechaVencimiento: body.fechaVencimiento,
+          estado: paymentStatusForDueDate(body.fechaVencimiento)
+        };
+      }),
       skipDuplicates: true
     });
 

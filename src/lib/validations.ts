@@ -227,6 +227,13 @@ export const payEnrollmentSchema = z.object({
   notas: z.string().optional().nullable()
 });
 
+export const paymentInstallmentSchema = z.object({
+  monto: z.coerce.number().positive("El valor del abono debe ser mayor a cero"),
+  metodoPago: z.string().trim().min(1, "Selecciona un metodo de pago"),
+  fechaAbono: localDateInputSchema.optional(),
+  notas: z.string().optional().nullable()
+});
+
 export const suppliesPaymentSchema = z.object({
   nombreConcepto: z.string().min(2),
   descripcion: z.string().optional().nullable(),

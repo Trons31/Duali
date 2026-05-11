@@ -1,5 +1,5 @@
 export type StudentStatus = "ACTIVO" | "INACTIVO";
-export type PaymentStatus = "PENDIENTE" | "PAGADO" | "VENCIDO";
+export type PaymentStatus = "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO";
 export type MonthlyBillingMode = "ANTICIPADA" | "VENCIDA";
 
 export type SafeClient = {
@@ -140,13 +140,19 @@ export type MonthlyPaymentItem = {
   mes: number;
   anio: number;
   monto: number | string;
+  montoAbonado: number | string;
+  saldoPendiente: number | string;
+  cantidadAbonos: number;
   fechaVencimiento: string;
   fechaPago: string | null;
   estado: PaymentStatus;
   metodoPago: string | null;
+  ultimoMetodoAbono: string | null;
+  fechaUltimoAbono: string | null;
   comprobanteUrl: string | null;
   notas: string | null;
   createdAt: string;
+  installments?: PaymentInstallmentItem[];
   student: {
     id: string;
     nombre: string;
@@ -165,12 +171,18 @@ export type EnrollmentPaymentItem = {
   estudianteId: string;
   clientId: string;
   monto: number | string;
+  montoAbonado: number | string;
+  saldoPendiente: number | string;
+  cantidadAbonos: number;
   estado: PaymentStatus;
   fechaVencimiento: string;
   fechaPago: string | null;
   metodoPago: string | null;
+  ultimoMetodoAbono: string | null;
+  fechaUltimoAbono: string | null;
   notas: string | null;
   createdAt: string;
+  installments?: PaymentInstallmentItem[];
   student: {
     id: string;
     nombre: string;
@@ -183,6 +195,25 @@ export type EnrollmentPaymentItem = {
       nombre: string;
     } | null;
   };
+};
+
+export type PaymentInstallmentItem = {
+  id: string;
+  clientId: string;
+  estudianteId: string;
+  monthlyPaymentId: string | null;
+  enrollmentPaymentId: string | null;
+  numero: number;
+  concepto: string;
+  monto: number | string;
+  metodoPago: string;
+  fechaAbono: string;
+  saldoAnterior: number | string;
+  saldoRestante: number | string;
+  registradoPorUserId: string | null;
+  registradoPorNombre: string | null;
+  notas: string | null;
+  createdAt: string;
 };
 
 export type SuppliesPaymentItem = {
@@ -240,12 +271,15 @@ export type PaymentHistoryFilter = "week" | "month";
 
 export type PaymentHistoryItem = {
   id: string;
-  kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
-  label: "Mensualidad" | "Inscripcion";
+  kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT" | "PAYMENT_INSTALLMENT";
+  label: "Mensualidad" | "Inscripcion" | "Abono";
   monto: number;
   fechaPago: string;
   mes?: number | null;
   anio?: number | null;
+  concept?: string | null;
+  paymentMethod?: string | null;
+  remainingBalance?: number | null;
   student: {
     id: string;
     nombre: string;
@@ -305,10 +339,11 @@ export type AccountingPaymentMethod = {
 export type AccountingMovement = {
   id: string;
   date: string;
-  type: "MENSUALIDAD" | "INSCRIPCION" | "EGRESO";
+  type: "MENSUALIDAD" | "INSCRIPCION" | "ABONO" | "EGRESO";
   title: string;
   subtitle: string;
   amount: number;
+  remainingBalance?: number | null;
   direction: "income" | "expense";
 };
 

@@ -71,7 +71,7 @@ export async function GET(request: Request, context: Params) {
                 deletedAt: null,
                 mes: currentMonth,
                 anio: currentYear,
-                estado: { in: ["PENDIENTE", "VENCIDO"] as const }
+                estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] as const }
               }
             }
           }
@@ -119,7 +119,7 @@ export async function GET(request: Request, context: Params) {
           deletedAt: null,
           mes: currentMonth,
           anio: currentYear,
-          estado: "PENDIENTE"
+          estado: { in: ["PENDIENTE", "ABONADO"] }
         }
       }),
       prisma.monthlyPayment.count({

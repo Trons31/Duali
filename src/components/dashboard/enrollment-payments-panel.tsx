@@ -4,15 +4,20 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronDown, FiChevronUp, FiMessageCircle, FiSearch } from "react-icons/fi";
+import { FiCheck, FiChevronDown, FiChevronUp, FiDollarSign, FiMessageCircle, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import {
+  PaymentInstallmentModal,
+  type InstallmentModalPayment,
+  type InstallmentSubmitValues
+} from "@/components/ui/payment-installment-modal";
 import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency, formatDate } from "@/lib/web-utils";
 import type { EnrollmentPaymentItem } from "@/lib/web-types";
 
-type EnrollmentView = "pending" | "paid";
+type EnrollmentView = "pending" | "abonables" | "paid";
 
 const MONTH_NAMES = [
   "enero",
@@ -38,11 +43,17 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [selectedMonth, setSelectedMonth] = useState(defaultMonthValue());
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
   const [payTarget, setPayTarget] = useState<EnrollmentPaymentItem | null>(null);
+  const [installmentTarget, setInstallmentTarget] = useState<InstallmentModalPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [submittingInstallment, setSubmittingInstallment] = useState(false);
 
   const pendingPayments = useMemo(
     () => payments.filter((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO"),
+    [payments]
+  );
+  const abonablePayments = useMemo(
+    () => payments.filter((payment) => payment.estado === "ABONADO" && paymentRemainingAmount(payment) > 0),
     [payments]
   );
   const paidPayments = useMemo(() => payments.filter((payment) => payment.estado === "PAGADO" && payment.fechaPago), [payments]);
@@ -70,6 +81,15 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
       return monthMatches && termMatches;
     });
   }, [paidPayments, query, selectedMonth]);
+
+  const filteredAbonables = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return abonablePayments;
+
+    return abonablePayments.filter((payment) =>
+      `${payment.student.nombre} ${payment.student.apellido} ${payment.student.group?.nombre ?? ""}`.toLowerCase().includes(term)
+    );
+  }, [abonablePayments, query]);
 
   const groupedPaid = useMemo(() => {
     const map = new Map<
@@ -126,6 +146,18 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
     setPaymentMethod(PAYMENT_METHODS[0].value);
   }
 
+  function openInstallmentModal(payment: EnrollmentPaymentItem, mode: "history" | "payment" = "payment") {
+    setInstallmentTarget({ ...toInstallmentModalPayment(payment), mode });
+  }
+
+  function openPayBalanceModal(payment: EnrollmentPaymentItem) {
+    setInstallmentTarget({ ...toInstallmentModalPayment(payment), mode: "payment", prefillRemaining: true });
+  }
+
+  function closeInstallmentModal() {
+    setInstallmentTarget(null);
+  }
+
   async function payCurrent() {
     if (!payTarget) return;
     setSubmittingPayment(true);
@@ -141,6 +173,23 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
       })
       .catch((error: Error) => sileo.error({ title: error.message }))
       .finally(() => setSubmittingPayment(false));
+  }
+
+  async function saveInstallment(values: InstallmentSubmitValues) {
+    if (!installmentTarget) return;
+    setSubmittingInstallment(true);
+
+    await clientApiFetch(`/api/enrollment-payments/${installmentTarget.id}/installments`, token, {
+      method: "POST",
+      body: JSON.stringify(values)
+    })
+      .then(() => {
+        sileo.success({ title: "Abono registrado" });
+        closeInstallmentModal();
+        router.refresh();
+      })
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingInstallment(false));
   }
 
   function toggleDay(key: string) {
@@ -199,6 +248,18 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
               >
                 Pagadas
               </button>
+              <button
+                type="button"
+                onClick={() => setView("abonables")}
+                className={cn(
+                  "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
+                  view === "abonables"
+                    ? "border-ink-950 bg-ink-950 text-white"
+                    : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
+                )}
+              >
+                Abonables
+              </button>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -221,7 +282,9 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                 />
               ) : (
                 <div className="rounded-[18px] border border-ink-100 bg-ink-50/70 px-4 py-3 text-sm text-ink-500">
-                  {filteredPending.length} {filteredPending.length === 1 ? "inscripcion pendiente" : "inscripciones pendientes"}
+                  {view === "abonables"
+                    ? `${filteredAbonables.length} ${filteredAbonables.length === 1 ? "inscripcion abonable" : "inscripciones abonables"}`
+                    : `${filteredPending.length} ${filteredPending.length === 1 ? "inscripcion pendiente" : "inscripciones pendientes"}`}
                 </div>
               )}
             </div>
@@ -273,6 +336,15 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                           <FiCheck className="size-5" />
                           Marcar pagada
                         </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="min-h-14 rounded-[22px] border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          onClick={() => openInstallmentModal(payment)}
+                        >
+                          <FiDollarSign className="size-5" />
+                          Abonar
+                        </Button>
                       </div>
                     </div>
                   </article>
@@ -282,6 +354,72 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
               <div className="px-6 py-14 text-center">
                 <h3 className="text-lg font-bold text-ink-950">No hay inscripciones pendientes</h3>
                 <p className="mt-2 text-sm text-ink-500">{query.trim() ? "Prueba con otro nombre o grupo." : "Todo lo que se ha registrado ya esta al dia."}</p>
+              </div>
+            )}
+          </section>
+        ) : view === "abonables" ? (
+          <section className="rounded-[28px] border border-sky-100 bg-white shadow-soft">
+            <div className="border-b border-sky-100 px-5 py-4 sm:px-6">
+              <h2 className="text-lg font-bold text-ink-950">Abonables</h2>
+              <p className="mt-1 text-sm text-ink-500">
+                {filteredAbonables.length} {filteredAbonables.length === 1 ? "inscripcion con abonos activos" : "inscripciones con abonos activos"}
+              </p>
+            </div>
+
+            {filteredAbonables.length ? (
+              <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+                {filteredAbonables.map((payment) => (
+                  <article
+                    key={payment.id}
+                    className="rounded-[28px] border border-sky-100 bg-sky-50/50 px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                  >
+                    <div className="space-y-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-[15px] font-semibold text-ink-950">
+                              {payment.student.nombre} {payment.student.apellido}
+                            </p>
+                            <StatusBadge value={payment.estado} />
+                          </div>
+                          <p className="mt-1 text-sm text-ink-500">{payment.student.group?.nombre ?? "Sin grupo"} · Inscripcion</p>
+                        </div>
+                        <p className="text-[1.8rem] font-black tracking-tight text-sky-700">{currency(paymentRemainingAmount(payment))}</p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <BalancePill label="Valor total" value={currency(payment.monto)} />
+                        <BalancePill label="Total abonado" value={currency(paymentPaidAmount(payment))} />
+                        <BalancePill label="Saldo restante" value={currency(paymentRemainingAmount(payment))} highlight />
+                      </div>
+
+                      <div className="grid gap-2 text-sm font-semibold text-ink-600 sm:grid-cols-3">
+                        <span>{payment.cantidadAbonos ?? payment.installments?.length ?? 0} abono(s)</span>
+                        <span>Ultimo metodo: {payment.ultimoMetodoAbono ?? "Sin dato"}</span>
+                        <span>Ultimo abono: {payment.fechaUltimoAbono ? formatDate(payment.fechaUltimoAbono) : "Sin fecha"}</span>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="min-h-14 rounded-[22px] border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                          onClick={() => openInstallmentModal(payment, "history")}
+                        >
+                          Ver historial
+                        </Button>
+                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayBalanceModal(payment)}>
+                          Pagar saldo
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="px-6 py-14 text-center">
+                <h3 className="text-lg font-bold text-ink-950">No hay inscripciones abonables</h3>
+                <p className="mt-2 text-sm text-ink-500">Cuando registres un primer abono, aparecera aqui hasta completar el saldo.</p>
               </div>
             )}
           </section>
@@ -366,6 +504,14 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
         onConfirm={payCurrent}
         onSelectMethod={setPaymentMethod}
       />
+
+      <PaymentInstallmentModal
+        open={Boolean(installmentTarget)}
+        payment={installmentTarget}
+        loading={submittingInstallment}
+        onClose={closeInstallmentModal}
+        onSubmit={saveInstallment}
+      />
     </div>
   );
 }
@@ -373,6 +519,41 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
 function defaultMonthValue() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function BalancePill({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className={cn("rounded-[18px] border px-4 py-3", highlight ? "border-amber-100 bg-amber-50" : "border-white bg-white/80")}>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-ink-400">{label}</p>
+      <p className="mt-2 text-base font-black text-ink-950">{value}</p>
+    </div>
+  );
+}
+
+function paymentPaidAmount(payment: EnrollmentPaymentItem) {
+  if (payment.montoAbonado !== undefined && payment.montoAbonado !== null) return Number(payment.montoAbonado);
+  return payment.installments?.reduce((sum, installment) => sum + Number(installment.monto), 0) ?? 0;
+}
+
+function paymentRemainingAmount(payment: EnrollmentPaymentItem) {
+  if (payment.saldoPendiente !== undefined && payment.saldoPendiente !== null) return Number(payment.saldoPendiente);
+  return Math.max(Number(payment.monto ?? 0) - paymentPaidAmount(payment), 0);
+}
+
+function toInstallmentModalPayment(payment: EnrollmentPaymentItem): InstallmentModalPayment {
+  return {
+    id: payment.id,
+    kind: "ENROLLMENT_PAYMENT",
+    studentName: `${payment.student.nombre} ${payment.student.apellido}`,
+    concept: "Inscripcion",
+    totalAmount: Number(payment.monto ?? 0),
+    paidAmount: paymentPaidAmount(payment),
+    remainingAmount: paymentRemainingAmount(payment),
+    installmentCount: payment.cantidadAbonos ?? payment.installments?.length ?? 0,
+    lastMethod: payment.ultimoMetodoAbono,
+    lastDate: payment.fechaUltimoAbono,
+    installments: payment.installments ?? []
+  };
 }
 
 function resolveWhatsappPhone(payment: EnrollmentPaymentItem) {

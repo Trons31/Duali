@@ -26,6 +26,8 @@ export async function PUT(request: Request, context: Params) {
           estado: "PAGADO",
           fechaPago: body.fechaPago ?? new Date(),
           metodoPago: body.metodoPago,
+          montoAbonado: exists.monto,
+          saldoPendiente: 0,
           comprobanteUrl: body.comprobanteUrl,
           notas: body.notas
         }
@@ -59,6 +61,7 @@ export async function PUT(request: Request, context: Params) {
               mes: nextPeriod.mes,
               anio: nextPeriod.anio,
               monto: exists.student.precioMensualidad ?? exists.monto,
+              saldoPendiente: exists.student.precioMensualidad ?? exists.monto,
               fechaVencimiento,
               estado: paymentStatusForDueDate(fechaVencimiento)
             }
