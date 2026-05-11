@@ -19,6 +19,7 @@ type DuePayment = {
   mes?: number | null;
   anio?: number | null;
   student: {
+    id?: string;
     nombre: string;
     apellido: string;
     celular?: string | null;
@@ -28,6 +29,16 @@ type DuePayment = {
   group?: {
     nombre: string;
   } | null;
+};
+
+type PaymentCard = {
+  key: string;
+  items: DuePayment[];
+  primaryItem: DuePayment;
+  totalAmount: number;
+  displayStatus: PaymentDisplayStatus;
+  oldestDueDate: string;
+  isConsolidated: boolean;
 };
 
 const MONTH_NAMES = [
@@ -56,7 +67,7 @@ export function DuePaymentsPanel({
 }) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [payTarget, setPayTarget] = useState<DuePayment | null>(null);
+  const [payTarget, setPayTarget] = useState<PaymentCard | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
@@ -81,9 +92,14 @@ export function DuePaymentsPanel({
     });
   }, [items, query]);
 
-  function openPayModal(item: DuePayment) {
+  const paymentCards = useMemo(() => {
+    if (titleAction === "vencido") return groupOverduePaymentCards(filteredItems);
+    return filteredItems.map(createSinglePaymentCard);
+  }, [filteredItems, titleAction]);
+
+  function openPayModal(card: PaymentCard) {
     setPaymentMethod(PAYMENT_METHODS[0].value);
-    setPayTarget(item);
+    setPayTarget(card);
   }
 
   function closePayModal() {
@@ -94,17 +110,26 @@ export function DuePaymentsPanel({
   async function payCurrent() {
     if (!payTarget) return;
     setSubmittingPayment(true);
-    const endpoint =
-      payTarget.kind === "MONTHLY_PAYMENT"
-        ? `/api/monthly-payments/${payTarget.id}/pay`
-        : `/api/enrollment-payments/${payTarget.id}/pay`;
+    await Promise.all(
+      payTarget.items.map((item) => {
+        const endpoint =
+          item.kind === "MONTHLY_PAYMENT"
+            ? `/api/monthly-payments/${item.id}/pay`
+            : `/api/enrollment-payments/${item.id}/pay`;
 
-    await clientApiFetch(endpoint, token, {
-      method: "PUT",
-      body: JSON.stringify({ metodoPago: paymentMethod })
-    })
+        return clientApiFetch(endpoint, token, {
+          method: "PUT",
+          body: JSON.stringify({ metodoPago: paymentMethod })
+        });
+      })
+    )
       .then(() => {
-        sileo.success({ title: "Cobro registrado como pagado" });
+        sileo.success({
+          title:
+            payTarget.items.length === 1
+              ? "Cobro registrado como pagado"
+              : `${payTarget.items.length} cobros registrados como pagados`
+        });
         closePayModal();
         router.refresh();
       })
@@ -112,9 +137,9 @@ export function DuePaymentsPanel({
       .finally(() => setSubmittingPayment(false));
   }
 
-  async function notifyByWhatsapp(item: DuePayment) {
-    const phone = resolveWhatsappPhone(item);
-    if (!phone) {
+  async function notifyByWhatsapp(card: PaymentCard) {
+    const recipient = resolveWhatsappRecipient(card.primaryItem);
+    if (!recipient.phone) {
       sileo.error({
         title: "Sin WhatsApp disponible",
         description: "Este alumno no tiene numero registrado para enviar recordatorio."
@@ -122,8 +147,8 @@ export function DuePaymentsPanel({
       return;
     }
 
-    const message = createWhatsappPaymentMessage(item, resolvePaymentDisplayStatus(item));
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    const message = createWhatsappPaymentMessage(card, recipient.isGuardian);
+    const url = `https://wa.me/${recipient.phone}?text=${encodeURIComponent(message)}`;
 
     window.open(url, "_blank", "noopener,noreferrer");
     sileo.success({ title: "WhatsApp listo", description: "Abrimos el recordatorio en una pestaña nueva." });
@@ -167,7 +192,14 @@ export function DuePaymentsPanel({
                 Cobros {titleAction === "pendiente" ? "pendientes" : "vencidos"}
               </h2>
               <p className="mt-1 text-sm text-ink-500">
-                {filteredItems.length} {filteredItems.length === 1 ? "registro" : "registros"}
+                {paymentCards.length}{" "}
+                {titleAction === "vencido"
+                  ? paymentCards.length === 1
+                    ? "estudiante con deuda"
+                    : "estudiantes con deuda"
+                  : paymentCards.length === 1
+                    ? "registro"
+                    : "registros"}
               </p>
             </div>
             <button
@@ -181,15 +213,16 @@ export function DuePaymentsPanel({
           </div>
 
           {resultsOpen ? (
-            filteredItems.length ? (
+            paymentCards.length ? (
               <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
-                {filteredItems.map((item) => {
-                  const displayStatus = resolvePaymentDisplayStatus(item);
+                {paymentCards.map((card) => {
+                  const item = card.primaryItem;
+                  const displayStatus = card.displayStatus;
                   const isOverdue = displayStatus === "VENCIDO";
 
                   return (
                   <article
-                    key={`${item.kind}-${item.id}`}
+                    key={card.key}
                     className={cn(
                       "rounded-[28px] border px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]",
                       isOverdue ? "border-rose-100 bg-rose-50/60" : "border-ink-100 bg-white"
@@ -203,14 +236,29 @@ export function DuePaymentsPanel({
                           </p>
                           <span className={statusBadgeClassName(displayStatus)}>{paymentStatusLabel(displayStatus)}</span>
                         </div>
-                        <p className="mt-1 text-sm text-ink-500">{paymentDateCopy(item, displayStatus)}</p>
+                        <p className="mt-1 text-sm text-ink-500">{paymentCardSummary(card)}</p>
                         {isOverdue ? (
                           <p className="mt-2 text-sm font-semibold text-rose-600">
-                            {overdueAgeText(item.fechaVencimiento)}
+                            {card.isConsolidated
+                              ? `Deuda mas antigua: ${overdueAgeText(card.oldestDueDate)}`
+                              : overdueAgeText(item.fechaVencimiento)}
                           </p>
                         ) : null}
+                        {card.isConsolidated ? (
+                          <div className="mt-4 space-y-2 rounded-[22px] border border-rose-100 bg-white/70 px-4 py-4">
+                            {card.items.map((payment) => (
+                              <div
+                                key={`${payment.kind}-${payment.id}`}
+                                className="flex items-center justify-between gap-3 text-sm"
+                              >
+                                <span className="font-semibold text-ink-700">{paymentConceptCopy(payment)}</span>
+                                <span className="shrink-0 font-black text-ink-950">{currency(payment.monto)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <p className={cn("mt-4 text-[1.9rem] font-black tracking-tight", amountClassName(displayStatus))}>
-                          {currency(item.monto)}
+                          {currency(card.totalAmount)}
                         </p>
                       </div>
 
@@ -219,12 +267,12 @@ export function DuePaymentsPanel({
                           type="button"
                           variant="secondary"
                           className="min-h-14 rounded-[22px] border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
-                          onClick={() => notifyByWhatsapp(item)}
+                          onClick={() => notifyByWhatsapp(card)}
                         >
                           <FiMessageCircle className="size-5" />
                           Notificar por WhatsApp
                         </Button>
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(item)}>
+                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(card)}>
                           <FiCheck className="size-5" />
                           Marcar pagado
                         </Button>
@@ -252,10 +300,22 @@ export function DuePaymentsPanel({
 
       <PaymentMethodModal
         open={Boolean(payTarget)}
-        title={`Marcar ${paymentConceptLabel(payTarget ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))} como pagada`}
-        description={`Confirmaras el pago de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
-        amount={payTarget?.monto ?? null}
-        notice={`Marca como pagado solo si ya recibiste el dinero de esta ${paymentConceptLabel(payTarget ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))}.`}
+        title={
+          payTarget?.isConsolidated
+            ? "Marcar deuda como pagada"
+            : `Marcar ${paymentConceptLabel(payTarget?.primaryItem ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))} como pagada`
+        }
+        description={
+          payTarget
+            ? `Confirmaras el pago de ${payTarget.primaryItem.student.nombre} ${payTarget.primaryItem.student.apellido}.`
+            : ""
+        }
+        amount={payTarget?.totalAmount ?? null}
+        notice={
+          payTarget?.isConsolidated
+            ? `Marca como pagado solo si ya recibiste el dinero de estos ${payTarget.items.length} cobros.`
+            : `Marca como pagado solo si ya recibiste el dinero de esta ${paymentConceptLabel(payTarget?.primaryItem ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))}.`
+        }
         selectedMethod={paymentMethod}
         confirmText="Confirmar pago"
         loading={submittingPayment}
@@ -267,8 +327,86 @@ export function DuePaymentsPanel({
   );
 }
 
+function createSinglePaymentCard(item: DuePayment): PaymentCard {
+  return {
+    key: `${item.kind}-${item.id}`,
+    items: [item],
+    primaryItem: item,
+    totalAmount: Number(item.monto ?? 0),
+    displayStatus: resolvePaymentDisplayStatus(item),
+    oldestDueDate: item.fechaVencimiento,
+    isConsolidated: false
+  };
+}
+
+function groupOverduePaymentCards(items: DuePayment[]) {
+  const groups = new Map<string, DuePayment[]>();
+
+  items.forEach((item) => {
+    const key = studentGroupKey(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  });
+
+  return Array.from(groups.entries())
+    .map(([key, groupItems]) => {
+      const sortedItems = [...groupItems].sort(
+        (a, b) => new Date(a.fechaVencimiento).getTime() - new Date(b.fechaVencimiento).getTime()
+      );
+      const primaryItem = sortedItems[0]!;
+
+      return {
+        key,
+        items: sortedItems,
+        primaryItem,
+        totalAmount: sortedItems.reduce((total, item) => total + Number(item.monto ?? 0), 0),
+        displayStatus: "VENCIDO" as PaymentDisplayStatus,
+        oldestDueDate: primaryItem.fechaVencimiento,
+        isConsolidated: sortedItems.length > 1
+      };
+    })
+    .sort((a, b) => new Date(a.oldestDueDate).getTime() - new Date(b.oldestDueDate).getTime());
+}
+
+function studentGroupKey(item: DuePayment) {
+  return (
+    item.student.id ??
+    [
+      item.student.nombre,
+      item.student.apellido,
+      item.student.celular ?? "",
+      item.student.telefonoPadre ?? ""
+    ]
+      .join("-")
+      .toLowerCase()
+  );
+}
+
 function paymentConceptLabel(item: DuePayment) {
   return item.kind === "MONTHLY_PAYMENT" ? "mensualidad" : "inscripción";
+}
+
+function paymentCardSummary(card: PaymentCard) {
+  if (!card.isConsolidated) return paymentDateCopy(card.primaryItem, card.displayStatus);
+
+  const monthlyItems = card.items.filter((item) => item.kind === "MONTHLY_PAYMENT");
+  const otherItems = card.items.length - monthlyItems.length;
+  const parts = [
+    monthlyItems.length
+      ? `${monthlyItems.length} ${monthlyItems.length === 1 ? "mensualidad vencida" : "mensualidades vencidas"}`
+      : "",
+    otherItems ? `${otherItems} ${otherItems === 1 ? "otro cobro vencido" : "otros cobros vencidos"}` : ""
+  ].filter(Boolean);
+
+  return `${parts.join(" y ")}: ${card.items.map(paymentConceptCopy).join(", ")}`;
+}
+
+function paymentConceptCopy(item: DuePayment) {
+  if (item.kind === "MONTHLY_PAYMENT" && item.mes && item.anio) {
+    const monthName = MONTH_NAMES[item.mes - 1] ?? String(item.mes);
+    return `${capitalize(monthName)} ${item.anio}`;
+  }
+
+  return `Inscripcion vencida el ${formatDate(item.fechaVencimiento)}`;
 }
 
 function paymentDateCopy(item: DuePayment, status: PaymentDisplayStatus) {
@@ -287,21 +425,40 @@ function paymentDateCopy(item: DuePayment, status: PaymentDisplayStatus) {
   return `Inscripción ${verb} el ${dueCopy}`;
 }
 
-function resolveWhatsappPhone(item: DuePayment) {
-  const rawPhone = item.student.esMenorDeEdad
-    ? item.student.telefonoPadre || item.student.celular || ""
-    : item.student.celular || item.student.telefonoPadre || "";
+function resolveWhatsappRecipient(item: DuePayment) {
+  const rawPhone = item.student.telefonoPadre || item.student.celular || "";
   const digits = rawPhone.replace(/\D/g, "");
 
-  if (!digits) return "";
-  return digits.startsWith("57") ? digits : `57${digits}`;
+  if (!digits) return { phone: "", isGuardian: false };
+  return {
+    phone: digits.startsWith("57") ? digits : `57${digits}`,
+    isGuardian: Boolean(item.student.telefonoPadre)
+  };
 }
 
-function createWhatsappPaymentMessage(item: DuePayment, status: PaymentDisplayStatus) {
-  const concept = paymentConceptLabel(item);
+function createWhatsappPaymentMessage(card: PaymentCard, isGuardian: boolean) {
+  const item = card.primaryItem;
+  const status = card.displayStatus;
   const studentName = `${item.student.nombre} ${item.student.apellido}`;
-  const amount = currency(item.monto);
-  const ownerText = item.student.esMenorDeEdad ? `la ${concept} de ${studentName}` : `tu ${concept}`;
+  const firstName = item.student.nombre.split(" ")[0] || studentName;
+  const amount = currency(card.totalAmount);
+
+  if (card.isConsolidated) {
+    const monthlyItems = card.items.filter((payment) => payment.kind === "MONTHLY_PAYMENT");
+    const monthsCopy = card.items.map(paymentConceptCopy).join(", ");
+    const debtCountCopy = monthlyItems.length
+      ? `${monthlyItems.length} ${monthlyItems.length === 1 ? "mensualidad vencida" : "mensualidades vencidas"}`
+      : `${card.items.length} ${card.items.length === 1 ? "cobro vencido" : "cobros vencidos"}`;
+
+    if (isGuardian) {
+      return `Hola, te recordamos que ${studentName} tiene ${debtCountCopy}: ${monthsCopy}. El valor total pendiente es ${amount}. Por favor realiza el pago lo antes posible para ponerse al dia.`;
+    }
+
+    return `Hola ${firstName}, te recordamos que tienes ${debtCountCopy}: ${monthsCopy}. El valor total pendiente es ${amount}. Por favor realiza el pago lo antes posible para ponerte al dia.`;
+  }
+
+  const concept = paymentConceptLabel(item);
+  const ownerText = isGuardian ? `la ${concept} de ${studentName}` : `tu ${concept}`;
 
   if (status === "VENCIDO") {
     return `Hola, te recordamos que ${ownerText} está vencida por valor de ${amount}. ${overdueAgeText(item.fechaVencimiento)}. Por favor realiza el pago lo antes posible.`;
