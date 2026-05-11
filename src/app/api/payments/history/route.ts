@@ -73,9 +73,12 @@ export async function GET(request: Request) {
       prisma.paymentInstallment.findMany({
         where: {
           clientId,
-          fechaAbono: { gte: from, lte: to }
+          OR: [
+            { fechaAbono: { gte: from, lte: to } },
+            { createdAt: { gte: from, lte: to } }
+          ]
         },
-        orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { fechaAbono: "desc" }],
         include: {
           student: true,
           monthlyPayment: {
@@ -151,7 +154,7 @@ export async function GET(request: Request) {
           kind: "PAYMENT_INSTALLMENT" as const,
           label: "Abono" as const,
           monto: Number(installment.monto),
-          fechaPago: installment.fechaAbono.toISOString(),
+          fechaPago: installment.createdAt.toISOString(),
           mes: monthlyPayment?.mes ?? null,
           anio: monthlyPayment?.anio ?? null,
           concept: installment.concepto,
