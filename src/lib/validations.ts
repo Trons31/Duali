@@ -221,6 +221,12 @@ export const payMonthlySchema = z.object({
   notas: z.string().optional().nullable()
 });
 
+export const studentPaymentHistoryUpdateSchema = z.object({
+  paymentId: z.string().min(1),
+  paid: z.coerce.boolean(),
+  metodoPago: z.string().optional().nullable()
+});
+
 export const payEnrollmentSchema = z.object({
   fechaPago: z.coerce.date().optional(),
   metodoPago: z.string().optional().nullable(),

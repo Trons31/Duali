@@ -132,6 +132,39 @@ export type StudentListResponse = {
   };
 };
 
+export type StudentPaymentHistoryItem = {
+  id: string;
+  mes: number;
+  anio: number;
+  monto: number;
+  montoAbonado: number;
+  saldoPendiente: number;
+  cantidadAbonos: number;
+  estado: PaymentStatus;
+  fechaVencimiento: string;
+  fechaPago: string | null;
+  metodoPago: string | null;
+  updatedAt: string;
+};
+
+export type StudentPaymentHistoryResponse = {
+  student: {
+    id: string;
+    nombre: string;
+    apellido: string;
+    group: {
+      id: string;
+      nombre: string;
+    } | null;
+  };
+  paymentHistory: StudentPaymentHistoryItem[];
+  summary: {
+    totalCount: number;
+    paidCount: number;
+    pendingCount: number;
+  };
+};
+
 export type MonthlyPaymentItem = {
   id: string;
   estudianteId: string;

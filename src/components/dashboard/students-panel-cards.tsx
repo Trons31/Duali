@@ -6,14 +6,21 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronLeft, FiChevronRight, FiPhone, FiPlus, FiSearch, FiUsers } from "react-icons/fi";
+import { FiCheck, FiChevronLeft, FiChevronRight, FiPhone, FiPlus, FiRefreshCw, FiSearch, FiUsers } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency } from "@/lib/web-utils";
-import type { GroupSummary, StudentListFilter, StudentListItem, StudentListResponse } from "@/lib/web-types";
+import type {
+  GroupSummary,
+  StudentListFilter,
+  StudentListItem,
+  StudentListResponse,
+  StudentPaymentHistoryItem,
+  StudentPaymentHistoryResponse
+} from "@/lib/web-types";
 
 type CreateStep = "TYPE" | "ENROLLMENT" | "CURRENT_PAYMENT" | "MONTHLY" | "HISTORY" | "FORM";
 
@@ -73,6 +80,11 @@ export function StudentsPanelCards({
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StudentListItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentListItem | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<StudentPaymentHistoryResponse | null>(null);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [paymentHistoryError, setPaymentHistoryError] = useState<string | null>(null);
+  const [paymentHistorySuccess, setPaymentHistorySuccess] = useState<string | null>(null);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -134,6 +146,7 @@ export function StudentsPanelCards({
       return;
     }
     setEditTarget(null);
+    resetPaymentHistoryState();
     reset(createDefaultValues(groups[0]?.id ?? ""));
     setStep("TYPE");
     setCreateOpen(true);
@@ -142,16 +155,69 @@ export function StudentsPanelCards({
   function openEditModal(student: StudentListItem) {
     setEditTarget(student);
     reset(createEditValues(student));
+    resetPaymentHistoryState();
     setStep("FORM");
     setCreateOpen(true);
+    void loadPaymentHistory(student.id);
   }
 
   function closeCreateModal() {
     if (isSubmitting) return;
     setCreateOpen(false);
     setEditTarget(null);
+    resetPaymentHistoryState();
     setStep("TYPE");
     reset(createDefaultValues(groups[0]?.id ?? ""));
+  }
+
+  function resetPaymentHistoryState() {
+    setPaymentHistory(null);
+    setPaymentHistoryLoading(false);
+    setPaymentHistoryError(null);
+    setPaymentHistorySuccess(null);
+    setUpdatingPaymentId(null);
+  }
+
+  async function loadPaymentHistory(studentId: string) {
+    setPaymentHistoryLoading(true);
+    setPaymentHistoryError(null);
+    setPaymentHistorySuccess(null);
+
+    await clientApiFetch<StudentPaymentHistoryResponse>(`/api/students/${studentId}/payment-history`, token)
+      .then((response) => setPaymentHistory(response))
+      .catch((error: Error) => setPaymentHistoryError(error.message))
+      .finally(() => setPaymentHistoryLoading(false));
+  }
+
+  async function updatePaymentHistoryMonth(payment: StudentPaymentHistoryItem, paid: boolean) {
+    if (!editTarget) return;
+
+    setUpdatingPaymentId(payment.id);
+    setPaymentHistoryError(null);
+    setPaymentHistorySuccess(null);
+
+    await clientApiFetch<StudentPaymentHistoryResponse>(`/api/students/${editTarget.id}/payment-history`, token, {
+      method: "PATCH",
+      body: JSON.stringify({
+        paymentId: payment.id,
+        paid,
+        metodoPago: paid ? payment.metodoPago ?? "MANUAL" : undefined
+      })
+    })
+      .then((response) => {
+        setPaymentHistory(response);
+        setPaymentHistorySuccess(paid ? "Mes marcado como pagado." : "Mes marcado como no pagado.");
+        sileo.success({
+          title: paid ? "Mensualidad pagada" : "Mensualidad pendiente",
+          description: "El historial del alumno ya quedo actualizado."
+        });
+        router.refresh();
+      })
+      .catch((error: Error) => {
+        setPaymentHistoryError(error.message);
+        sileo.error({ title: "No se pudo actualizar", description: error.message });
+      })
+      .finally(() => setUpdatingPaymentId(null));
   }
 
   function goNextFromType() {
@@ -1168,6 +1234,18 @@ export function StudentsPanelCards({
               ) : null}
 
               {editTarget ? (
+                <StudentPaymentHistorySection
+                  history={paymentHistory}
+                  loading={paymentHistoryLoading}
+                  error={paymentHistoryError}
+                  success={paymentHistorySuccess}
+                  updatingPaymentId={updatingPaymentId}
+                  onRetry={() => loadPaymentHistory(editTarget.id)}
+                  onToggle={updatePaymentHistoryMonth}
+                />
+              ) : null}
+
+              {editTarget ? (
                 <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
                   <div>
                     <p className="text-sm font-black text-ink-950">Configuración de mensualidad</p>
@@ -1286,6 +1364,112 @@ export function StudentsPanelCards({
         onConfirm={deleteStudent}
       />
     </div>
+  );
+}
+
+function StudentPaymentHistorySection({
+  history,
+  loading,
+  error,
+  success,
+  updatingPaymentId,
+  onRetry,
+  onToggle
+}: {
+  history: StudentPaymentHistoryResponse | null;
+  loading: boolean;
+  error: string | null;
+  success: string | null;
+  updatingPaymentId: string | null;
+  onRetry: () => void;
+  onToggle: (payment: StudentPaymentHistoryItem, paid: boolean) => void;
+}) {
+  return (
+    <section className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-black text-ink-950">Historial</p>
+          <p className="mt-1 text-sm font-medium text-ink-500">Consulta y actualiza los meses pagados del alumno.</p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          className="min-h-9 rounded-[14px] px-3 text-xs font-semibold"
+          onClick={onRetry}
+          disabled={loading}
+        >
+          <FiRefreshCw className={cn("size-3.5", loading ? "animate-spin" : "")} />
+          Refrescar
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="rounded-[18px] border border-ink-100 bg-ink-50 px-4 py-4 text-sm font-semibold text-ink-500">
+          Cargando historial de mensualidades...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-[18px] border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div className="rounded-[18px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+          {success}
+        </div>
+      ) : null}
+
+      {!loading && history ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <InfoBlock label="Meses" value={String(history.summary.totalCount)} helper="Registros generados" />
+            <InfoBlock label="Pagados" value={String(history.summary.paidCount)} helper="Mensualidades al dia" />
+            <InfoBlock label="Pendientes" value={String(history.summary.pendingCount)} helper="Por cobrar o revisar" />
+          </div>
+
+          {history.paymentHistory.length ? (
+            <div className="space-y-2">
+              {history.paymentHistory.map((payment) => {
+                const isPaid = payment.estado === "PAGADO";
+                return (
+                  <div
+                    key={payment.id}
+                    className="flex flex-col gap-3 rounded-[18px] border border-ink-100 bg-ink-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-black text-ink-950">{formatPeriod(payment)}</p>
+                        <StatusBadge value={payment.estado} />
+                      </div>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-ink-500">
+                        {currency(payment.monto)} · vence {formatDate(payment.fechaVencimiento)}
+                        {payment.fechaPago ? ` · pagado ${formatDate(payment.fechaPago)}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={isPaid ? "secondary" : "primary"}
+                      className="min-h-9 shrink-0 rounded-[14px] px-3 text-xs font-semibold"
+                      loading={updatingPaymentId === payment.id}
+                      disabled={Boolean(updatingPaymentId)}
+                      onClick={() => onToggle(payment, !isPaid)}
+                    >
+                      {isPaid ? "Marcar no pagado" : "Marcar pagado"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-[18px] bg-ink-50 px-4 py-4 text-sm font-semibold text-ink-500">
+              Este alumno todavia no tiene mensualidades generadas.
+            </div>
+          )}
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -1524,6 +1708,10 @@ function isMonthlyPeriod(period: MonthlyPeriod | null): period is MonthlyPeriod 
 
 function formatPeriod(period: MonthlyPeriod) {
   return `${MONTH_LABELS[period.mes - 1]} ${period.anio}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
 function yearOptions() {
