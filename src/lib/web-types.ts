@@ -2,12 +2,20 @@ export type StudentStatus = "ACTIVO" | "INACTIVO";
 export type PaymentStatus = "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO";
 export type MonthlyBillingMode = "ANTICIPADA" | "VENCIDA";
 
+export type PaymentMethodItem = {
+  name: string;
+  account: string;
+};
+
 export type SafeClient = {
   id: string;
   nombre: string;
   email: string;
   telefono: string | null;
   businessName: string;
+  paymentMethods: string | null;
+  paymentMethodItems: PaymentMethodItem[] | null;
+  whatsappMessageTemplate: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -42,6 +50,7 @@ export type GroupDetailStudent = {
   precioMensualidad: number | string | null;
   diaCobro: number | null;
   modalidadMensualidad: MonthlyBillingMode;
+  fechaInicioClases: string | null;
   createdAt: string;
   monthlyPayments: Array<{
     id: string;
@@ -106,6 +115,7 @@ export type StudentListItem = {
   precioMensualidad: number | string | null;
   diaCobro: number | null;
   modalidadMensualidad: MonthlyBillingMode;
+  fechaInicioClases: string | null;
   createdAt: string;
   group: {
     id: string;

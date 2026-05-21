@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
-import { comparePassword, sanitizeClient, signToken } from "@/lib/auth";
+import { authClientSelect, comparePassword, sanitizeClient, signToken } from "@/lib/auth";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET ?? process.env.JWT_SECRET ?? "dev-secret-change-me",
@@ -46,7 +46,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: {
             email,
             deletedAt: null
-          }
+          },
+          select: authClientSelect
         });
 
         if (!client) return null;

@@ -44,7 +44,19 @@ export const loginSchema = z.object({
 export const clientProfileSchema = z.object({
   nombre: z.string().min(2).optional(),
   telefono: z.string().optional().nullable(),
-  businessName: z.string().min(2).optional()
+  businessName: z.string().min(2).optional(),
+  paymentMethods: z.string().max(2000).optional().nullable(),
+  paymentMethodItems: z
+    .array(
+      z.object({
+        name: z.string().trim().max(80),
+        account: z.string().trim().max(160)
+      })
+    )
+    .max(20)
+    .optional()
+    .transform((items) => items?.filter((item) => item.name || item.account) ?? undefined),
+  whatsappMessageTemplate: z.string().max(4000).optional().nullable()
 });
 
 const groupBaseSchema = z.object({
@@ -90,6 +102,7 @@ const studentCreateSchema = studentBaseSchema.extend({
   inscripcionPagada: z.coerce.boolean().default(false),
   inscripcionFechaPago: z.coerce.date().optional().nullable(),
   inscripcionMetodoPago: z.string().optional().nullable(),
+  inicioClasesDia: z.coerce.number().int().min(1).max(31).optional().nullable(),
   inicioClasesMes: z.coerce.number().int().min(1).max(12).optional().nullable(),
   inicioClasesAnio: z.coerce.number().int().min(2020).max(2100).optional().nullable(),
   mesesPagados: z.array(monthlyPeriodSchema).default([])
@@ -109,6 +122,42 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       path: ["inscripcionMonto"],
       message: "La inscripcion es obligatoria para estudiantes nuevos"
     });
+  }
+  if (!data.inicioClasesDia) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inicioClasesDia"],
+      message: "Selecciona el dia en que empieza clases"
+    });
+  }
+  if (!data.inicioClasesMes) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inicioClasesMes"],
+      message: "Selecciona el mes en que empieza clases"
+    });
+  }
+  if (!data.inicioClasesAnio) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inicioClasesAnio"],
+      message: "Selecciona el año en que empieza clases"
+    });
+  }
+  if (data.inicioClasesDia && data.inicioClasesMes && data.inicioClasesAnio) {
+    const startDate = new Date(data.inicioClasesAnio, data.inicioClasesMes - 1, data.inicioClasesDia, 12, 0, 0, 0);
+    const isValidStartDate =
+      startDate.getFullYear() === data.inicioClasesAnio &&
+      startDate.getMonth() === data.inicioClasesMes - 1 &&
+      startDate.getDate() === data.inicioClasesDia;
+
+    if (!isValidStartDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["inicioClasesDia"],
+        message: "Selecciona una fecha de inicio valida"
+      });
+    }
   }
   if (data.tipoRegistro === "ANTIGUO") {
     if (!data.inicioClasesMes) {
@@ -285,12 +334,21 @@ export const sendNotificationSchema = z.object({
   data: z.record(z.any()).optional()
 });
 
-export const whatsappReminderSchema = z.object({
-  monthlyPaymentId: z.string().min(1).optional(),
-  enrollmentPaymentId: z.string().min(1).optional()
-}).refine((data) => Boolean(data.monthlyPaymentId) !== Boolean(data.enrollmentPaymentId), {
-  message: "Debes enviar una mensualidad o una inscripcion"
-});
+export const whatsappReminderSchema = z
+  .object({
+    monthlyPaymentId: z.string().min(1).optional(),
+    enrollmentPaymentId: z.string().min(1).optional(),
+    monthlyPaymentIds: z.array(z.string().min(1)).optional(),
+    enrollmentPaymentIds: z.array(z.string().min(1)).optional()
+  })
+  .refine(
+    (data) =>
+      Boolean(data.monthlyPaymentId) ||
+      Boolean(data.enrollmentPaymentId) ||
+      Boolean(data.monthlyPaymentIds?.length) ||
+      Boolean(data.enrollmentPaymentIds?.length),
+    { message: "Debes enviar al menos una mensualidad o una inscripcion" }
+  );
 
 export const subscriptionPaymentSchema = z.object({
   paymentMethod: z.string().optional().nullable(),

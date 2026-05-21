@@ -1,4 +1,4 @@
-import { currentMonthlyPeriod, monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "./dates";
+import { currentMonthlyPeriod, endOfCurrentMonth, monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "./dates";
 import { prisma } from "./prisma";
 
 export async function ensureCurrentMonthlyPayments(clientId: string) {
@@ -9,6 +9,7 @@ export async function ensureCurrentMonthlyPayments(clientId: string) {
       clientId,
       deletedAt: null,
       estado: "ACTIVO",
+      OR: [{ fechaInicioClases: null }, { fechaInicioClases: { lte: endOfCurrentMonth() } }],
       precioMensualidad: { not: null },
       diaCobro: { not: null },
       monthlyPayments: {

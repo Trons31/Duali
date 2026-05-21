@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/web-auth";
 import { WebApiError } from "@/lib/web-api-errors";
 import { getAppBaseUrl } from "@/lib/web-utils";
@@ -13,7 +14,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const token = session?.user?.role === "CLIENT" ? session.user.apiToken : "";
 
   if (!token) {
-    throw new WebApiError("No autenticado", 401);
+    redirect("/auth/login?session=expired");
   }
 
   const baseUrl = await getServerBaseUrl();
@@ -35,6 +36,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   const payload = await response.json().catch(() => null);
+
+  if (response.status === 401) {
+    redirect("/auth/login?session=expired");
+  }
 
   if (!response.ok) {
     throw new WebApiError(payload?.error ?? "No se pudo completar la solicitud", response.status);

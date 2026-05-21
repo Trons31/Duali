@@ -32,6 +32,7 @@ type StudentFormValues = {
   inscripcionMonto: string;
   inscripcionMetodoPago: string;
   modalidadMensualidad: "ANTICIPADA" | "VENCIDA";
+  inicioClasesDia: string;
   inicioClasesMes: string;
   inicioClasesAnio: string;
   mesesPagados: string[];
@@ -101,6 +102,7 @@ export function StudentsPanelCards({
   const enrollmentPaid = watch("inscripcionPagada");
   const enrollmentMethod = watch("inscripcionMetodoPago");
   const billingMode = watch("modalidadMensualidad");
+  const startDay = watch("inicioClasesDia");
   const historyStartMonth = watch("inicioClasesMes");
   const historyStartYear = watch("inicioClasesAnio");
   const paidHistoryMonths = watch("mesesPagados") ?? [];
@@ -109,6 +111,7 @@ export function StudentsPanelCards({
   const age = Number(watch("edad") || 0);
   const isMinor = age > 0 && age < 18;
   const historyPeriods = createMonthlyPeriodRange(Number(historyStartMonth), Number(historyStartYear));
+  const startDayOptions = dayOptionsForMonth(Number(historyStartMonth), Number(historyStartYear));
 
   const visibleStudents = students.items;
   const currentFilter = students.filters.status;
@@ -234,7 +237,7 @@ export function StudentsPanelCards({
       return;
     }
     if (step === "FORM") {
-      setStep(registrationType === "ANTIGUO" ? "HISTORY" : "MONTHLY");
+      setStep(registrationType === "ANTIGUO" ? "HISTORY" : "CURRENT_PAYMENT");
       return;
     }
     if (step === "HISTORY") {
@@ -242,11 +245,11 @@ export function StudentsPanelCards({
       return;
     }
     if (step === "MONTHLY") {
-      setStep("CURRENT_PAYMENT");
+      setStep(registrationType === "NUEVO" ? "ENROLLMENT" : "TYPE");
       return;
     }
     if (step === "CURRENT_PAYMENT") {
-      setStep(registrationType === "NUEVO" ? "ENROLLMENT" : "TYPE");
+      setStep("MONTHLY");
       return;
     }
     if (step === "ENROLLMENT") {
@@ -262,7 +265,7 @@ export function StudentsPanelCards({
       });
       return;
     }
-    setStep("CURRENT_PAYMENT");
+    setStep("MONTHLY");
   }
 
   function goNextFromCurrentPayment() {
@@ -274,10 +277,18 @@ export function StudentsPanelCards({
       return;
     }
 
-    setStep("MONTHLY");
+    setStep("FORM");
   }
 
   function goNextFromMonthly() {
+    if (registrationType === "NUEVO") {
+      const startDateValidation = validateStartDateValues();
+      if (startDateValidation) {
+        sileo.error(startDateValidation);
+        return;
+      }
+    }
+
     if (!Number(watch("precioMensualidad"))) {
       sileo.error({
         title: "Mensualidad requerida",
@@ -294,14 +305,61 @@ export function StudentsPanelCards({
       return;
     }
 
-    setStep("FORM");
+    setStep(registrationType === "NUEVO" ? "CURRENT_PAYMENT" : "FORM");
+  }
+
+  function validateStartDateValues(allowFuture = true) {
+    const day = Number(watch("inicioClasesDia"));
+    const month = Number(watch("inicioClasesMes"));
+    const year = Number(watch("inicioClasesAnio"));
+
+    if (!day || !month || !year) {
+      return {
+        title: "Inicio de clases requerido",
+        description: "Selecciona el dia, mes y año en que empieza clases el estudiante."
+      };
+    }
+
+    const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+    const isValid = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    if (!isValid) {
+      return {
+        title: "Fecha no valida",
+        description: "El dia seleccionado no existe para ese mes."
+      };
+    }
+
+    const now = new Date();
+    const currentValue = now.getFullYear() * 12 + now.getMonth() + 1;
+    const startValue = year * 12 + month;
+    if (!allowFuture && startValue > currentValue) {
+      return {
+        title: "Fecha no valida",
+        description: "El inicio de clases no puede estar en el futuro."
+      };
+    }
+
+    if (Math.abs(currentValue - startValue) > 120) {
+      return {
+        title: "Fecha no valida",
+        description: "El historial no puede superar 10 años."
+      };
+    }
+
+    return null;
   }
 
   function goNextFromHistory() {
     const startMonth = Number(watch("inicioClasesMes"));
     const startYear = Number(watch("inicioClasesAnio"));
+    const startDateValidation = validateStartDateValues(false);
     const monthlyPrice = Number(watch("precioMensualidad"));
     const billingDay = Number(watch("diaCobro"));
+
+    if (startDateValidation) {
+      sileo.error(startDateValidation);
+      return;
+    }
 
     if (!startMonth || !startYear) {
       sileo.error({
@@ -360,8 +418,9 @@ export function StudentsPanelCards({
         (isNewStudent && values.pagoMesActual === "SI") || (!isNewStudent && values.mesesPagados.length)
           ? values.mensualidadMetodoPagoActual
           : undefined,
-      inicioClasesMes: isNewStudent ? undefined : Number(values.inicioClasesMes),
-      inicioClasesAnio: isNewStudent ? undefined : Number(values.inicioClasesAnio),
+      inicioClasesDia: Number(values.inicioClasesDia),
+      inicioClasesMes: Number(values.inicioClasesMes),
+      inicioClasesAnio: Number(values.inicioClasesAnio),
       mesesPagados: isNewStudent ? undefined : values.mesesPagados.map(parsePeriodKey).filter(isMonthlyPeriod),
       inscripcionMonto: isNewStudent ? Number(values.inscripcionMonto) : undefined,
       inscripcionPagada: isNewStudent ? values.inscripcionPagada === "SI" : false,
@@ -778,15 +837,15 @@ export function StudentsPanelCards({
             <div className="space-y-4">
               <div className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
                 <div>
-                  <p className="text-sm font-black text-ink-950">Pago del mes actual</p>
+                  <p className="text-sm font-black text-ink-950">Pago inicial de mensualidad</p>
                   <p className="mt-1 text-sm text-ink-500">
-                    Define si este mes ya entró a caja. Si marcó que sí, se registrará como ingreso.
+                    Define si el primer periodo de clases ya entro a caja. Si marco que si, se registrara como ingreso.
                   </p>
                 </div>
 
                 <DecisionCard
-                  title="Sí, ya pagó este mes"
-                  subtitle="Se registrará el mes actual como pagado y el ingreso entrará a caja."
+                  title="Si, ya pago la mensualidad inicial"
+                  subtitle="Se registrara el primer periodo como pagado y el ingreso entrara a caja."
                   selected={paidCurrentMonth === "SI"}
                   onClick={() => {
                     reset(
@@ -799,11 +858,11 @@ export function StudentsPanelCards({
                   }}
                 />
                 <DecisionCard
-                  title="No ha pagado este mes"
+                  title="No ha pagado la mensualidad inicial"
                   subtitle={
                     registrationType === "NUEVO"
-                      ? "El primer cobro empezará en el siguiente mes para este alumno nuevo."
-                      : "Se creará el cobro del mes actual según su día de pago."
+                      ? "Se creara el cobro desde su fecha de inicio y quedara pendiente o vencido segun el dia de pago."
+                      : "Se creara el cobro del mes actual segun su dia de pago."
                   }
                   selected={paidCurrentMonth === "NO"}
                   onClick={() => {
@@ -912,6 +971,31 @@ export function StudentsPanelCards({
                       ))}
                     </select>
                   </Field>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Dia de inicio" error={errors.inicioClasesDia?.message}>
+                    <select
+                      value={startDay}
+                      onChange={(event) => {
+                        reset(
+                          {
+                            ...watch(),
+                            inicioClasesDia: event.target.value
+                          },
+                          { keepDirty: true, keepTouched: true }
+                        );
+                      }}
+                      className="field-base h-11 rounded-[18px] text-[14px]"
+                    >
+                      {startDayOptions.map((day) => (
+                        <option key={day} value={day}>
+                          Dia {day}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
                 </div>
 
                 <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
@@ -1114,6 +1198,60 @@ export function StudentsPanelCards({
                   <p className="mt-1 text-sm text-ink-500">
                     Configura valor, tipo de mensualidad y día exacto en que se controla el cobro.
                   </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Dia de inicio" error={errors.inicioClasesDia?.message}>
+                    <select
+                      value={startDay}
+                      onChange={(event) => {
+                        reset(
+                          {
+                            ...watch(),
+                            inicioClasesDia: event.target.value
+                          },
+                          { keepDirty: true, keepTouched: true }
+                        );
+                      }}
+                      className="field-base h-11 rounded-[18px] text-[14px]"
+                    >
+                      {startDayOptions.map((day) => (
+                        <option key={day} value={day}>
+                          Dia {day}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Mes de inicio" error={errors.inicioClasesMes?.message}>
+                    <select
+                      value={historyStartMonth}
+                      onChange={(event) => {
+                        const nextValues = {
+                          ...watch(),
+                          inicioClasesMes: event.target.value
+                        };
+                        reset(
+                          {
+                            ...nextValues,
+                            inicioClasesDia: clampDayForMonth(
+                              Number(nextValues.inicioClasesDia),
+                              Number(nextValues.inicioClasesMes),
+                              Number(nextValues.inicioClasesAnio)
+                            )
+                          },
+                          { keepDirty: true, keepTouched: true }
+                        );
+                      }}
+                      className="field-base h-11 rounded-[18px] text-[14px]"
+                    >
+                      {MONTH_LABELS.map((label, index) => (
+                        <option key={label} value={String(index + 1)}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                 </div>
 
                 <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
@@ -1578,6 +1716,7 @@ function ChipButton({
 }
 
 function createDefaultValues(groupId: string): StudentFormValues {
+  const today = new Date();
   return {
     tipoRegistro: "NUEVO",
     pagoMesActual: "NO",
@@ -1586,8 +1725,9 @@ function createDefaultValues(groupId: string): StudentFormValues {
     inscripcionMonto: "",
     inscripcionMetodoPago: "EFECTIVO",
     modalidadMensualidad: "ANTICIPADA",
-    inicioClasesMes: "",
-    inicioClasesAnio: String(new Date().getFullYear()),
+    inicioClasesDia: String(Math.min(today.getDate(), 28)),
+    inicioClasesMes: String(today.getMonth() + 1),
+    inicioClasesAnio: String(today.getFullYear()),
     mesesPagados: [],
     nombre: "",
     apellido: "",
@@ -1603,6 +1743,7 @@ function createDefaultValues(groupId: string): StudentFormValues {
 }
 
 function createEditValues(student: StudentListItem): StudentFormValues {
+  const startDate = student.fechaInicioClases ? new Date(student.fechaInicioClases) : new Date();
   return {
     tipoRegistro: student.enrollmentPayment ? "NUEVO" : "ANTIGUO",
     pagoMesActual: currentPayment(student)?.estado === "PAGADO" ? "SI" : "NO",
@@ -1611,8 +1752,9 @@ function createEditValues(student: StudentListItem): StudentFormValues {
     inscripcionMonto: student.enrollmentPayment?.monto ? String(student.enrollmentPayment.monto) : "",
     inscripcionMetodoPago: student.enrollmentPayment?.metodoPago ?? "EFECTIVO",
     modalidadMensualidad: student.modalidadMensualidad ?? "ANTICIPADA",
-    inicioClasesMes: "",
-    inicioClasesAnio: String(new Date().getFullYear()),
+    inicioClasesDia: String(startDate.getDate()),
+    inicioClasesMes: String(startDate.getMonth() + 1),
+    inicioClasesAnio: String(startDate.getFullYear()),
     mesesPagados: [],
     nombre: student.nombre,
     apellido: student.apellido,
@@ -1719,9 +1861,22 @@ function yearOptions() {
   return Array.from({ length: currentYear - 2020 + 1 }, (_, index) => currentYear - index);
 }
 
+function dayOptionsForMonth(month: number, year: number) {
+  const days = month && year ? daysInMonth(year, month) : 31;
+  return Array.from({ length: days }, (_, index) => String(index + 1));
+}
+
+function clampDayForMonth(day: number, month: number, year: number) {
+  return String(Math.min(Math.max(day || 1, 1), month && year ? daysInMonth(year, month) : 31));
+}
+
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
 function stepSequence(registrationType: StudentFormValues["tipoRegistro"]): CreateStep[] {
   if (registrationType === "NUEVO") {
-    return ["TYPE", "ENROLLMENT", "CURRENT_PAYMENT", "MONTHLY", "FORM"];
+    return ["TYPE", "ENROLLMENT", "MONTHLY", "CURRENT_PAYMENT", "FORM"];
   }
 
   return ["TYPE", "HISTORY", "FORM"];
@@ -1743,7 +1898,7 @@ function stepProgressLabel(step: CreateStep, registrationType: StudentFormValues
 function stepTitle(step: CreateStep) {
   if (step === "TYPE") return "Tipo de estudiante";
   if (step === "ENROLLMENT") return "Inscripción";
-  if (step === "CURRENT_PAYMENT") return "Pago del mes actual";
+  if (step === "CURRENT_PAYMENT") return "Pago inicial";
   if (step === "MONTHLY") return "Mensualidad";
   if (step === "HISTORY") return "Historial de mensualidades";
   return "Datos personales";
@@ -1754,11 +1909,9 @@ function stepCopy(step: CreateStep) {
   if (step === "ENROLLMENT") {
     return "La inscripción queda separada para que el registro y el cobro sean fáciles de entender.";
   }
-  if (step === "CURRENT_PAYMENT") {
-    return "Confirma si la mensualidad de este mes ya fue pagada antes de configurar el ciclo.";
-  }
+  if (step === "CURRENT_PAYMENT") return "Confirma si la primera mensualidad ya fue pagada o si debe quedar por cobrar.";
   if (step === "MONTHLY") {
-    return "Define el valor mensual, la modalidad y el día de cobro que usará el sistema.";
+    return "Define la fecha de inicio, el valor mensual, la modalidad y el dia de cobro que usara el sistema.";
   }
   if (step === "HISTORY") {
     return "Genera los meses desde que empezó clases y marca los que ya están al día.";
@@ -1773,14 +1926,14 @@ function billingStartCopy(
 ) {
   const modeCopy = billingModeExplanation(modalidadMensualidad);
   if (pagoMesActual === "SI") {
-    return `Como ya pagó este mes, se registrará el ingreso actual y el siguiente cobro aparecerá en el próximo ciclo. ${modeCopy}`.trim();
+    return `Como ya pago la mensualidad inicial, ese primer periodo quedara al dia. ${modeCopy}`.trim();
   }
 
   if (tipoRegistro === "NUEVO") {
-    return `Como es un alumno nuevo y no pagó este mes, la primera mensualidad empezará desde el siguiente mes. ${modeCopy}`.trim();
+    return `Como no ha pagado, el primer cobro se creara desde la fecha de inicio y quedara pendiente o vencido segun su vencimiento. ${modeCopy}`.trim();
   }
 
-  return `Como aún no pagó este mes, se creará el cobro del mes actual. Si el día ya pasó, quedará vencido; si es hoy, quedará pendiente. ${modeCopy}`.trim();
+  return `Como aun no pago este mes, se creara el cobro del mes actual. Si el dia ya paso, quedara vencido; si es hoy, quedara pendiente. ${modeCopy}`.trim();
 }
 
 function billingModeExplanation(mode: StudentFormValues["modalidadMensualidad"]) {

@@ -189,20 +189,20 @@ export function DuePaymentsPanel({
   }
 
   async function notifyByWhatsapp(card: PaymentCard) {
-    const recipient = resolveWhatsappRecipient(card.primaryItem);
-    if (!recipient.phone) {
-      sileo.error({
-        title: "Sin WhatsApp disponible",
-        description: "Este alumno no tiene numero registrado para enviar recordatorio."
-      });
-      return;
-    }
+    if (!token) return;
 
-    const message = createWhatsappPaymentMessage(card, recipient.isGuardian);
-    const url = `https://wa.me/${recipient.phone}?text=${encodeURIComponent(message)}`;
+    const monthlyPaymentIds = card.items.filter((item) => item.kind === "MONTHLY_PAYMENT").map((item) => item.id);
+    const enrollmentPaymentIds = card.items.filter((item) => item.kind === "ENROLLMENT_PAYMENT").map((item) => item.id);
 
-    window.open(url, "_blank", "noopener,noreferrer");
-    sileo.success({ title: "WhatsApp listo", description: "Abrimos el recordatorio en una pestaña nueva." });
+    await clientApiFetch<{ whatsappUrl: string; message: string }>("/api/reminders/whatsapp", token, {
+      method: "POST",
+      body: JSON.stringify({ monthlyPaymentIds, enrollmentPaymentIds })
+    })
+      .then((reminder) => {
+        window.open(reminder.whatsappUrl, "_blank", "noopener,noreferrer");
+        sileo.success({ title: "WhatsApp listo", description: "Abrimos el recordatorio en una pestana nueva." });
+      })
+      .catch((error: Error) => sileo.error({ title: error.message }));
   }
 
   return (

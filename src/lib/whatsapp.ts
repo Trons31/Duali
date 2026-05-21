@@ -1,4 +1,45 @@
-import { EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
+import { Client, EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
+
+type ReminderClient = Pick<Client, "businessName"> &
+  Partial<Pick<Client, "paymentMethods" | "paymentMethodItems" | "whatsappMessageTemplate">>;
+
+type ReminderStudent = Pick<
+  Student,
+  "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"
+>;
+
+type PaymentReminderItem = {
+  kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
+  id: string;
+  estudianteId: string;
+  monto: unknown;
+  saldoPendiente?: unknown;
+  estado: string;
+  fechaVencimiento: Date;
+  mes?: number | null;
+  anio?: number | null;
+  student: ReminderStudent;
+};
+
+const MONTH_NAMES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre"
+];
+
+type PaymentMethodItem = {
+  name: string;
+  account: string;
+};
 
 export function resolveWhatsappPhone(student: Pick<Student, "esMenorDeEdad" | "telefonoPadre" | "celular">) {
   if (student.esMenorDeEdad && student.telefonoPadre) return student.telefonoPadre;
@@ -21,20 +62,26 @@ export function buildPaymentReminderMessage(params: {
   isMinor?: boolean;
   isOverdue?: boolean;
   fechaVencimiento?: Date;
+  concept?: "mensualidad" | "inscripcion";
+  client?: ReminderClient;
 }) {
-  const amount = Number(params.monto).toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0
-  });
-  const ownerText = params.isMinor ? `la mensualidad de ${params.studentName}` : "tu mensualidad";
+  const item: PaymentReminderItem = {
+    kind: params.concept === "inscripcion" ? "ENROLLMENT_PAYMENT" : "MONTHLY_PAYMENT",
+    id: "",
+    estudianteId: "",
+    monto: params.monto,
+    estado: params.isOverdue ? "VENCIDO" : "PENDIENTE",
+    fechaVencimiento: params.fechaVencimiento ?? new Date(),
+    student: {
+      nombre: params.studentName,
+      apellido: "",
+      esMenorDeEdad: Boolean(params.isMinor),
+      telefonoPadre: null,
+      celular: null
+    }
+  };
 
-  if (params.isOverdue) {
-    const days = calculateOverdueDays(params.fechaVencimiento);
-    return `Hola, te recordamos que ${ownerText} esta vencida por un valor de ${amount}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
-  }
-
-  return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
+  return buildPaymentReminderMessageForItems([item], params.client);
 }
 
 export function createWhatsappUrl(phone: string, message: string) {
@@ -48,20 +95,9 @@ export function buildEnrollmentReminderMessage(params: {
   isMinor?: boolean;
   isOverdue?: boolean;
   fechaVencimiento?: Date;
+  client?: ReminderClient;
 }) {
-  const amount = Number(params.monto).toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0
-  });
-  const ownerText = params.isMinor ? `la inscripcion de ${params.studentName}` : "tu inscripcion";
-
-  if (params.isOverdue) {
-    const days = calculateOverdueDays(params.fechaVencimiento);
-    return `Hola, te recordamos que ${ownerText} esta vencida por un valor de ${amount}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
-  }
-
-  return `Hola, te recordamos que hoy es el dia de pago de ${ownerText} por un valor de ${amount}.`;
+  return buildPaymentReminderMessage({ ...params, concept: "inscripcion" });
 }
 
 export function buildPaymentInstallmentMessage(params: {
@@ -103,16 +139,29 @@ export function buildPendingBalanceMessage(params: {
 }
 
 export function buildReminderForPayment(
-  payment: MonthlyPayment & { student: Pick<Student, "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"> }
+  payment: MonthlyPayment & { student: ReminderStudent },
+  client?: ReminderClient
 ) {
-  const phone = resolveWhatsappPhone(payment.student);
-  const message = buildPaymentReminderMessage({
-    studentName: `${payment.student.nombre} ${payment.student.apellido}`,
-    monto: payment.monto.toString(),
-    isMinor: payment.student.esMenorDeEdad,
-    isOverdue: payment.estado === "VENCIDO",
-    fechaVencimiento: payment.fechaVencimiento
-  });
+  return buildReminderForPayments([{ ...payment, kind: "MONTHLY_PAYMENT" }], client);
+}
+
+export function buildReminderForEnrollment(
+  payment: EnrollmentPayment & { student: ReminderStudent },
+  client?: ReminderClient
+) {
+  return buildReminderForPayments([{ ...payment, kind: "ENROLLMENT_PAYMENT" }], client);
+}
+
+export function buildReminderForPayments(items: PaymentReminderItem[], client?: ReminderClient) {
+  const sortedItems = [...items].sort((a, b) => a.fechaVencimiento.getTime() - b.fechaVencimiento.getTime());
+  const primaryItem = sortedItems[0];
+
+  if (!primaryItem) {
+    return { phone: "", message: "", whatsappUrl: "" };
+  }
+
+  const phone = resolveWhatsappPhone(primaryItem.student);
+  const message = buildPaymentReminderMessageForItems(sortedItems, client);
 
   return {
     phone: normalizeWhatsappPhone(phone),
@@ -121,23 +170,141 @@ export function buildReminderForPayment(
   };
 }
 
-export function buildReminderForEnrollment(
-  payment: EnrollmentPayment & { student: Pick<Student, "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"> }
-) {
-  const phone = resolveWhatsappPhone(payment.student);
-  const message = buildEnrollmentReminderMessage({
-    studentName: `${payment.student.nombre} ${payment.student.apellido}`,
-    monto: payment.monto.toString(),
-    isMinor: payment.student.esMenorDeEdad,
-    isOverdue: payment.estado === "VENCIDO",
-    fechaVencimiento: payment.fechaVencimiento
-  });
+function buildPaymentReminderMessageForItems(items: PaymentReminderItem[], client?: ReminderClient) {
+  const primaryItem = items[0]!;
+  const studentName = fullStudentName(primaryItem.student);
+  const isMinor = primaryItem.student.esMenorDeEdad;
+  const amount = items.reduce((total, item) => total + paymentRemainingAmount(item), 0);
+  const oldestDueDate = primaryItem.fechaVencimiento;
+  const isOverdue = items.some((item) => item.estado === "VENCIDO" || isDateOverdue(item.fechaVencimiento));
+  const isDueToday = isDateToday(oldestDueDate);
+  const days = isOverdue ? calculateOverdueDays(oldestDueDate) : 0;
+  const concept = items.length === 1 ? paymentConceptLabel(primaryItem) : "cobros pendientes";
+  const detail = items.map(paymentConceptCopy).join(", ");
+  const paymentMethods = formatPaymentMethods(client);
+  const template = client?.whatsappMessageTemplate?.trim();
 
-  return {
-    phone: normalizeWhatsappPhone(phone),
-    message,
-    whatsappUrl: createWhatsappUrl(phone, message)
+  const variables = {
+    nombre_alumno: studentName,
+    nombre_cliente: studentName,
+    nombre_negocio: client?.businessName?.trim() || "nuestro negocio",
+    estado_pago: isOverdue
+      ? `vencido hace ${days} dia${days === 1 ? "" : "s"}`
+      : isDueToday
+        ? "pendiente, vence hoy"
+        : `pendiente, vence el ${formatDate(oldestDueDate)}`,
+    fecha_vencimiento: formatDate(oldestDueDate),
+    dias_vencidos: String(days),
+    metodos_pago: paymentMethods || "Consulta los metodos de pago disponibles con nosotros.",
+    valor_pendiente: formatCop(amount),
+    detalle_cobros: detail,
+    concepto_pago: concept
   };
+
+  if (template) {
+    let renderedMessage = renderWhatsappTemplate(template, variables);
+    if (!templateContainsAnyVariable(template, ["nombre_alumno", "nombre_cliente"])) {
+      renderedMessage = `Alumno: ${studentName}\n\n${renderedMessage.trim()}`;
+    }
+
+    return paymentMethods && !templateContainsVariable(template, "metodos_pago")
+      ? appendPaymentMethods(renderedMessage, paymentMethods)
+      : renderedMessage;
+  }
+
+  const ownerText = isMinor ? `${concept} de ${studentName}` : `tu ${concept}`;
+  const methodsSection = paymentMethods ? `\n\nMetodos de pago:\n${paymentMethods}` : "";
+
+  if (isOverdue) {
+    return `Hola, te recordamos que ${ownerText} se encuentra vencido por valor de ${formatCop(amount)}. Lleva ${days} dia${days === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible para ponerte al dia.${methodsSection}`;
+  }
+
+  const dueCopy = isDueToday ? "hoy vence" : `vence el ${formatDate(oldestDueDate)}`;
+  return `Hola, te recordamos que ${dueCopy} ${ownerText} por valor de ${formatCop(amount)}. Por favor realiza el pago para mantenerte al dia.${methodsSection}`;
+}
+
+function renderWhatsappTemplate(template: string, variables: Record<string, string>) {
+  return template.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (match, key: string) => variables[key] ?? match);
+}
+
+function templateContainsVariable(template: string, variable: string) {
+  return new RegExp(`{{\\s*${variable}\\s*}}`).test(template);
+}
+
+function templateContainsAnyVariable(template: string, variables: string[]) {
+  return variables.some((variable) => templateContainsVariable(template, variable));
+}
+
+function appendPaymentMethods(message: string, paymentMethods: string) {
+  return `${message.trim()}\n\nMetodos de pago:\n${paymentMethods}`;
+}
+
+function formatPaymentMethods(client?: ReminderClient) {
+  const structuredItems = normalizePaymentMethodItems(client?.paymentMethodItems);
+  if (structuredItems.length) {
+    return structuredItems.map((item) => (item.account ? `- ${item.name}: ${item.account}` : `- ${item.name}`)).join("\n");
+  }
+
+  const legacyText = client?.paymentMethods?.trim();
+  return legacyText ?? "";
+}
+
+function normalizePaymentMethodItems(value: unknown): PaymentMethodItem[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const source = item as Record<string, unknown>;
+      const name = String(source.name ?? "").trim();
+      const account = String(source.account ?? "").trim();
+      if (!name && !account) return null;
+
+      return {
+        name: name || "Metodo de pago",
+        account
+      };
+    })
+    .filter((item): item is PaymentMethodItem => Boolean(item));
+}
+
+function paymentRemainingAmount(item: PaymentReminderItem) {
+  if (item.saldoPendiente !== undefined && item.saldoPendiente !== null) return Number(item.saldoPendiente.toString());
+  return Number(item.monto?.toString() ?? 0);
+}
+
+function fullStudentName(student: ReminderStudent) {
+  return [student.nombre, student.apellido].filter(Boolean).join(" ").trim();
+}
+
+function paymentConceptLabel(item: PaymentReminderItem) {
+  return item.kind === "MONTHLY_PAYMENT" ? "mensualidad" : "inscripcion";
+}
+
+function paymentConceptCopy(item: PaymentReminderItem) {
+  if (item.kind === "MONTHLY_PAYMENT" && item.mes && item.anio) {
+    const monthName = MONTH_NAMES[item.mes - 1] ?? String(item.mes);
+    return `${capitalize(monthName)} ${item.anio}`;
+  }
+
+  return `${capitalize(paymentConceptLabel(item))} con vencimiento ${formatDate(item.fechaVencimiento)}`;
+}
+
+function isDateOverdue(fechaVencimiento: Date) {
+  const dueUtc = Date.UTC(
+    fechaVencimiento.getFullYear(),
+    fechaVencimiento.getMonth(),
+    fechaVencimiento.getDate()
+  );
+  const now = new Date();
+  const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+
+  return dueUtc < nowUtc;
+}
+
+function isDateToday(date: Date) {
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
 }
 
 function calculateOverdueDays(fechaVencimiento?: Date) {
@@ -154,10 +321,18 @@ function calculateOverdueDays(fechaVencimiento?: Date) {
   return Math.max(1, Math.floor((nowUtc - dueUtc) / 86400000));
 }
 
-function formatCop(value: string | number) {
-  return Number(value).toLocaleString("es-CO", {
+function formatCop(value: unknown) {
+  return Number(value?.toString() ?? 0).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
     maximumFractionDigits: 0
   });
+}
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("es-CO");
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

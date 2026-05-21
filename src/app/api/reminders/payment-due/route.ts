@@ -12,7 +12,16 @@ export async function GET(request: Request) {
     const now = new Date();
     const soon = addDays(now, days);
 
-    const [payments, enrollments] = await Promise.all([
+    const [clientConfig, payments, enrollments] = await Promise.all([
+      prisma.client.findFirst({
+        where: { id: clientId, deletedAt: null },
+        select: {
+          businessName: true,
+          paymentMethods: true,
+          paymentMethodItems: true,
+          whatsappMessageTemplate: true
+        }
+      }),
       prisma.monthlyPayment.findMany({
         where: {
           clientId,
@@ -34,20 +43,21 @@ export async function GET(request: Request) {
         orderBy: { fechaVencimiento: "asc" }
       })
     ]);
+    if (!clientConfig) throw new Error("Cliente no encontrado");
 
     return ok(
       [
         ...payments.map((payment) => ({
         ...payment,
         kind: "MONTHLY_PAYMENT",
-        reminder: buildReminderForPayment(payment),
+        reminder: buildReminderForPayment(payment, clientConfig),
         isOverdue: payment.fechaVencimiento < now
         })),
         ...enrollments.map((payment) => ({
           ...payment,
           kind: "ENROLLMENT_PAYMENT",
           group: payment.student.group,
-          reminder: buildReminderForEnrollment(payment),
+          reminder: buildReminderForEnrollment(payment, clientConfig),
           isOverdue: payment.fechaVencimiento < now
         }))
       ].sort((a, b) => a.fechaVencimiento.getTime() - b.fechaVencimiento.getTime())

@@ -86,6 +86,9 @@ model Client {
   passwordHash    String
   telefono        String?
   businessName    String
+  paymentMethods  String?
+  paymentMethodItems Json?
+  whatsappMessageTemplate String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   deletedAt       DateTime?
