@@ -56,7 +56,17 @@ export const clientProfileSchema = z.object({
     .max(20)
     .optional()
     .transform((items) => items?.filter((item) => item.name || item.account) ?? undefined),
-  whatsappMessageTemplate: z.string().max(4000).optional().nullable()
+  whatsappMessageTemplate: z
+    .string()
+    .max(4000)
+    .optional()
+    .nullable()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    })
 });
 
 const groupBaseSchema = z.object({

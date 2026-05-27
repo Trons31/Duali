@@ -28,6 +28,7 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
     register,
     handleSubmit,
     control,
+    reset,
     formState: { isSubmitting }
   } = useForm<ProfileFormValues>({
     defaultValues: {
@@ -47,11 +48,18 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
       .map((item) => ({ name: item.name.trim(), account: item.account.trim() }))
       .filter((item) => item.name || item.account);
 
-    await clientApiFetch("/api/client/profile", token, {
+    await clientApiFetch<SafeClient>("/api/client/profile", token, {
       method: "PUT",
       body: JSON.stringify({ ...values, paymentMethodItems })
     })
-      .then(() => {
+      .then((updatedProfile) => {
+        reset({
+          nombre: updatedProfile.nombre,
+          telefono: updatedProfile.telefono ?? "",
+          businessName: updatedProfile.businessName,
+          paymentMethodItems: normalizePaymentMethodItems(updatedProfile.paymentMethodItems, updatedProfile.paymentMethods),
+          whatsappMessageTemplate: updatedProfile.whatsappMessageTemplate ?? ""
+        });
         sileo.success({ title: "Perfil actualizado" });
         router.refresh();
       })
@@ -124,7 +132,7 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
         <label className="mb-2 block text-sm font-semibold text-ink-700">Mensaje para WhatsApp</label>
         <textarea
           className="field-base min-h-40 resize-y"
-          placeholder="Hola {{nombre_alumno}}, te recordamos que tu mensualidad esta {{estado_pago}}. Metodos de pago: {{metodos_pago}}"
+         
           {...register("whatsappMessageTemplate")}
         />
         <div className="mt-3 flex flex-wrap gap-2">

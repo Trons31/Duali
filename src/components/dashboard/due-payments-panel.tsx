@@ -85,6 +85,7 @@ export function DuePaymentsPanel({
   const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
+  const [notifyingCardKey, setNotifyingCardKey] = useState<string | null>(null);
   const [resultsOpen, setResultsOpen] = useState(true);
   const [query, setQuery] = useState("");
   const token = session?.user.apiToken ?? "";
@@ -191,17 +192,26 @@ export function DuePaymentsPanel({
       .finally(() => setSubmittingInstallment(false));
   }
 
-  function notifyByWhatsapp(card: PaymentCard) {
-    const recipient = resolveWhatsappRecipient(card.primaryItem);
+  async function notifyByWhatsapp(card: PaymentCard) {
+    const monthlyPaymentIds = card.items
+      .filter((item) => item.kind === "MONTHLY_PAYMENT")
+      .map((item) => item.id);
+    const enrollmentPaymentIds = card.items
+      .filter((item) => item.kind === "ENROLLMENT_PAYMENT")
+      .map((item) => item.id);
 
-    if (!recipient.phone) {
-      window.alert("Este estudiante no tiene un número de WhatsApp válido registrado");
-      return;
-    }
-
-    const message = createWhatsappPaymentMessage(card, recipient.isGuardian);
-    const whatsappUrl = `https://wa.me/${recipient.phone}?text=${encodeURIComponent(message)}`;
-    window.location.href = whatsappUrl;
+    setNotifyingCardKey(card.key);
+    await clientApiFetch<{ whatsappUrl: string }>("/api/reminders/whatsapp", token, {
+      method: "POST",
+      body: JSON.stringify({ monthlyPaymentIds, enrollmentPaymentIds })
+    })
+      .then((reminder) => {
+        window.location.href = reminder.whatsappUrl;
+      })
+      .catch((error: Error) => {
+        sileo.error({ title: "No se pudo generar el WhatsApp", description: error.message });
+      })
+      .finally(() => setNotifyingCardKey(null));
   }
 
   return (
@@ -327,6 +337,7 @@ export function DuePaymentsPanel({
                           type="button"
                           variant="secondary"
                           className="min-h-14 rounded-[22px] border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                          loading={notifyingCardKey === card.key}
                           onClick={() => notifyByWhatsapp(card)}
                         >
                           <FiMessageCircle className="size-5" />
@@ -621,61 +632,6 @@ function paymentDateCopy(item: DuePayment, status: PaymentDisplayStatus) {
 
   if (status === "PENDIENTE_HOY") return `Inscripción vence hoy`;
   return `Inscripción ${verb} el ${dueCopy}`;
-}
-
-function resolveWhatsappRecipient(item: DuePayment) {
-  const rawPhone = item.student.esMenorDeEdad
-    ? item.student.telefonoPadre || item.student.celular || ""
-    : item.student.celular || item.student.telefonoPadre || "";
-  const phone = normalizeWhatsappPhone(rawPhone);
-
-  return {
-    phone,
-    isGuardian: item.student.esMenorDeEdad ? Boolean(item.student.telefonoPadre) : !item.student.celular && Boolean(item.student.telefonoPadre)
-  };
-}
-
-function normalizeWhatsappPhone(value: string) {
-  let digits = value.replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.length === 10) digits = `57${digits}`;
-  if (digits.length < 11 || digits.length > 15) return "";
-  return digits;
-}
-
-function createWhatsappPaymentMessage(card: PaymentCard, isGuardian: boolean) {
-  const item = card.primaryItem;
-  const status = card.displayStatus;
-  const studentName = `${item.student.nombre} ${item.student.apellido}`;
-  const firstName = item.student.nombre.split(" ")[0] || studentName;
-  const amount = currency(card.totalAmount);
-
-  if (card.isConsolidated) {
-    const monthlyItems = card.items.filter((payment) => payment.kind === "MONTHLY_PAYMENT");
-    const monthsCopy = card.items.map(paymentConceptCopy).join(", ");
-    const debtCountCopy = monthlyItems.length
-      ? `${monthlyItems.length} ${monthlyItems.length === 1 ? "mensualidad vencida" : "mensualidades vencidas"}`
-      : `${card.items.length} ${card.items.length === 1 ? "cobro vencido" : "cobros vencidos"}`;
-
-    if (isGuardian) {
-      return `Hola, te recordamos que ${studentName} tiene ${debtCountCopy}: ${monthsCopy}. El valor total pendiente es ${amount}. Por favor realiza el pago lo antes posible para ponerse al dia.`;
-    }
-
-    return `Hola ${firstName}, te recordamos que tienes ${debtCountCopy}: ${monthsCopy}. El valor total pendiente es ${amount}. Por favor realiza el pago lo antes posible para ponerte al dia.`;
-  }
-
-  const concept = paymentConceptLabel(item);
-  const ownerText = isGuardian ? `la ${concept} de ${studentName}` : `tu ${concept}`;
-
-  if (status === "VENCIDO") {
-    return `Hola, te recordamos que ${ownerText} está vencida por valor de ${amount}. ${overdueAgeText(item.fechaVencimiento)}. Por favor realiza el pago lo antes posible.`;
-  }
-
-  if (status === "PENDIENTE_HOY") {
-    return `Hola, te recordamos que hoy es el día de pago de ${ownerText} por un valor de ${amount}.`;
-  }
-
-  return `Hola, te recordamos que ${ownerText} vence el ${formatDate(item.fechaVencimiento)} por un valor de ${amount}.`;
 }
 
 function amountClassName(status: PaymentDisplayStatus) {

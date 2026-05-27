@@ -48,6 +48,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
+  const [notifyingPaymentId, setNotifyingPaymentId] = useState<string | null>(null);
 
   const pendingPayments = useMemo(
     () => payments.filter((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO"),
@@ -199,16 +200,19 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
     setCollapsedDays((current) => ({ ...current, [key]: !current[key] }));
   }
 
-  function notifyByWhatsapp(payment: EnrollmentPaymentItem) {
-    const phone = resolveWhatsappPhone(payment);
-    if (!phone) {
-      window.alert("Este estudiante no tiene un número de WhatsApp válido registrado");
-      return;
-    }
-
-    const message = createEnrollmentWhatsappMessage(payment);
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-    window.location.href = url;
+  async function notifyByWhatsapp(payment: EnrollmentPaymentItem) {
+    setNotifyingPaymentId(payment.id);
+    await clientApiFetch<{ whatsappUrl: string }>("/api/reminders/whatsapp", token, {
+      method: "POST",
+      body: JSON.stringify({ enrollmentPaymentId: payment.id })
+    })
+      .then((reminder) => {
+        window.location.href = reminder.whatsappUrl;
+      })
+      .catch((error: Error) => {
+        sileo.error({ title: "No se pudo generar el WhatsApp", description: error.message });
+      })
+      .finally(() => setNotifyingPaymentId(null));
   }
 
   return (
@@ -326,6 +330,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                           type="button"
                           variant="secondary"
                           className="min-h-14 rounded-[22px] border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                          loading={notifyingPaymentId === payment.id}
                           onClick={() => notifyByWhatsapp(payment)}
                         >
                           <FiMessageCircle className="size-5" />
@@ -560,27 +565,6 @@ function toInstallmentModalPayment(payment: EnrollmentPaymentItem): InstallmentM
     lastDate: payment.fechaUltimoAbono,
     installments: payment.installments ?? []
   };
-}
-
-function resolveWhatsappPhone(payment: EnrollmentPaymentItem) {
-  const rawPhone = payment.student.esMenorDeEdad
-    ? payment.student.telefonoPadre || payment.student.celular || ""
-    : payment.student.celular || payment.student.telefonoPadre || "";
-  let digits = rawPhone.replace(/\D/g, "");
-
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.length === 10) digits = `57${digits}`;
-  if (digits.length < 11 || digits.length > 15) return "";
-  return digits;
-}
-
-function createEnrollmentWhatsappMessage(payment: EnrollmentPaymentItem) {
-  const amount = currency(payment.monto);
-  const studentName = `${payment.student.nombre} ${payment.student.apellido}`;
-  const ownerText = payment.student.esMenorDeEdad ? `la inscripcion de ${studentName}` : "tu inscripcion";
-  const overdueDays = calculateOverdueDays(payment.fechaVencimiento);
-
-  return `Hola, te recordamos que ${ownerText} esta pendiente por un valor de ${amount}. Lleva ${overdueDays} dia${overdueDays === 1 ? "" : "s"} de retraso. Por favor realiza el pago lo antes posible.`;
 }
 
 function enrollmentDelayCopy(payment: EnrollmentPaymentItem) {

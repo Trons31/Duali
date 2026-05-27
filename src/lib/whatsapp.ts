@@ -207,6 +207,10 @@ function buildPaymentReminderMessageForItems(items: PaymentReminderItem[], clien
       renderedMessage = `Alumno: ${studentName}\n\n${renderedMessage.trim()}`;
     }
 
+    if (!templateContainsAnyVariable(template, ["estado_pago", "dias_vencidos"])) {
+      renderedMessage = appendPaymentStatus(renderedMessage, variables.estado_pago);
+    }
+
     return paymentMethods && !templateContainsVariable(template, "metodos_pago")
       ? appendPaymentMethods(renderedMessage, paymentMethods)
       : renderedMessage;
@@ -237,6 +241,10 @@ function templateContainsAnyVariable(template: string, variables: string[]) {
 
 function appendPaymentMethods(message: string, paymentMethods: string) {
   return `${message.trim()}\n\nMetodos de pago:\n${paymentMethods}`;
+}
+
+function appendPaymentStatus(message: string, status: string) {
+  return `${message.trim()}\n\nEstado del pago: ${status}.`;
 }
 
 function formatPaymentMethods(client?: ReminderClient) {
