@@ -188,8 +188,11 @@ export type MonthlyPaymentItem = {
   cantidadAbonos: number;
   fechaVencimiento: string;
   fechaPago: string | null;
+  fechaRegistro: string | null;
   estado: PaymentStatus;
   metodoPago: string | null;
+  registradoPorUserId: string | null;
+  registradoPorNombre: string | null;
   ultimoMetodoAbono: string | null;
   fechaUltimoAbono: string | null;
   comprobanteUrl: string | null;
@@ -220,7 +223,10 @@ export type EnrollmentPaymentItem = {
   estado: PaymentStatus;
   fechaVencimiento: string;
   fechaPago: string | null;
+  fechaRegistro: string | null;
   metodoPago: string | null;
+  registradoPorUserId: string | null;
+  registradoPorNombre: string | null;
   ultimoMetodoAbono: string | null;
   fechaUltimoAbono: string | null;
   notas: string | null;

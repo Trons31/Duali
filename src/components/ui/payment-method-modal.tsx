@@ -20,11 +20,13 @@ export function PaymentMethodModal({
   description,
   notice,
   amount,
+  paymentDate,
   selectedMethod,
   confirmText = "Confirmar pago",
   loading = false,
   onClose,
   onConfirm,
+  onChangePaymentDate,
   onSelectMethod
 }: {
   open: boolean;
@@ -32,11 +34,13 @@ export function PaymentMethodModal({
   description: string;
   notice?: string;
   amount?: number | string | null;
+  paymentDate: string;
   selectedMethod: PaymentMethodValue;
   confirmText?: string;
   loading?: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  onChangePaymentDate: (value: string) => void;
   onSelectMethod: (value: PaymentMethodValue) => void;
 }) {
   return (
@@ -54,6 +58,20 @@ export function PaymentMethodModal({
         {notice ? (
           <div className="rounded-[24px] bg-brand-50 px-4 py-4 text-sm leading-6 text-brand-800">{notice}</div>
         ) : null}
+
+        <div className="border-t border-ink-100 pt-5">
+          <label className="block text-base font-black text-ink-950" htmlFor="payment-date">
+            Fecha real de pago
+          </label>
+          <input
+            id="payment-date"
+            type="date"
+            value={paymentDate}
+            onChange={(event) => onChangePaymentDate(event.target.value)}
+            className="field-base mt-3 h-12 rounded-[18px]"
+          />
+          <p className="mt-2 text-sm text-ink-500">Este dia se usara en contabilidad, caja e historial.</p>
+        </div>
 
         <div className="border-t border-ink-100 pt-5">
           <p className="text-base font-black text-ink-950">Metodo de pago</p>

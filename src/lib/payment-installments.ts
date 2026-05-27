@@ -119,7 +119,10 @@ async function registerMonthlyInstallment(
     data: {
       estado: isPaid ? "PAGADO" : "ABONADO",
       fechaPago: isPaid ? paidAt : null,
+      fechaRegistro: isPaid ? new Date() : null,
       metodoPago: isPaid ? method : payment.metodoPago,
+      registradoPorUserId: isPaid ? input.registeredByUserId : null,
+      registradoPorNombre: isPaid ? input.registeredByName : null,
       montoAbonado: fromCents(paidAmountCents),
       saldoPendiente: installment.saldoRestante,
       cantidadAbonos: installment.numero,
@@ -195,7 +198,10 @@ async function registerEnrollmentInstallment(
     data: {
       estado: isPaid ? "PAGADO" : "ABONADO",
       fechaPago: isPaid ? paidAt : null,
+      fechaRegistro: isPaid ? new Date() : null,
       metodoPago: isPaid ? method : payment.metodoPago,
+      registradoPorUserId: isPaid ? input.registeredByUserId : null,
+      registradoPorNombre: isPaid ? input.registeredByName : null,
       montoAbonado: fromCents(paidAmountCents),
       saldoPendiente: installment.saldoRestante,
       cantidadAbonos: installment.numero,

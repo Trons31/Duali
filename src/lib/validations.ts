@@ -98,9 +98,10 @@ const studentCreateSchema = studentBaseSchema.extend({
   tipoRegistro: z.enum(["NUEVO", "ANTIGUO"]).default("NUEVO"),
   pagoMesActual: z.coerce.boolean().default(false),
   mensualidadMetodoPagoActual: z.string().optional().nullable(),
+  mensualidadFechaPagoActual: localDateInputSchema.optional().nullable(),
   inscripcionMonto: z.coerce.number().positive().optional().nullable(),
   inscripcionPagada: z.coerce.boolean().default(false),
-  inscripcionFechaPago: z.coerce.date().optional().nullable(),
+  inscripcionFechaPago: localDateInputSchema.optional().nullable(),
   inscripcionMetodoPago: z.string().optional().nullable(),
   inicioClasesDia: z.coerce.number().int().min(1).max(31).optional().nullable(),
   inicioClasesMes: z.coerce.number().int().min(1).max(12).optional().nullable(),
@@ -233,6 +234,20 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       message: "Selecciona como se pago la mensualidad actual"
     });
   }
+  if (data.pagoMesActual && !data.mensualidadFechaPagoActual) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["mensualidadFechaPagoActual"],
+      message: "Selecciona la fecha real del pago"
+    });
+  }
+  if (data.inscripcionPagada && !data.inscripcionFechaPago) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["inscripcionFechaPago"],
+      message: "Selecciona la fecha real del pago"
+    });
+  }
   if (data.tipoRegistro === "ANTIGUO" && data.mesesPagados.length > 0 && !data.mensualidadMetodoPagoActual) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -264,7 +279,7 @@ export const generateMonthlyByGroupSchema = z.object({
 });
 
 export const payMonthlySchema = z.object({
-  fechaPago: z.coerce.date().optional(),
+  fechaPago: localDateInputSchema.optional(),
   metodoPago: z.string().optional().nullable(),
   comprobanteUrl: z.string().url().optional().nullable(),
   notas: z.string().optional().nullable()
@@ -273,11 +288,12 @@ export const payMonthlySchema = z.object({
 export const studentPaymentHistoryUpdateSchema = z.object({
   paymentId: z.string().min(1),
   paid: z.coerce.boolean(),
+  fechaPago: localDateInputSchema.optional(),
   metodoPago: z.string().optional().nullable()
 });
 
 export const payEnrollmentSchema = z.object({
-  fechaPago: z.coerce.date().optional(),
+  fechaPago: localDateInputSchema.optional(),
   metodoPago: z.string().optional().nullable(),
   notas: z.string().optional().nullable()
 });

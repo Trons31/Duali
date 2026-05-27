@@ -254,7 +254,10 @@ model EnrollmentPayment {
   estado           EnrollmentPaymentStatus @default(PENDIENTE)
   fechaVencimiento DateTime
   fechaPago        DateTime?
+  fechaRegistro    DateTime?
   metodoPago       String?
+  registradoPorUserId String?
+  registradoPorNombre String?
   ultimoMetodoAbono String?
   fechaUltimoAbono DateTime?
   notas            String?
@@ -287,8 +290,11 @@ model MonthlyPayment {
   cantidadAbonos   Int                  @default(0)
   fechaVencimiento DateTime
   fechaPago        DateTime?
+  fechaRegistro    DateTime?
   estado           MonthlyPaymentStatus @default(PENDIENTE)
   metodoPago       String?
+  registradoPorUserId String?
+  registradoPorNombre String?
   ultimoMetodoAbono String?
   fechaUltimoAbono DateTime?
   comprobanteUrl   String?

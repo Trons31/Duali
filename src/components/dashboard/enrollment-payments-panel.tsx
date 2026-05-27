@@ -45,6 +45,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [payTarget, setPayTarget] = useState<EnrollmentPaymentItem | null>(null);
   const [installmentTarget, setInstallmentTarget] = useState<InstallmentModalPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
 
@@ -138,12 +139,14 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
 
   function openPayModal(payment: EnrollmentPaymentItem) {
     setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
     setPayTarget(payment);
   }
 
   function closePayModal() {
     setPayTarget(null);
     setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
   }
 
   function openInstallmentModal(payment: EnrollmentPaymentItem, mode: "history" | "payment" = "payment") {
@@ -164,7 +167,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
 
     await clientApiFetch(`/api/enrollment-payments/${payTarget.id}/pay`, token, {
       method: "PUT",
-      body: JSON.stringify({ metodoPago: paymentMethod })
+      body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
     })
       .then(() => {
         sileo.success({ title: "Inscripcion marcada como pagada" });
@@ -199,17 +202,13 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   function notifyByWhatsapp(payment: EnrollmentPaymentItem) {
     const phone = resolveWhatsappPhone(payment);
     if (!phone) {
-      sileo.error({
-        title: "Sin WhatsApp disponible",
-        description: "Este alumno no tiene numero registrado para enviar recordatorio."
-      });
+      window.alert("Este estudiante no tiene un número de WhatsApp válido registrado");
       return;
     }
 
     const message = createEnrollmentWhatsappMessage(payment);
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-    sileo.success({ title: "WhatsApp listo", description: "Abrimos el recordatorio en una pestaña nueva." });
+    window.location.href = url;
   }
 
   return (
@@ -497,11 +496,13 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
         description={`Registrarás el pago de la inscripción de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
         amount={payTarget?.monto ?? null}
         notice="Confirma este pago solo si ya recibiste el dinero de la inscripcion y quieres dejarlo registrado en caja."
+        paymentDate={paymentDate}
         selectedMethod={paymentMethod}
         confirmText="Confirmar pago"
         loading={submittingPayment}
         onClose={closePayModal}
         onConfirm={payCurrent}
+        onChangePaymentDate={setPaymentDate}
         onSelectMethod={setPaymentMethod}
       />
 
@@ -519,6 +520,11 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
 function defaultMonthValue() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function defaultDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function BalancePill({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
@@ -560,10 +566,12 @@ function resolveWhatsappPhone(payment: EnrollmentPaymentItem) {
   const rawPhone = payment.student.esMenorDeEdad
     ? payment.student.telefonoPadre || payment.student.celular || ""
     : payment.student.celular || payment.student.telefonoPadre || "";
-  const digits = rawPhone.replace(/\D/g, "");
+  let digits = rawPhone.replace(/\D/g, "");
 
-  if (!digits) return "";
-  return digits.startsWith("57") ? digits : `57${digits}`;
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.length === 10) digits = `57${digits}`;
+  if (digits.length < 11 || digits.length > 15) return "";
+  return digits;
 }
 
 function createEnrollmentWhatsappMessage(payment: EnrollmentPaymentItem) {

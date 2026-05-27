@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { currency, formatDate } from "@/lib/web-utils";
@@ -41,6 +42,9 @@ export function MonthlyPaymentsPanel({
   const router = useRouter();
   const [payTarget, setPayTarget] = useState<MonthlyPaymentItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MonthlyPaymentItem | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  const [paymentDate, setPaymentDate] = useState(defaultDateValue());
+  const [submittingPayment, setSubmittingPayment] = useState(false);
   const token = session?.user.apiToken ?? "";
 
   const manualForm = useForm<ManualPaymentForm>({
@@ -91,16 +95,30 @@ export function MonthlyPaymentsPanel({
 
   async function payPayment() {
     if (!payTarget) return;
+    setSubmittingPayment(true);
     await clientApiFetch(`/api/monthly-payments/${payTarget.id}/pay`, token, {
       method: "PUT",
-      body: JSON.stringify({})
+      body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
     })
       .then(() => {
         sileo.success({ title: "Mensualidad marcada como pagada" });
-        setPayTarget(null);
+        closePayModal();
         router.refresh();
       })
-      .catch((error: Error) => sileo.error({ title: error.message }));
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingPayment(false));
+  }
+
+  function openPayModal(payment: MonthlyPaymentItem) {
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
+    setPayTarget(payment);
+  }
+
+  function closePayModal() {
+    setPayTarget(null);
+    setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
   }
 
   async function deletePayment() {
@@ -208,7 +226,7 @@ export function MonthlyPaymentsPanel({
             </div>
             <div className="mt-5 flex flex-wrap gap-3">
               {payment.estado !== "PAGADO" ? (
-                <Button type="button" onClick={() => setPayTarget(payment)}>
+                <Button type="button" onClick={() => openPayModal(payment)}>
                   Marcar pago
                 </Button>
               ) : null}
@@ -220,16 +238,20 @@ export function MonthlyPaymentsPanel({
         ))}
       </div>
 
-      <ConfirmDialog
+      <PaymentMethodModal
         open={Boolean(payTarget)}
         title="Registrar pago"
         description={`Marcarás como pagada la mensualidad de ${payTarget?.student.nombre} ${payTarget?.student.apellido}.`}
-        confirmText="Confirmar pago"
-        variant="primary"
+        amount={payTarget?.monto ?? null}
         notice="Marca esta mensualidad como pagada solo si el estudiante ya realizo el pago pendiente."
-        noticeTone="success"
-        onClose={() => setPayTarget(null)}
+        paymentDate={paymentDate}
+        selectedMethod={paymentMethod}
+        confirmText="Confirmar pago"
+        loading={submittingPayment}
+        onClose={closePayModal}
         onConfirm={payPayment}
+        onChangePaymentDate={setPaymentDate}
+        onSelectMethod={setPaymentMethod}
       />
 
       <ConfirmDialog
@@ -242,4 +264,9 @@ export function MonthlyPaymentsPanel({
       />
     </div>
   );
+}
+
+function defaultDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }

@@ -82,6 +82,7 @@ export function DuePaymentsPanel({
   const [payTarget, setPayTarget] = useState<PaymentCard | null>(null);
   const [installmentTarget, setInstallmentTarget] = useState<InstallmentModalPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
@@ -116,12 +117,14 @@ export function DuePaymentsPanel({
 
   function openPayModal(card: PaymentCard) {
     setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
     setPayTarget(card);
   }
 
   function closePayModal() {
     setPayTarget(null);
     setPaymentMethod(PAYMENT_METHODS[0].value);
+    setPaymentDate(defaultDateValue());
   }
 
   function openInstallmentModal(item: DuePayment, mode: "history" | "payment" = "payment") {
@@ -148,7 +151,7 @@ export function DuePaymentsPanel({
 
         return clientApiFetch(endpoint, token, {
           method: "PUT",
-          body: JSON.stringify({ metodoPago: paymentMethod })
+          body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
         });
       })
     )
@@ -188,21 +191,17 @@ export function DuePaymentsPanel({
       .finally(() => setSubmittingInstallment(false));
   }
 
-  async function notifyByWhatsapp(card: PaymentCard) {
-    if (!token) return;
+  function notifyByWhatsapp(card: PaymentCard) {
+    const recipient = resolveWhatsappRecipient(card.primaryItem);
 
-    const monthlyPaymentIds = card.items.filter((item) => item.kind === "MONTHLY_PAYMENT").map((item) => item.id);
-    const enrollmentPaymentIds = card.items.filter((item) => item.kind === "ENROLLMENT_PAYMENT").map((item) => item.id);
+    if (!recipient.phone) {
+      window.alert("Este estudiante no tiene un número de WhatsApp válido registrado");
+      return;
+    }
 
-    await clientApiFetch<{ whatsappUrl: string; message: string }>("/api/reminders/whatsapp", token, {
-      method: "POST",
-      body: JSON.stringify({ monthlyPaymentIds, enrollmentPaymentIds })
-    })
-      .then((reminder) => {
-        window.open(reminder.whatsappUrl, "_blank", "noopener,noreferrer");
-        sileo.success({ title: "WhatsApp listo", description: "Abrimos el recordatorio en una pestana nueva." });
-      })
-      .catch((error: Error) => sileo.error({ title: error.message }));
+    const message = createWhatsappPaymentMessage(card, recipient.isGuardian);
+    const whatsappUrl = `https://wa.me/${recipient.phone}?text=${encodeURIComponent(message)}`;
+    window.location.href = whatsappUrl;
   }
 
   return (
@@ -296,23 +295,24 @@ export function DuePaymentsPanel({
                           </p>
                         ) : null}
                         {card.isConsolidated ? (
-                          <div className="mt-4 space-y-2 rounded-[22px] border border-rose-100 bg-white/70 px-4 py-4">
+                          <div className="mt-4 overflow-hidden rounded-[18px] border border-rose-100 bg-white">
                             {card.items.map((payment) => (
                               <div
                                 key={`${payment.kind}-${payment.id}`}
-                                className="flex flex-wrap items-center justify-between gap-3 text-sm"
+                                className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-rose-50 px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_140px_96px]"
                               >
-                                <span className="font-semibold text-ink-700">{paymentConceptCopy(payment)}</span>
-                                <div className="flex items-center gap-3">
-                                  <span className="shrink-0 font-black text-ink-950">{currency(paymentRemainingAmount(payment))}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => openInstallmentModal(payment)}
-                                    className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-black text-brand-700 transition hover:bg-brand-100"
-                                  >
-                                    Abonar
-                                  </button>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-black text-ink-900">{paymentConceptCopy(payment)}</p>
+                                  <p className="mt-1 text-xs font-semibold text-ink-400">Vence {formatDate(payment.fechaVencimiento)}</p>
                                 </div>
+                                <span className="text-right text-sm font-black text-ink-950">{currency(paymentRemainingAmount(payment))}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openInstallmentModal(payment)}
+                                  className="col-span-2 h-10 rounded-[14px] border border-brand-200 bg-brand-50 px-4 text-sm font-black text-brand-700 transition hover:bg-brand-100 sm:col-span-1"
+                                >
+                                  Abonar
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -460,11 +460,13 @@ export function DuePaymentsPanel({
             ? `Marca como pagado solo si ya recibiste el dinero de estos ${payTarget.items.length} cobros.`
             : `Marca como pagado solo si ya recibiste el dinero de esta ${paymentConceptLabel(payTarget?.primaryItem ?? ({ kind: "MONTHLY_PAYMENT" } as DuePayment))}.`
         }
+        paymentDate={paymentDate}
         selectedMethod={paymentMethod}
         confirmText="Confirmar pago"
         loading={submittingPayment}
         onClose={closePayModal}
         onConfirm={payCurrent}
+        onChangePaymentDate={setPaymentDate}
         onSelectMethod={setPaymentMethod}
       />
 
@@ -477,6 +479,11 @@ export function DuePaymentsPanel({
       />
     </div>
   );
+}
+
+function defaultDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function createSinglePaymentCard(item: DuePayment): PaymentCard {
@@ -617,14 +624,23 @@ function paymentDateCopy(item: DuePayment, status: PaymentDisplayStatus) {
 }
 
 function resolveWhatsappRecipient(item: DuePayment) {
-  const rawPhone = item.student.telefonoPadre || item.student.celular || "";
-  const digits = rawPhone.replace(/\D/g, "");
+  const rawPhone = item.student.esMenorDeEdad
+    ? item.student.telefonoPadre || item.student.celular || ""
+    : item.student.celular || item.student.telefonoPadre || "";
+  const phone = normalizeWhatsappPhone(rawPhone);
 
-  if (!digits) return { phone: "", isGuardian: false };
   return {
-    phone: digits.startsWith("57") ? digits : `57${digits}`,
-    isGuardian: Boolean(item.student.telefonoPadre)
+    phone,
+    isGuardian: item.student.esMenorDeEdad ? Boolean(item.student.telefonoPadre) : !item.student.celular && Boolean(item.student.telefonoPadre)
   };
+}
+
+function normalizeWhatsappPhone(value: string) {
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.length === 10) digits = `57${digits}`;
+  if (digits.length < 11 || digits.length > 15) return "";
+  return digits;
 }
 
 function createWhatsappPaymentMessage(card: PaymentCard, isGuardian: boolean) {

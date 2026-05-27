@@ -20,7 +20,7 @@ export async function GET(request: Request, context: Params) {
 export async function PATCH(request: Request, context: Params) {
   try {
     const { id } = await context.params;
-    const { clientId } = await requireClient(request);
+    const { clientId, client } = await requireClient(request);
     const body = studentPaymentHistoryUpdateSchema.parse(await readBody(request));
 
     const payment = await prisma.monthlyPayment.findFirst({
@@ -39,6 +39,7 @@ export async function PATCH(request: Request, context: Params) {
 
     await prisma.$transaction(async (tx) => {
       if (body.paid) {
+        const fechaRegistro = new Date();
         await tx.paymentInstallment.deleteMany({
           where: {
             clientId,
@@ -50,8 +51,11 @@ export async function PATCH(request: Request, context: Params) {
           where: { id: payment.id },
           data: {
             estado: "PAGADO",
-            fechaPago: new Date(),
+            fechaPago: body.fechaPago ?? fechaRegistro,
+            fechaRegistro,
             metodoPago: body.metodoPago ?? payment.metodoPago ?? "MANUAL",
+            registradoPorUserId: client.id,
+            registradoPorNombre: client.nombre,
             montoAbonado: payment.monto,
             saldoPendiente: 0,
             cantidadAbonos: 0,
@@ -74,7 +78,10 @@ export async function PATCH(request: Request, context: Params) {
         data: {
           estado: paymentStatusForDueDate(payment.fechaVencimiento),
           fechaPago: null,
+          fechaRegistro: null,
           metodoPago: null,
+          registradoPorUserId: null,
+          registradoPorNombre: null,
           ultimoMetodoAbono: null,
           fechaUltimoAbono: null,
           montoAbonado: 0,

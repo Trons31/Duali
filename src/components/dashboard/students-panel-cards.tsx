@@ -28,8 +28,10 @@ type StudentFormValues = {
   tipoRegistro: "NUEVO" | "ANTIGUO";
   pagoMesActual: "SI" | "NO";
   mensualidadMetodoPagoActual: string;
+  mensualidadFechaPagoActual: string;
   inscripcionPagada: "SI" | "NO";
   inscripcionMonto: string;
+  inscripcionFechaPago: string;
   inscripcionMetodoPago: string;
   modalidadMensualidad: "ANTICIPADA" | "VENCIDA";
   inicioClasesDia: string;
@@ -194,6 +196,8 @@ export function StudentsPanelCards({
 
   async function updatePaymentHistoryMonth(payment: StudentPaymentHistoryItem, paid: boolean) {
     if (!editTarget) return;
+    const fechaPago = paid ? window.prompt("Fecha de pago (AAAA-MM-DD)", defaultDateValue()) : null;
+    if (paid && !fechaPago) return;
 
     setUpdatingPaymentId(payment.id);
     setPaymentHistoryError(null);
@@ -204,6 +208,7 @@ export function StudentsPanelCards({
       body: JSON.stringify({
         paymentId: payment.id,
         paid,
+        fechaPago: paid ? fechaPago : undefined,
         metodoPago: paid ? payment.metodoPago ?? "MANUAL" : undefined
       })
     })
@@ -418,12 +423,17 @@ export function StudentsPanelCards({
         (isNewStudent && values.pagoMesActual === "SI") || (!isNewStudent && values.mesesPagados.length)
           ? values.mensualidadMetodoPagoActual
           : undefined,
+      mensualidadFechaPagoActual:
+        (isNewStudent && values.pagoMesActual === "SI") || (!isNewStudent && values.mesesPagados.length)
+          ? values.mensualidadFechaPagoActual
+          : undefined,
       inicioClasesDia: Number(values.inicioClasesDia),
       inicioClasesMes: Number(values.inicioClasesMes),
       inicioClasesAnio: Number(values.inicioClasesAnio),
       mesesPagados: isNewStudent ? undefined : values.mesesPagados.map(parsePeriodKey).filter(isMonthlyPeriod),
       inscripcionMonto: isNewStudent ? Number(values.inscripcionMonto) : undefined,
       inscripcionPagada: isNewStudent ? values.inscripcionPagada === "SI" : false,
+      inscripcionFechaPago: isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionFechaPago : undefined,
       inscripcionMetodoPago:
         isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
     };
@@ -798,6 +808,9 @@ export function StudentsPanelCards({
 
                 {enrollmentPaid === "SI" ? (
                   <div className="space-y-3">
+                    <Field label="Fecha de pago de inscripción" error={errors.inscripcionFechaPago?.message}>
+                      <input type="date" className="field-base" {...register("inscripcionFechaPago")} />
+                    </Field>
                     <p className="text-sm font-black text-ink-900">Método de pago de inscripción</p>
                     <div className="flex flex-wrap gap-2">
                       {PAYMENT_METHODS.map((method) => (
@@ -878,6 +891,9 @@ export function StudentsPanelCards({
 
                 {paidCurrentMonth === "SI" ? (
                   <div className="space-y-3">
+                    <Field label="Fecha de pago de mensualidad" error={errors.mensualidadFechaPagoActual?.message}>
+                      <input type="date" className="field-base" {...register("mensualidadFechaPagoActual")} />
+                    </Field>
                     <p className="text-sm font-black text-ink-900">Método de pago de la mensualidad</p>
                     <div className="flex flex-wrap gap-2">
                       {PAYMENT_METHODS.map((method) => (
@@ -1721,8 +1737,10 @@ function createDefaultValues(groupId: string): StudentFormValues {
     tipoRegistro: "NUEVO",
     pagoMesActual: "NO",
     mensualidadMetodoPagoActual: "EFECTIVO",
+    mensualidadFechaPagoActual: defaultDateValue(),
     inscripcionPagada: "NO",
     inscripcionMonto: "",
+    inscripcionFechaPago: defaultDateValue(),
     inscripcionMetodoPago: "EFECTIVO",
     modalidadMensualidad: "ANTICIPADA",
     inicioClasesDia: String(Math.min(today.getDate(), 28)),
@@ -1748,8 +1766,14 @@ function createEditValues(student: StudentListItem): StudentFormValues {
     tipoRegistro: student.enrollmentPayment ? "NUEVO" : "ANTIGUO",
     pagoMesActual: currentPayment(student)?.estado === "PAGADO" ? "SI" : "NO",
     mensualidadMetodoPagoActual: currentPayment(student)?.metodoPago ?? "EFECTIVO",
+    mensualidadFechaPagoActual: currentPayment(student)?.fechaPago
+      ? currentPayment(student)!.fechaPago!.slice(0, 10)
+      : defaultDateValue(),
     inscripcionPagada: student.enrollmentPayment?.estado === "PAGADO" ? "SI" : "NO",
     inscripcionMonto: student.enrollmentPayment?.monto ? String(student.enrollmentPayment.monto) : "",
+    inscripcionFechaPago: student.enrollmentPayment?.fechaPago
+      ? student.enrollmentPayment.fechaPago.slice(0, 10)
+      : defaultDateValue(),
     inscripcionMetodoPago: student.enrollmentPayment?.metodoPago ?? "EFECTIVO",
     modalidadMensualidad: student.modalidadMensualidad ?? "ANTICIPADA",
     inicioClasesDia: String(startDate.getDate()),
@@ -1774,6 +1798,11 @@ function currentPayment(student: StudentListItem) {
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
   return student.monthlyPayments?.find((payment) => payment.mes === month && payment.anio === year);
+}
+
+function defaultDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function hasPendingPayment(student: StudentListItem) {

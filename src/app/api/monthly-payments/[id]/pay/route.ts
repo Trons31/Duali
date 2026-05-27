@@ -9,7 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function PUT(request: Request, context: Params) {
   try {
     const { id } = await context.params;
-    const { clientId } = await requireClient(request);
+    const { clientId, client } = await requireClient(request);
     const body = payMonthlySchema.parse(await readBody(request));
     const exists = await prisma.monthlyPayment.findFirst({
       where: { id, clientId, deletedAt: null },
@@ -20,12 +20,16 @@ export async function PUT(request: Request, context: Params) {
       (exists.student as { modalidadMensualidad?: "ANTICIPADA" | "VENCIDA" }).modalidadMensualidad ?? "ANTICIPADA";
 
     const payment = await prisma.$transaction(async (tx) => {
+      const fechaRegistro = new Date();
       const paidPayment = await tx.monthlyPayment.update({
         where: { id },
         data: {
           estado: "PAGADO",
-          fechaPago: body.fechaPago ?? new Date(),
+          fechaPago: body.fechaPago ?? fechaRegistro,
+          fechaRegistro,
           metodoPago: body.metodoPago,
+          registradoPorUserId: client.id,
+          registradoPorNombre: client.nombre,
           montoAbonado: exists.monto,
           saldoPendiente: 0,
           comprobanteUrl: body.comprobanteUrl,

@@ -101,7 +101,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { clientId } = await requireClient(request);
+    const { clientId, client } = await requireClient(request);
     const body = studentSchema.parse(await readBody(request));
     const group = await prisma.group.findFirst({ where: { id: body.grupoId, clientId, deletedAt: null } });
     if (!group) throw new ApiError(404, "Grupo no encontrado");
@@ -111,6 +111,7 @@ export async function POST(request: Request) {
         tipoRegistro,
         pagoMesActual,
         mensualidadMetodoPagoActual,
+        mensualidadFechaPagoActual,
         inscripcionMonto,
         inscripcionPagada,
         inscripcionFechaPago,
@@ -126,6 +127,7 @@ export async function POST(request: Request) {
           ? localDateAtNoon(inicioClasesAnio, inicioClasesMes, inicioClasesDia)
           : studentData.fechaInicioClases;
       const createdStudent = await tx.student.create({ data: { ...studentData, fechaInicioClases, clientId } as never });
+      const fechaRegistro = new Date();
 
       if (tipoRegistro === "NUEVO" && inscripcionMonto) {
         const fechaVencimiento = new Date();
@@ -138,8 +140,11 @@ export async function POST(request: Request) {
             saldoPendiente: inscripcionPagada ? 0 : inscripcionMonto,
             fechaVencimiento,
             estado: inscripcionPagada ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
-            fechaPago: inscripcionPagada ? inscripcionFechaPago ?? new Date() : null,
-            metodoPago: inscripcionPagada ? inscripcionMetodoPago : null
+            fechaPago: inscripcionPagada ? inscripcionFechaPago ?? fechaRegistro : null,
+            fechaRegistro: inscripcionPagada ? fechaRegistro : null,
+            metodoPago: inscripcionPagada ? inscripcionMetodoPago : null,
+            registradoPorUserId: inscripcionPagada ? client.id : null,
+            registradoPorNombre: inscripcionPagada ? client.nombre : null
           }
         });
       }
@@ -175,8 +180,11 @@ export async function POST(request: Request) {
                   saldoPendiente: isPaid ? 0 : precioMensualidad,
                   fechaVencimiento,
                   estado: isPaid ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
-                  fechaPago: isPaid ? (isCurrentPeriod ? new Date() : fechaVencimiento) : null,
+                  fechaPago: isPaid ? mensualidadFechaPagoActual ?? (isCurrentPeriod ? fechaRegistro : fechaVencimiento) : null,
+                  fechaRegistro: isPaid ? fechaRegistro : null,
                   metodoPago: isPaid ? mensualidadMetodoPagoActual : null,
+                  registradoPorUserId: isPaid ? client.id : null,
+                  registradoPorNombre: isPaid ? client.nombre : null,
                   notas: "Generado al registrar estudiante antiguo"
                 };
               }),
@@ -219,8 +227,11 @@ export async function POST(request: Request) {
               saldoPendiente: isPaid ? 0 : precioMensualidad,
               fechaVencimiento,
               estado: isPaid ? "PAGADO" : paymentStatusForDueDate(fechaVencimiento),
-              fechaPago: isPaid ? new Date() : null,
+              fechaPago: isPaid ? mensualidadFechaPagoActual ?? fechaRegistro : null,
+              fechaRegistro: isPaid ? fechaRegistro : null,
               metodoPago: isPaid ? mensualidadMetodoPagoActual : null,
+              registradoPorUserId: isPaid ? client.id : null,
+              registradoPorNombre: isPaid ? client.nombre : null,
               notas: tipoRegistro === "NUEVO" ? "Generado al registrar estudiante nuevo" : null
             };
           }),
