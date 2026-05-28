@@ -6,20 +6,14 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { Button } from "@/components/ui/button";
 import { clientApiFetch } from "@/lib/client-api";
+import { OVERDUE_PAYMENT_MESSAGE_TEMPLATE, OVERDUE_PAYMENT_MESSAGE_VARIABLES } from "@/lib/whatsapp-template";
 import type { PaymentMethodItem, SafeClient } from "@/lib/web-types";
 
 type ProfileFormValues = Pick<SafeClient, "nombre" | "telefono" | "businessName" | "whatsappMessageTemplate"> & {
   paymentMethodItems: PaymentMethodItem[];
 };
 
-const WHATSAPP_VARIABLES = [
-  "{{nombre_alumno}}",
-  "{{nombre_negocio}}",
-  "{{estado_pago}}",
-  "{{dias_vencidos}}",
-  "{{fecha_vencimiento}}",
-  "{{metodos_pago}}"
-];
+const WHATSAPP_VARIABLES = OVERDUE_PAYMENT_MESSAGE_VARIABLES.map((variable) => `{{${variable}}}`);
 
 export function ProfileForm({ profile }: { profile: SafeClient }) {
   const { data: session } = useSession();
@@ -36,7 +30,7 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
       telefono: profile.telefono ?? "",
       businessName: profile.businessName,
       paymentMethodItems: normalizePaymentMethodItems(profile.paymentMethodItems, profile.paymentMethods),
-      whatsappMessageTemplate: profile.whatsappMessageTemplate ?? ""
+      whatsappMessageTemplate: profile.whatsappMessageTemplate ?? OVERDUE_PAYMENT_MESSAGE_TEMPLATE
     }
   });
   const { fields, append, remove } = useFieldArray({ control, name: "paymentMethodItems" });
@@ -58,7 +52,7 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
           telefono: updatedProfile.telefono ?? "",
           businessName: updatedProfile.businessName,
           paymentMethodItems: normalizePaymentMethodItems(updatedProfile.paymentMethodItems, updatedProfile.paymentMethods),
-          whatsappMessageTemplate: updatedProfile.whatsappMessageTemplate ?? ""
+          whatsappMessageTemplate: updatedProfile.whatsappMessageTemplate ?? OVERDUE_PAYMENT_MESSAGE_TEMPLATE
         });
         sileo.success({ title: "Perfil actualizado" });
         router.refresh();
@@ -132,9 +126,12 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
         <label className="mb-2 block text-sm font-semibold text-ink-700">Mensaje para WhatsApp</label>
         <textarea
           className="field-base min-h-40 resize-y"
-         
+          placeholder={OVERDUE_PAYMENT_MESSAGE_TEMPLATE}
           {...register("whatsappMessageTemplate")}
         />
+        <p className="mt-2 text-xs font-semibold text-ink-500">
+          Puedes cambiar el saludo y el cierre. El sistema ajusta mensualidades, inscripcion y total segun cada deuda.
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {WHATSAPP_VARIABLES.map((variable) => (
             <span key={variable} className="rounded-full bg-ink-50 px-3 py-1 text-xs font-bold text-ink-600">

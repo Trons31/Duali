@@ -1,11 +1,12 @@
 import { Client, EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
+import { OVERDUE_PAYMENT_MESSAGE_TEMPLATES } from "@/lib/whatsapp-template";
 
 type ReminderClient = Pick<Client, "businessName"> &
   Partial<Pick<Client, "paymentMethods" | "paymentMethodItems" | "whatsappMessageTemplate">>;
 
 type ReminderStudent = Pick<
   Student,
-  "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular"
+  "nombre" | "apellido" | "esMenorDeEdad" | "telefonoPadre" | "celular" | "precioMensualidad"
 >;
 
 type PaymentReminderItem = {
@@ -77,7 +78,8 @@ export function buildPaymentReminderMessage(params: {
       apellido: "",
       esMenorDeEdad: Boolean(params.isMinor),
       telefonoPadre: null,
-      celular: null
+      celular: null,
+      precioMensualidad: null
     }
   };
 
@@ -175,6 +177,13 @@ function buildPaymentReminderMessageForItems(items: PaymentReminderItem[], clien
   const studentName = fullStudentName(primaryItem.student);
   const isMinor = primaryItem.student.esMenorDeEdad;
   const amount = items.reduce((total, item) => total + paymentRemainingAmount(item), 0);
+  const monthlyItems = items.filter((item) => item.kind === "MONTHLY_PAYMENT");
+  const overdueMonthlyItems = monthlyItems.filter((item) => item.estado === "VENCIDO" || isDateOverdue(item.fechaVencimiento));
+  const enrollmentItems = items.filter((item) => item.kind === "ENROLLMENT_PAYMENT");
+  const overdueEnrollmentItems = enrollmentItems.filter((item) => item.estado === "VENCIDO" || isDateOverdue(item.fechaVencimiento));
+  const displayedMonthlyItems = overdueMonthlyItems.length ? overdueMonthlyItems : monthlyItems;
+  const displayedEnrollmentItems = overdueEnrollmentItems.length ? overdueEnrollmentItems : enrollmentItems;
+  const enrollmentAmount = displayedEnrollmentItems.reduce((total, item) => total + paymentRemainingAmount(item), 0);
   const oldestDueDate = primaryItem.fechaVencimiento;
   const isOverdue = items.some((item) => item.estado === "VENCIDO" || isDateOverdue(item.fechaVencimiento));
   const isDueToday = isDateToday(oldestDueDate);
@@ -198,8 +207,28 @@ function buildPaymentReminderMessageForItems(items: PaymentReminderItem[], clien
     metodos_pago: paymentMethods || "Consulta los metodos de pago disponibles con nosotros.",
     valor_pendiente: formatCop(amount),
     detalle_cobros: detail,
-    concepto_pago: concept
+    concepto_pago: concept,
+    nombre_estudiante: studentName,
+    cantidad_mensualidades_vencidas: String(displayedMonthlyItems.length),
+    mensualidades_vencidas: displayedMonthlyItems.map(paymentConceptCopy).join(", "),
+    tiene_inscripcion_vencida: displayedEnrollmentItems.length ? "si" : "no",
+    valor_inscripcion: formatCop(enrollmentAmount),
+    total_pendiente: formatCop(amount),
+    valor_mensualidad: formatCop(monthlyFeeForStudent(primaryItem, monthlyItems))
   };
+
+  if (isOverdue) {
+    const overdueTemplate = selectOverduePaymentTemplate({
+      template,
+      monthlyCount: displayedMonthlyItems.length,
+      hasEnrollment: displayedEnrollmentItems.length > 0
+    });
+    let renderedMessage = renderWhatsappTemplate(overdueTemplate, variables);
+
+    return paymentMethods && !templateContainsVariable(overdueTemplate, "metodos_pago")
+      ? appendPaymentMethods(renderedMessage, paymentMethods)
+      : renderedMessage;
+  }
 
   if (template) {
     let renderedMessage = renderWhatsappTemplate(template, variables);
@@ -229,6 +258,45 @@ function buildPaymentReminderMessageForItems(items: PaymentReminderItem[], clien
 
 function renderWhatsappTemplate(template: string, variables: Record<string, string>) {
   return template.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (match, key: string) => variables[key] ?? match);
+}
+
+function selectOverduePaymentTemplate(params: {
+  template?: string;
+  monthlyCount: number;
+  hasEnrollment: boolean;
+}) {
+  const baseTemplate = overduePaymentBaseTemplate(params.monthlyCount, params.hasEnrollment);
+  return applyCustomOverdueTone(baseTemplate, params.template);
+}
+
+function overduePaymentBaseTemplate(monthlyCount: number, hasEnrollment: boolean) {
+  if (monthlyCount === 1 && hasEnrollment) return OVERDUE_PAYMENT_MESSAGE_TEMPLATES.singleMonthlyAndEnrollment;
+  if (monthlyCount > 1 && hasEnrollment) return OVERDUE_PAYMENT_MESSAGE_TEMPLATES.monthlyAndEnrollment;
+  if (hasEnrollment) return OVERDUE_PAYMENT_MESSAGE_TEMPLATES.enrollmentOnly;
+  if (monthlyCount === 1) return OVERDUE_PAYMENT_MESSAGE_TEMPLATES.singleMonthly;
+  return OVERDUE_PAYMENT_MESSAGE_TEMPLATES.multipleMonthly;
+}
+
+function applyCustomOverdueTone(baseTemplate: string, customTemplate?: string) {
+  if (!customTemplate) return baseTemplate;
+
+  const customPrefix = customTemplate.split(/{{\s*nombre_estudiante\s*}}/)[0]?.trim();
+  const customClosingMatch = /(Por favor[\s\S]*)$/i.exec(customTemplate.trim());
+  const defaultClosingMatch = /(Por favor[\s\S]*)$/i.exec(baseTemplate);
+  let personalizedTemplate = baseTemplate;
+
+  if (customPrefix) {
+    personalizedTemplate = personalizedTemplate.replace(
+      /^.*?{{\s*nombre_estudiante\s*}}/,
+      `${customPrefix} {{nombre_estudiante}}`
+    );
+  }
+
+  if (customClosingMatch?.[1] && defaultClosingMatch?.[1]) {
+    personalizedTemplate = personalizedTemplate.replace(defaultClosingMatch[1], customClosingMatch[1]);
+  }
+
+  return personalizedTemplate;
 }
 
 function templateContainsVariable(template: string, variable: string) {
@@ -279,6 +347,14 @@ function normalizePaymentMethodItems(value: unknown): PaymentMethodItem[] {
 function paymentRemainingAmount(item: PaymentReminderItem) {
   if (item.saldoPendiente !== undefined && item.saldoPendiente !== null) return Number(item.saldoPendiente.toString());
   return Number(item.monto?.toString() ?? 0);
+}
+
+function monthlyFeeForStudent(primaryItem: PaymentReminderItem, monthlyItems: PaymentReminderItem[]) {
+  if (primaryItem.student.precioMensualidad !== undefined && primaryItem.student.precioMensualidad !== null) {
+    return primaryItem.student.precioMensualidad;
+  }
+
+  return monthlyItems[0]?.monto ?? primaryItem.monto;
 }
 
 function fullStudentName(student: ReminderStudent) {

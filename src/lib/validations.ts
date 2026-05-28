@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateOverduePaymentMessageTemplate } from "@/lib/whatsapp-template";
 
 const localDateInputSchema = z.union([z.string(), z.date()]).transform((value, ctx) => {
   if (value instanceof Date) {
@@ -67,6 +68,17 @@ export const clientProfileSchema = z.object({
       const trimmed = value.trim();
       return trimmed ? trimmed : null;
     })
+    .refine(
+      (value) => {
+        if (!value) return true;
+        return validateOverduePaymentMessageTemplate(value).valid;
+      },
+      (value) => ({
+        message:
+          validateOverduePaymentMessageTemplate(value ?? "").message ??
+          "La plantilla debe mantener los datos obligatorios."
+      })
+    )
 });
 
 const groupBaseSchema = z.object({
