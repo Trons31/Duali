@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
 import { FiCheck, FiChevronDown, FiChevronUp, FiDollarSign, FiMessageCircle, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { NoAplicaMonthlyPaymentModal, type NoAplicaMonthlyPaymentTarget } from "@/components/ui/no-aplica-monthly-payment-modal";
 import {
   PaymentInstallmentModal,
   type InstallmentModalPayment,
@@ -24,7 +25,7 @@ type DuePayment = {
   saldoPendiente?: number | string;
   cantidadAbonos?: number;
   fechaVencimiento: string;
-  estado?: "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO";
+  estado?: "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO" | "NO_APLICA";
   ultimoMetodoAbono?: string | null;
   fechaUltimoAbono?: string | null;
   installments?: PaymentInstallmentItem[];
@@ -81,10 +82,12 @@ export function DuePaymentsPanel({
   const router = useRouter();
   const [payTarget, setPayTarget] = useState<PaymentCard | null>(null);
   const [installmentTarget, setInstallmentTarget] = useState<InstallmentModalPayment | null>(null);
+  const [noAplicaTarget, setNoAplicaTarget] = useState<DuePayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
+  const [submittingNoAplica, setSubmittingNoAplica] = useState(false);
   const [notifyingCardKey, setNotifyingCardKey] = useState<string | null>(null);
   const [resultsOpen, setResultsOpen] = useState(true);
   const [query, setQuery] = useState("");
@@ -214,6 +217,23 @@ export function DuePaymentsPanel({
       .finally(() => setNotifyingCardKey(null));
   }
 
+  async function markNoAplica(values: { motivo: string; fechaProximoCobro?: string }) {
+    if (!noAplicaTarget || noAplicaTarget.kind !== "MONTHLY_PAYMENT") return;
+
+    setSubmittingNoAplica(true);
+    await clientApiFetch(`/api/monthly-payments/${noAplicaTarget.id}/no-aplica`, token, {
+      method: "PUT",
+      body: JSON.stringify(values)
+    })
+      .then(() => {
+        sileo.success({ title: "Cobro marcado como No aplica" });
+        setNoAplicaTarget(null);
+        router.refresh();
+      })
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingNoAplica(false));
+  }
+
   return (
     <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-4xl space-y-5">
@@ -316,13 +336,24 @@ export function DuePaymentsPanel({
                                   <p className="mt-1 text-xs font-semibold text-ink-400">Vence {formatDate(payment.fechaVencimiento)}</p>
                                 </div>
                                 <span className="text-right text-sm font-black text-ink-950">{currency(paymentRemainingAmount(payment))}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => openInstallmentModal(payment)}
-                                  className="col-span-2 h-10 rounded-[14px] border border-brand-200 bg-brand-50 px-4 text-sm font-black text-brand-700 transition hover:bg-brand-100 sm:col-span-1"
-                                >
-                                  Abonar
-                                </button>
+                                <div className="col-span-2 grid gap-2 sm:col-span-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openInstallmentModal(payment)}
+                                    className="h-10 rounded-[14px] border border-brand-200 bg-brand-50 px-4 text-sm font-black text-brand-700 transition hover:bg-brand-100"
+                                  >
+                                    Abonar
+                                  </button>
+                                  {canMarkNoAplica(payment) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setNoAplicaTarget(payment)}
+                                      className="h-10 rounded-[14px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                                    >
+                                      No aplica
+                                    </button>
+                                  ) : null}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -352,6 +383,16 @@ export function DuePaymentsPanel({
                           >
                             <FiDollarSign className="size-5" />
                             Abonar
+                          </Button>
+                        ) : null}
+                        {!card.isConsolidated && canMarkNoAplica(item) ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="min-h-14 rounded-[22px] border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            onClick={() => setNoAplicaTarget(item)}
+                          >
+                            No aplica
                           </Button>
                         ) : null}
                         <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(card)}>
@@ -481,6 +522,14 @@ export function DuePaymentsPanel({
         onSelectMethod={setPaymentMethod}
       />
 
+      <NoAplicaMonthlyPaymentModal
+        open={Boolean(noAplicaTarget)}
+        target={toNoAplicaTarget(noAplicaTarget)}
+        loading={submittingNoAplica}
+        onClose={() => setNoAplicaTarget(null)}
+        onConfirm={markNoAplica}
+      />
+
       <PaymentInstallmentModal
         open={Boolean(installmentTarget)}
         payment={installmentTarget}
@@ -506,6 +555,16 @@ function createSinglePaymentCard(item: DuePayment): PaymentCard {
     displayStatus: resolvePaymentDisplayStatus(item),
     oldestDueDate: item.fechaVencimiento,
     isConsolidated: false
+  };
+}
+
+function toNoAplicaTarget(item: DuePayment | null): NoAplicaMonthlyPaymentTarget | null {
+  if (!item) return null;
+  return {
+    id: item.id,
+    studentName: `${item.student.nombre} ${item.student.apellido}`,
+    concept: paymentConceptCopy(item),
+    amount: item.monto
   };
 }
 
@@ -548,6 +607,10 @@ function MiniAmount({ label, value, highlight = false }: { label: string; value:
 
 function isAbonablePayment(item: DuePayment) {
   return item.estado === "ABONADO" && paymentRemainingAmount(item) > 0;
+}
+
+function canMarkNoAplica(item: DuePayment) {
+  return item.kind === "MONTHLY_PAYMENT" && item.estado !== "PAGADO" && item.estado !== "NO_APLICA" && Number(item.montoAbonado ?? 0) === 0;
 }
 
 function paymentPaidAmount(item: DuePayment) {

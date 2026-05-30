@@ -300,7 +300,8 @@ export const monthlyPaymentUpdateSchema = monthlyPaymentSchema.partial().extend(
 });
 
 export const noAplicaMonthlyPaymentSchema = z.object({
-  motivo: z.string().trim().min(3, "Indica el motivo de la excepcion").max(500)
+  motivo: z.string().trim().min(3, "Indica el motivo de la excepcion").max(500),
+  fechaProximoCobro: localDateInputSchema.optional().nullable()
 });
 
 export const generateMonthlyByGroupSchema = z.object({

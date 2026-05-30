@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { NoAplicaMonthlyPaymentModal, type NoAplicaMonthlyPaymentTarget } from "@/components/ui/no-aplica-monthly-payment-modal";
 import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
@@ -43,6 +44,7 @@ export function MonthlyPaymentsPanel({
   const [payTarget, setPayTarget] = useState<MonthlyPaymentItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MonthlyPaymentItem | null>(null);
   const [noAplicaTarget, setNoAplicaTarget] = useState<MonthlyPaymentItem | null>(null);
+  const [submittingNoAplica, setSubmittingNoAplica] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
@@ -133,21 +135,21 @@ export function MonthlyPaymentsPanel({
       .catch((error: Error) => sileo.error({ title: error.message }));
   }
 
-  async function markNoAplica() {
+  async function markNoAplica(values: { motivo: string; fechaProximoCobro?: string }) {
     if (!noAplicaTarget) return;
-    const motivo = window.prompt("Motivo para marcar No aplica", "Fuerza mayor");
-    if (!motivo?.trim()) return;
 
+    setSubmittingNoAplica(true);
     await clientApiFetch(`/api/monthly-payments/${noAplicaTarget.id}/no-aplica`, token, {
       method: "PUT",
-      body: JSON.stringify({ motivo })
+      body: JSON.stringify(values)
     })
       .then(() => {
         sileo.success({ title: "Mensualidad marcada como No aplica" });
         setNoAplicaTarget(null);
         router.refresh();
       })
-      .catch((error: Error) => sileo.error({ title: error.message }));
+      .catch((error: Error) => sileo.error({ title: error.message }))
+      .finally(() => setSubmittingNoAplica(false));
   }
 
   return (
@@ -286,16 +288,25 @@ export function MonthlyPaymentsPanel({
         onConfirm={deletePayment}
       />
 
-      <ConfirmDialog
+      <NoAplicaMonthlyPaymentModal
         open={Boolean(noAplicaTarget)}
-        title="Marcar No aplica"
-        description={`El cobro ${noAplicaTarget?.mes}/${noAplicaTarget?.anio} de ${noAplicaTarget?.student.nombre} ${noAplicaTarget?.student.apellido} no se contara como deuda.`}
-        notice="Usa esta opcion para fuerza mayor, alumnos que no asistieron o cobros generados que no deben exigirse."
+        target={toNoAplicaTarget(noAplicaTarget)}
+        loading={submittingNoAplica}
         onClose={() => setNoAplicaTarget(null)}
         onConfirm={markNoAplica}
       />
     </div>
   );
+}
+
+function toNoAplicaTarget(payment: MonthlyPaymentItem | null): NoAplicaMonthlyPaymentTarget | null {
+  if (!payment) return null;
+  return {
+    id: payment.id,
+    studentName: `${payment.student.nombre} ${payment.student.apellido}`,
+    concept: `Mensualidad ${payment.mes}/${payment.anio}`,
+    amount: payment.monto
+  };
 }
 
 function defaultDateValue() {
