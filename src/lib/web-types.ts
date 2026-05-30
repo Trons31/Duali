@@ -1,5 +1,5 @@
-export type StudentStatus = "ACTIVO" | "INACTIVO";
-export type PaymentStatus = "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO";
+export type StudentStatus = "ACTIVO" | "PAUSADO" | "DESACTIVADO" | "INACTIVO";
+export type PaymentStatus = "PENDIENTE" | "ABONADO" | "PAGADO" | "VENCIDO" | "NO_APLICA";
 export type MonthlyBillingMode = "ANTICIPADA" | "VENCIDA";
 
 export type PaymentMethodItem = {
@@ -51,6 +51,9 @@ export type GroupDetailStudent = {
   diaCobro: number | null;
   modalidadMensualidad: MonthlyBillingMode;
   fechaInicioClases: string | null;
+  fechaInicioPausa?: string | null;
+  fechaFinPausa?: string | null;
+  motivoEstado?: string | null;
   createdAt: string;
   monthlyPayments: Array<{
     id: string;
@@ -116,6 +119,9 @@ export type StudentListItem = {
   diaCobro: number | null;
   modalidadMensualidad: MonthlyBillingMode;
   fechaInicioClases: string | null;
+  fechaInicioPausa?: string | null;
+  fechaFinPausa?: string | null;
+  motivoEstado?: string | null;
   createdAt: string;
   group: {
     id: string;
@@ -125,7 +131,7 @@ export type StudentListItem = {
   monthlyPayments?: MonthlyPaymentItem[];
 };
 
-export type StudentListFilter = "todos" | "activos" | "aldia" | "pendientes" | "inactivos";
+export type StudentListFilter = "todos" | "activos" | "pausados" | "aldia" | "pendientes" | "inactivos";
 
 export type StudentListResponse = {
   items: StudentListItem[];

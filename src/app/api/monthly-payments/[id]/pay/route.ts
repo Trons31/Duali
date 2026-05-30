@@ -16,6 +16,7 @@ export async function PUT(request: Request, context: Params) {
       include: { student: true }
     });
     if (!exists) throw new ApiError(404, "Mensualidad no encontrada");
+    if (exists.estado === "NO_APLICA") throw new ApiError(409, "Esta mensualidad esta marcada como No aplica");
     const studentBillingMode =
       (exists.student as { modalidadMensualidad?: "ANTICIPADA" | "VENCIDA" }).modalidadMensualidad ?? "ANTICIPADA";
 

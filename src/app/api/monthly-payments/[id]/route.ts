@@ -2,7 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, handleError, noContent, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { monthlyPaymentSchema } from "@/lib/validations";
+import { monthlyPaymentUpdateSchema } from "@/lib/validations";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -25,9 +25,15 @@ export async function PUT(request: Request, context: Params) {
   try {
     const { id } = await context.params;
     const { clientId } = await requireClient(request);
-    const body = monthlyPaymentSchema.partial().parse(await readBody(request));
+    const body = monthlyPaymentUpdateSchema.parse(await readBody(request));
     const exists = await prisma.monthlyPayment.findFirst({ where: { id, clientId, deletedAt: null } });
     if (!exists) throw new ApiError(404, "Mensualidad no encontrada");
+    if (body.estado === "NO_APLICA" && Number(exists.montoAbonado) > 0) {
+      throw new ApiError(409, "No se puede marcar como No aplica una mensualidad con abonos registrados");
+    }
+    if (exists.estado === "NO_APLICA" && body.estado !== undefined && body.estado !== "NO_APLICA") {
+      throw new ApiError(409, "Esta mensualidad esta marcada como No aplica");
+    }
 
     let grupoId = exists.grupoId;
     if (body.estudianteId && body.estudianteId !== exists.estudianteId) {
@@ -38,7 +44,14 @@ export async function PUT(request: Request, context: Params) {
 
     const payment = await prisma.monthlyPayment.update({
       where: { id },
-      data: { ...body, grupoId, estado: body.fechaVencimiento ? paymentStatusForDueDate(body.fechaVencimiento) : exists.estado }
+      data: {
+        ...body,
+        grupoId,
+        ...(body.estado === "NO_APLICA"
+          ? { montoAbonado: 0, saldoPendiente: 0, fechaPago: null, fechaRegistro: null }
+          : {}),
+        estado: body.estado ?? (body.fechaVencimiento ? paymentStatusForDueDate(body.fechaVencimiento) : exists.estado)
+      }
     });
     return ok(payment);
   } catch (error) {

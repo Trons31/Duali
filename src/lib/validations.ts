@@ -104,11 +104,14 @@ const studentBaseSchema = z.object({
   telefonoPadre: z.string().optional().nullable(),
   parentesco: z.string().optional().nullable(),
   grupoId: z.string().min(1),
-  estado: z.enum(["ACTIVO", "INACTIVO"]).optional(),
+  estado: z.enum(["ACTIVO", "PAUSADO", "DESACTIVADO", "INACTIVO"]).optional(),
   precioMensualidad: z.coerce.number().positive().optional().nullable(),
   diaCobro: z.coerce.number().int().min(1).max(28).optional().nullable(),
   modalidadMensualidad: z.enum(["ANTICIPADA", "VENCIDA"]).default("ANTICIPADA"),
-  fechaInicioClases: localDateInputSchema.optional().nullable()
+  fechaInicioClases: localDateInputSchema.optional().nullable(),
+  fechaInicioPausa: localDateInputSchema.optional().nullable(),
+  fechaFinPausa: localDateInputSchema.optional().nullable(),
+  motivoEstado: z.string().trim().max(500).optional().nullable()
 });
 
 const monthlyPeriodSchema = z.object({
@@ -290,6 +293,14 @@ export const monthlyPaymentSchema = z.object({
   metodoPago: z.string().optional().nullable(),
   comprobanteUrl: z.string().url().optional().nullable(),
   notas: z.string().optional().nullable()
+});
+
+export const monthlyPaymentUpdateSchema = monthlyPaymentSchema.partial().extend({
+  estado: z.enum(["PENDIENTE", "ABONADO", "PAGADO", "VENCIDO", "NO_APLICA"]).optional()
+});
+
+export const noAplicaMonthlyPaymentSchema = z.object({
+  motivo: z.string().trim().min(3, "Indica el motivo de la excepcion").max(500)
 });
 
 export const generateMonthlyByGroupSchema = z.object({

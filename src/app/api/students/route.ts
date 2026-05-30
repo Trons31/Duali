@@ -35,7 +35,8 @@ export async function GET(request: Request) {
           }
         : {}),
       ...(status === "activos" ? { estado: "ACTIVO" as const } : {}),
-      ...(status === "inactivos" ? { estado: "INACTIVO" as const } : {}),
+      ...(status === "pausados" ? { estado: "PAUSADO" as const } : {}),
+      ...(status === "inactivos" ? { estado: { in: ["INACTIVO", "DESACTIVADO"] as const } } : {}),
       ...(status === "aldia"
         ? {
             monthlyPayments: {
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
       },
       filters: {
         q,
-        status: ["todos", "activos", "aldia", "pendientes", "inactivos"].includes(status) ? status : "todos",
+        status: ["todos", "activos", "pausados", "aldia", "pendientes", "inactivos"].includes(status) ? status : "todos",
         groupId
       }
     });

@@ -42,6 +42,7 @@ export function MonthlyPaymentsPanel({
   const router = useRouter();
   const [payTarget, setPayTarget] = useState<MonthlyPaymentItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MonthlyPaymentItem | null>(null);
+  const [noAplicaTarget, setNoAplicaTarget] = useState<MonthlyPaymentItem | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [paymentDate, setPaymentDate] = useState(defaultDateValue());
   const [submittingPayment, setSubmittingPayment] = useState(false);
@@ -127,6 +128,23 @@ export function MonthlyPaymentsPanel({
       .then(() => {
         sileo.success({ title: "Mensualidad eliminada" });
         setDeleteTarget(null);
+        router.refresh();
+      })
+      .catch((error: Error) => sileo.error({ title: error.message }));
+  }
+
+  async function markNoAplica() {
+    if (!noAplicaTarget) return;
+    const motivo = window.prompt("Motivo para marcar No aplica", "Fuerza mayor");
+    if (!motivo?.trim()) return;
+
+    await clientApiFetch(`/api/monthly-payments/${noAplicaTarget.id}/no-aplica`, token, {
+      method: "PUT",
+      body: JSON.stringify({ motivo })
+    })
+      .then(() => {
+        sileo.success({ title: "Mensualidad marcada como No aplica" });
+        setNoAplicaTarget(null);
         router.refresh();
       })
       .catch((error: Error) => sileo.error({ title: error.message }));
@@ -225,9 +243,14 @@ export function MonthlyPaymentsPanel({
               <p className="text-xl font-black text-brand-700">{currency(payment.monto)}</p>
             </div>
             <div className="mt-5 flex flex-wrap gap-3">
-              {payment.estado !== "PAGADO" ? (
+              {payment.estado !== "PAGADO" && payment.estado !== "NO_APLICA" ? (
                 <Button type="button" onClick={() => openPayModal(payment)}>
                   Marcar pago
+                </Button>
+              ) : null}
+              {payment.estado !== "PAGADO" && payment.estado !== "NO_APLICA" && Number(payment.montoAbonado) === 0 ? (
+                <Button type="button" variant="secondary" onClick={() => setNoAplicaTarget(payment)}>
+                  No aplica
                 </Button>
               ) : null}
               <Button type="button" variant="danger" onClick={() => setDeleteTarget(payment)}>
@@ -261,6 +284,15 @@ export function MonthlyPaymentsPanel({
         notice="Elimina esta mensualidad solo si fue creada por error y no debe seguir afectando la cartera."
         onClose={() => setDeleteTarget(null)}
         onConfirm={deletePayment}
+      />
+
+      <ConfirmDialog
+        open={Boolean(noAplicaTarget)}
+        title="Marcar No aplica"
+        description={`El cobro ${noAplicaTarget?.mes}/${noAplicaTarget?.anio} de ${noAplicaTarget?.student.nombre} ${noAplicaTarget?.student.apellido} no se contara como deuda.`}
+        notice="Usa esta opcion para fuerza mayor, alumnos que no asistieron o cobros generados que no deben exigirse."
+        onClose={() => setNoAplicaTarget(null)}
+        onConfirm={markNoAplica}
       />
     </div>
   );

@@ -25,6 +25,7 @@ import type {
 type CreateStep = "TYPE" | "ENROLLMENT" | "CURRENT_PAYMENT" | "MONTHLY" | "HISTORY" | "FORM";
 
 type StudentFormValues = {
+  estado: "ACTIVO" | "PAUSADO" | "DESACTIVADO" | "INACTIVO";
   tipoRegistro: "NUEVO" | "ANTIGUO";
   pagoMesActual: "SI" | "NO";
   mensualidadMetodoPagoActual: string;
@@ -48,11 +49,16 @@ type StudentFormValues = {
   grupoId: string;
   diaCobro: string;
   precioMensualidad: string;
+  pausaModo: "HASTA_REACTIVAR" | "CON_FECHA";
+  fechaInicioPausa: string;
+  fechaFinPausa: string;
+  motivoEstado: string;
 };
 
 const FILTER_OPTIONS: Array<{ label: string; value: StudentListFilter }> = [
   { label: "Todos", value: "todos" },
   { label: "Activos", value: "activos" },
+  { label: "Pausados", value: "pausados" },
   { label: "Al día", value: "aldia" },
   { label: "Pendientes", value: "pendientes" },
   { label: "Inactivos", value: "inactivos" }
@@ -402,6 +408,14 @@ export function StudentsPanelCards({
   }
 
   const submitStudent = handleSubmit(async (values) => {
+    if (editTarget && values.estado === "PAUSADO" && values.pausaModo === "CON_FECHA" && !values.fechaFinPausa) {
+      sileo.error({
+        title: "Fecha fin requerida",
+        description: "Selecciona la fecha de regreso o usa la opcion hasta reactivar."
+      });
+      return;
+    }
+
     const parsedAge = Number(values.edad);
     const isNewStudent = values.tipoRegistro === "NUEVO";
     const payload = {
@@ -452,7 +466,11 @@ export function StudentsPanelCards({
           grupoId: payload.grupoId,
           diaCobro: payload.diaCobro,
           precioMensualidad: payload.precioMensualidad,
-          modalidadMensualidad: payload.modalidadMensualidad
+          modalidadMensualidad: payload.modalidadMensualidad,
+          estado: values.estado,
+          fechaInicioPausa: values.estado === "PAUSADO" ? values.fechaInicioPausa || defaultDateValue() : null,
+          fechaFinPausa: values.estado === "PAUSADO" && values.pausaModo === "CON_FECHA" ? values.fechaFinPausa : null,
+          motivoEstado: values.estado !== "ACTIVO" ? values.motivoEstado.trim() || undefined : null
         }
       : payload;
 
@@ -1472,6 +1490,75 @@ export function StudentsPanelCards({
                 </div>
               ) : null}
 
+              {editTarget ? (
+                <div className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
+                  <div>
+                    <p className="text-sm font-black text-ink-950">Estado del alumno</p>
+                    <p className="mt-1 text-sm font-medium text-ink-500">
+                      Pausado conserva el registro sin generar cobros. Desactivado lo saca de cobros nuevos.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <DecisionCard
+                      title="Activo"
+                      subtitle="Genera cobros normalmente."
+                      selected={watch("estado") === "ACTIVO"}
+                      onClick={() => reset({ ...watch(), estado: "ACTIVO", motivoEstado: "" }, { keepDirty: true, keepTouched: true })}
+                    />
+                    <DecisionCard
+                      title="Pausado"
+                      subtitle="Suspende cobros temporalmente."
+                      selected={watch("estado") === "PAUSADO"}
+                      onClick={() =>
+                        reset(
+                          { ...watch(), estado: "PAUSADO", fechaInicioPausa: watch("fechaInicioPausa") || defaultDateValue() },
+                          { keepDirty: true, keepTouched: true }
+                        )
+                      }
+                    />
+                    <DecisionCard
+                      title="Desactivado"
+                      subtitle="No genera cobros nuevos."
+                      selected={watch("estado") === "DESACTIVADO" || watch("estado") === "INACTIVO"}
+                      onClick={() => reset({ ...watch(), estado: "DESACTIVADO" }, { keepDirty: true, keepTouched: true })}
+                    />
+                  </div>
+                  {watch("estado") === "PAUSADO" ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <DecisionCard
+                          title="Hasta reactivar"
+                          subtitle="Sale de pausa solo cuando la actives manualmente."
+                          selected={watch("pausaModo") === "HASTA_REACTIVAR"}
+                          onClick={() => reset({ ...watch(), pausaModo: "HASTA_REACTIVAR", fechaFinPausa: "" }, { keepDirty: true, keepTouched: true })}
+                        />
+                        <DecisionCard
+                          title="Con fecha fin"
+                          subtitle="La pausa termina en una fecha definida."
+                          selected={watch("pausaModo") === "CON_FECHA"}
+                          onClick={() => reset({ ...watch(), pausaModo: "CON_FECHA" }, { keepDirty: true, keepTouched: true })}
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Inicio pausa">
+                          <input type="date" className="field-base" {...register("fechaInicioPausa")} />
+                        </Field>
+                        {watch("pausaModo") === "CON_FECHA" ? (
+                          <Field label="Fin pausa">
+                            <input type="date" className="field-base" {...register("fechaFinPausa")} />
+                          </Field>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {watch("estado") !== "ACTIVO" ? (
+                    <Field label="Motivo">
+                      <input className="field-base" {...register("motivoEstado")} />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="space-y-3">
                 <p className="text-sm font-black text-ink-900">Grupo</p>
                 <select
@@ -1734,6 +1821,7 @@ function ChipButton({
 function createDefaultValues(groupId: string): StudentFormValues {
   const today = new Date();
   return {
+    estado: "ACTIVO",
     tipoRegistro: "NUEVO",
     pagoMesActual: "NO",
     mensualidadMetodoPagoActual: "EFECTIVO",
@@ -1756,13 +1844,18 @@ function createDefaultValues(groupId: string): StudentFormValues {
     parentesco: "",
     grupoId: groupId,
     diaCobro: "10",
-    precioMensualidad: ""
+    precioMensualidad: "",
+    pausaModo: "HASTA_REACTIVAR",
+    fechaInicioPausa: defaultDateValue(),
+    fechaFinPausa: "",
+    motivoEstado: ""
   };
 }
 
 function createEditValues(student: StudentListItem): StudentFormValues {
   const startDate = student.fechaInicioClases ? new Date(student.fechaInicioClases) : new Date();
   return {
+    estado: student.estado,
     tipoRegistro: student.enrollmentPayment ? "NUEVO" : "ANTIGUO",
     pagoMesActual: currentPayment(student)?.estado === "PAGADO" ? "SI" : "NO",
     mensualidadMetodoPagoActual: currentPayment(student)?.metodoPago ?? "EFECTIVO",
@@ -1789,7 +1882,11 @@ function createEditValues(student: StudentListItem): StudentFormValues {
     parentesco: student.parentesco ?? "",
     grupoId: student.grupoId,
     diaCobro: String(student.diaCobro ?? 10),
-    precioMensualidad: student.precioMensualidad ? String(student.precioMensualidad) : ""
+    precioMensualidad: student.precioMensualidad ? String(student.precioMensualidad) : "",
+    pausaModo: student.fechaFinPausa ? "CON_FECHA" : "HASTA_REACTIVAR",
+    fechaInicioPausa: student.fechaInicioPausa ? student.fechaInicioPausa.slice(0, 10) : defaultDateValue(),
+    fechaFinPausa: student.fechaFinPausa ? student.fechaFinPausa.slice(0, 10) : "",
+    motivoEstado: student.motivoEstado ?? ""
   };
 }
 
@@ -1806,12 +1903,13 @@ function defaultDateValue() {
 }
 
 function hasPendingPayment(student: StudentListItem) {
-  return student.monthlyPayments?.some((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO") ?? false;
+  return student.monthlyPayments?.some((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO" || payment.estado === "ABONADO") ?? false;
 }
 
 function studentPaymentLabel(student: StudentListItem) {
   const payment = currentPayment(student);
   if (payment?.estado === "PAGADO") return "al día";
+  if (payment?.estado === "NO_APLICA") return "no aplica";
   if (hasPendingPayment(student)) return "pendiente";
   return "sin cobro del mes";
 }
@@ -1979,4 +2077,3 @@ function monthlyModeCopy(mode: StudentListItem["modalidadMensualidad"]) {
 function progressDotClass(active: boolean) {
   return cn("h-1.5 flex-1 rounded-full", active ? "bg-brand-600" : "bg-ink-100");
 }
-

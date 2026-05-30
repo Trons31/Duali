@@ -1,7 +1,12 @@
 import { currentMonthlyPeriod, endOfCurrentMonth, monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "./dates";
 import { prisma } from "./prisma";
+import { reactivateExpiredStudentPauses } from "./student-billing";
 
 export async function ensureCurrentMonthlyPayments(clientId: string) {
+  await prisma.$transaction(async (tx) => {
+    await reactivateExpiredStudentPauses(tx, clientId);
+  });
+
   const { mes, anio } = currentMonthlyPeriod();
   const todayStart = startOfLocalDay();
   const students = await prisma.student.findMany({

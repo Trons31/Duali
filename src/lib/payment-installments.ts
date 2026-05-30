@@ -96,6 +96,7 @@ async function registerMonthlyInstallment(
 
   if (!payment) throw new ApiError(404, "Mensualidad no encontrada");
   if (payment.estado === "PAGADO") throw new ApiError(409, "Esta mensualidad ya esta pagada");
+  if (payment.estado === "NO_APLICA") throw new ApiError(409, "Esta mensualidad esta marcada como No aplica");
 
   const concept = monthlyConcept(payment.mes, payment.anio);
   const balance = resolveBalance(payment.monto, payment.installments);

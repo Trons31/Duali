@@ -10,6 +10,8 @@ datasource db {
 
 enum StudentStatus {
   ACTIVO
+  PAUSADO
+  DESACTIVADO
   INACTIVO
 }
 
@@ -23,6 +25,7 @@ enum MonthlyPaymentStatus {
   ABONADO
   PAGADO
   VENCIDO
+  NO_APLICA
 }
 
 enum SuppliesPaymentStatus {
@@ -223,6 +226,9 @@ model Student {
   diaCobro        Int?
   modalidadMensualidad MonthlyBillingMode @default(ANTICIPADA)
   fechaInicioClases DateTime?
+  fechaInicioPausa DateTime?
+  fechaFinPausa DateTime?
+  motivoEstado     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?

@@ -54,3 +54,24 @@ export function monthlyDueDateForPeriod(
 export function paymentStatusForDueDate(fechaVencimiento: Date) {
   return fechaVencimiento < startOfLocalDay() ? "VENCIDO" : "PENDIENTE";
 }
+
+export function nextValidMonthlyDueDate(
+  fromDate: Date,
+  diaCobro: number,
+  modalidadMensualidad: "ANTICIPADA" | "VENCIDA"
+) {
+  let mes = fromDate.getMonth() + 1;
+  let anio = fromDate.getFullYear();
+  const todayStart = startOfLocalDay(fromDate);
+
+  for (let attempts = 0; attempts < 24; attempts += 1) {
+    const dueDate = monthlyDueDateForPeriod(mes, anio, diaCobro, modalidadMensualidad);
+    if (dueDate >= todayStart) return { mes, anio, dueDate };
+    const nextPeriod = nextMonthlyPeriod(mes, anio);
+    mes = nextPeriod.mes;
+    anio = nextPeriod.anio;
+  }
+
+  const dueDate = monthlyDueDateForPeriod(mes, anio, diaCobro, modalidadMensualidad);
+  return { mes, anio, dueDate };
+}
