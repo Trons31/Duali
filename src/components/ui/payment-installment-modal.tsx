@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FiCheckCircle, FiClock, FiDollarSign } from "react-icons/fi";
+import { FiCheckCircle, FiClock, FiDollarSign, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PAYMENT_METHODS, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
@@ -35,17 +35,24 @@ export function PaymentInstallmentModal({
   payment,
   loading = false,
   onClose,
-  onSubmit
+  onSubmit,
+  onEditInstallment,
+  onDeleteInstallment
 }: {
   open: boolean;
   payment: InstallmentModalPayment | null;
   loading?: boolean;
   onClose: () => void;
   onSubmit: (values: InstallmentSubmitValues) => void;
+  onEditInstallment?: (installmentId: string, values: InstallmentSubmitValues) => Promise<void>;
+  onDeleteInstallment?: (installmentId: string) => Promise<void>;
 }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
   const [date, setDate] = useState(todayInputValue());
+  const [editingInstallment, setEditingInstallment] = useState<PaymentInstallmentItem | null>(null);
+  const [deletingInstallment, setDeletingInstallment] = useState<PaymentInstallmentItem | null>(null);
+  const [mutatingInstallment, setMutatingInstallment] = useState(false);
   const mode = payment?.mode ?? "payment";
   const isHistoryMode = mode === "history";
 
@@ -55,18 +62,21 @@ export function PaymentInstallmentModal({
     setAmount(payment.prefillRemaining && mode === "payment" ? String(payment.remainingAmount) : "");
     setMethod(PAYMENT_METHODS[0].value);
     setDate(todayInputValue());
+    setEditingInstallment(null);
+    setDeletingInstallment(null);
   }, [mode, open, payment]);
 
   const numericAmount = Number(amount);
   const validationError = useMemo(() => {
-    if (!payment || isHistoryMode) return "";
+    if (!payment || (isHistoryMode && !editingInstallment)) return "";
     if (!amount.trim()) return "Ingresa el valor del abono";
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return "El abono debe ser mayor a cero";
-    if (numericAmount > payment.remainingAmount) return "El abono no puede superar el saldo pendiente";
+    const availableAmount = payment.remainingAmount + Number(editingInstallment?.monto ?? 0);
+    if (numericAmount > availableAmount) return "El abono no puede superar el saldo pendiente";
     if (!method) return "Selecciona un metodo de pago";
     if (!date) return "Selecciona la fecha del abono";
     return "";
-  }, [amount, date, isHistoryMode, method, numericAmount, payment]);
+  }, [amount, date, editingInstallment, isHistoryMode, method, numericAmount, payment]);
 
   if (!payment) return null;
 
@@ -83,6 +93,39 @@ export function PaymentInstallmentModal({
 
   function payRemaining() {
     setAmount(String(activePayment.remainingAmount));
+  }
+
+  function startEditing(installment: PaymentInstallmentItem) {
+    setDeletingInstallment(null);
+    setEditingInstallment(installment);
+    setAmount(String(installment.monto));
+    setMethod(installment.metodoPago as PaymentMethodValue);
+    setDate(dateInputValue(installment.fechaAbono));
+  }
+
+  function cancelEditing() {
+    setEditingInstallment(null);
+    setAmount("");
+    setMethod(PAYMENT_METHODS[0].value);
+    setDate(todayInputValue());
+  }
+
+  async function saveEditedInstallment() {
+    if (!editingInstallment || !onEditInstallment || validationError) return;
+    setMutatingInstallment(true);
+    await onEditInstallment(editingInstallment.id, { monto: numericAmount, metodoPago: method, fechaAbono: date })
+      .then(cancelEditing)
+      .catch(() => undefined)
+      .finally(() => setMutatingInstallment(false));
+  }
+
+  async function deleteInstallment() {
+    if (!deletingInstallment || !onDeleteInstallment) return;
+    setMutatingInstallment(true);
+    await onDeleteInstallment(deletingInstallment.id)
+      .then(() => setDeletingInstallment(null))
+      .catch(() => undefined)
+      .finally(() => setMutatingInstallment(false));
   }
 
   return (
@@ -109,7 +152,7 @@ export function PaymentInstallmentModal({
           </div>
         </div>
 
-        {isHistoryMode ? null : (
+        {!isHistoryMode || editingInstallment ? (
           <>
             <div className="grid gap-4 border-t border-ink-100 pt-5 sm:grid-cols-2">
               <label className="block">
@@ -117,7 +160,7 @@ export function PaymentInstallmentModal({
                 <input
                   type="number"
                   min="1"
-                  max={activePayment.remainingAmount}
+                  max={editingInstallment ? activePayment.remainingAmount + Number(editingInstallment.monto) : activePayment.remainingAmount}
                   value={amount}
                   onChange={(event) => setAmount(event.target.value)}
                   className="field-base h-12 rounded-[18px]"
@@ -160,8 +203,19 @@ export function PaymentInstallmentModal({
                 })}
               </div>
             </div>
+
+            {editingInstallment ? (
+              <div className="flex flex-wrap justify-end gap-3">
+                <Button type="button" variant="secondary" onClick={cancelEditing} disabled={mutatingInstallment}>
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={saveEditedInstallment} loading={mutatingInstallment} disabled={Boolean(validationError)}>
+                  Guardar cambios
+                </Button>
+              </div>
+            ) : null}
           </>
-        )}
+        ) : null}
 
         {activePayment.installments?.length ? (
           <div className="border-t border-ink-100 pt-5">
@@ -181,7 +235,36 @@ export function PaymentInstallmentModal({
                         {installment.metodoPago} · {installment.registradoPorNombre ?? "Administrador"}
                       </p>
                     </div>
-                    <p className="shrink-0 text-sm font-black text-brand-700">{currency(installment.monto)}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <p className="mr-1 text-sm font-black text-brand-700">{currency(installment.monto)}</p>
+                      {isHistoryMode && activePayment.kind === "MONTHLY_PAYMENT" && onEditInstallment && onDeleteInstallment ? (
+                        <>
+                          <button
+                            type="button"
+                            aria-label={`Editar abono ${installment.numero}`}
+                            title="Editar abono"
+                            onClick={() => startEditing(installment)}
+                            disabled={mutatingInstallment}
+                            className="rounded-full p-2 text-ink-400 transition hover:bg-white hover:text-brand-700 disabled:opacity-50"
+                          >
+                            <FiEdit2 className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Eliminar abono ${installment.numero}`}
+                            title="Eliminar abono"
+                            onClick={() => {
+                              setEditingInstallment(null);
+                              setDeletingInstallment(installment);
+                            }}
+                            disabled={mutatingInstallment}
+                            className="rounded-full p-2 text-ink-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                          >
+                            <FiTrash2 className="size-4" />
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-xs font-semibold text-ink-500 sm:grid-cols-2">
                     <span>Saldo anterior: {currency(installment.saldoAnterior)}</span>
@@ -193,7 +276,26 @@ export function PaymentInstallmentModal({
           </div>
         ) : null}
 
-        {isHistoryMode ? null : (
+        {deletingInstallment ? (
+          <div className="rounded-[18px] border border-rose-100 bg-rose-50 px-4 py-4">
+            <p className="text-sm font-black text-rose-800">Eliminar abono #{deletingInstallment.numero}</p>
+            <p className="mt-2 text-sm font-semibold text-rose-700">
+              ¿Seguro que deseas eliminar este abono? Esta acción modificará el saldo restante.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setDeletingInstallment(null)} disabled={mutatingInstallment}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="danger" onClick={deleteInstallment} loading={mutatingInstallment}>
+                Eliminar abono
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {isHistoryMode ? (
+          editingInstallment && validationError ? <p className="text-sm font-bold text-rose-600">{validationError}</p> : null
+        ) : (
           <>
             {validationError ? <p className="text-sm font-bold text-rose-600">{validationError}</p> : null}
 
@@ -245,4 +347,9 @@ function BalanceTile({ label, value, tone = "default" }: { label: string; value:
 function todayInputValue() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function dateInputValue(value: string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }

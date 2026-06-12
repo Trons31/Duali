@@ -78,6 +78,156 @@ export async function registerPaymentInstallment(input: RegisterInstallmentInput
   return result;
 }
 
+export async function updateMonthlyPaymentInstallment(
+  clientId: string,
+  paymentId: string,
+  installmentId: string,
+  input: Pick<RegisterInstallmentInput, "monto" | "metodoPago" | "fechaAbono">
+) {
+  const method = input.metodoPago.trim();
+  const amountCents = toCents(input.monto);
+
+  if (amountCents <= 0) {
+    throw new ApiError(422, "El valor del abono debe ser mayor a cero");
+  }
+
+  if (!method) {
+    throw new ApiError(422, "Debes seleccionar un metodo de pago");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const payment = await getMonthlyPaymentForInstallmentMutation(tx, clientId, paymentId);
+    const target = payment.installments.find((installment) => installment.id === installmentId);
+    if (!target) throw new ApiError(404, "Abono no encontrado para esta mensualidad");
+
+    const installments = payment.installments.map((installment) =>
+      installment.id === installmentId
+        ? {
+            ...installment,
+            monto: fromCents(amountCents),
+            metodoPago: method,
+            fechaAbono: input.fechaAbono ?? installment.fechaAbono
+          }
+        : installment
+    );
+
+    return rebuildMonthlyPaymentInstallments(tx, payment, installments);
+  });
+}
+
+export async function deleteMonthlyPaymentInstallment(clientId: string, paymentId: string, installmentId: string) {
+  return prisma.$transaction(async (tx) => {
+    const payment = await getMonthlyPaymentForInstallmentMutation(tx, clientId, paymentId);
+    const target = payment.installments.find((installment) => installment.id === installmentId);
+    if (!target) throw new ApiError(404, "Abono no encontrado para esta mensualidad");
+
+    await tx.paymentInstallment.delete({ where: { id: target.id } });
+
+    return rebuildMonthlyPaymentInstallments(
+      tx,
+      payment,
+      payment.installments.filter((installment) => installment.id !== target.id)
+    );
+  });
+}
+
+async function getMonthlyPaymentForInstallmentMutation(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+  paymentId: string
+) {
+  const payment = await tx.monthlyPayment.findFirst({
+    where: { id: paymentId, clientId, deletedAt: null },
+    include: {
+      student: true,
+      group: true,
+      installments: { where: { clientId }, orderBy: { numero: "asc" } }
+    }
+  });
+
+  if (!payment) throw new ApiError(404, "Mensualidad no encontrada");
+  if (payment.estado === "NO_APLICA") throw new ApiError(409, "Esta mensualidad esta marcada como No aplica");
+  return payment;
+}
+
+async function rebuildMonthlyPaymentInstallments(
+  tx: Prisma.TransactionClient,
+  payment: Awaited<ReturnType<typeof getMonthlyPaymentForInstallmentMutation>>,
+  installments: typeof payment.installments
+) {
+  const totalCents = toCents(payment.monto);
+  const paidCents = installments.reduce((sum, installment) => sum + toCents(installment.monto), 0);
+
+  if (paidCents > totalCents) {
+    throw new ApiError(422, "El total abonado no puede superar el valor de la mensualidad");
+  }
+
+  // Move numbers out of the positive range first to avoid unique-key collisions while compacting gaps.
+  for (let index = 0; index < installments.length; index += 1) {
+    await tx.paymentInstallment.update({
+      where: { id: installments[index]!.id },
+      data: { numero: -(index + 1) }
+    });
+  }
+
+  let previousBalanceCents = totalCents;
+  for (let index = 0; index < installments.length; index += 1) {
+    const installment = installments[index]!;
+    const amountCents = toCents(installment.monto);
+    const remainingCents = previousBalanceCents - amountCents;
+
+    await tx.paymentInstallment.update({
+      where: { id: installment.id },
+      data: {
+        numero: index + 1,
+        monto: installment.monto,
+        metodoPago: installment.metodoPago,
+        fechaAbono: installment.fechaAbono,
+        saldoAnterior: fromCents(previousBalanceCents),
+        saldoRestante: fromCents(remainingCents)
+      }
+    });
+
+    previousBalanceCents = remainingCents;
+  }
+
+  const lastInstallment = installments[installments.length - 1] ?? null;
+  const isPaid = installments.length > 0 && previousBalanceCents === 0;
+  const estado = isPaid
+    ? "PAGADO"
+    : installments.length > 0
+      ? "ABONADO"
+      : paymentStatusForDueDate(payment.fechaVencimiento);
+
+  const updatedPayment = await tx.monthlyPayment.update({
+    where: { id: payment.id },
+    data: {
+      estado,
+      montoAbonado: fromCents(paidCents),
+      saldoPendiente: fromCents(previousBalanceCents),
+      cantidadAbonos: installments.length,
+      ultimoMetodoAbono: lastInstallment?.metodoPago ?? null,
+      fechaUltimoAbono: lastInstallment?.fechaAbono ?? null,
+      fechaPago: isPaid ? lastInstallment?.fechaAbono : null,
+      fechaRegistro: isPaid ? payment.fechaRegistro ?? new Date() : null,
+      metodoPago: isPaid ? lastInstallment?.metodoPago : null,
+      registradoPorUserId: isPaid ? lastInstallment?.registradoPorUserId : null,
+      registradoPorNombre: isPaid ? lastInstallment?.registradoPorNombre : null
+    },
+    include: {
+      student: true,
+      group: true,
+      installments: { orderBy: { numero: "asc" } }
+    }
+  });
+
+  if (isPaid && payment.student.estado === "ACTIVO") {
+    await createNextMonthlyPaymentIfNeeded(tx, payment, payment.clientId);
+  }
+
+  return { payment: updatedPayment };
+}
+
 async function registerMonthlyInstallment(
   tx: Prisma.TransactionClient,
   input: RegisterInstallmentInput,

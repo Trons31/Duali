@@ -195,6 +195,48 @@ export function DuePaymentsPanel({
       .finally(() => setSubmittingInstallment(false));
   }
 
+  async function editInstallment(installmentId: string, values: InstallmentSubmitValues) {
+    if (!installmentTarget || installmentTarget.kind !== "MONTHLY_PAYMENT") return;
+
+    await clientApiFetch<{ payment: DuePayment }>(
+      `/api/monthly-payments/${installmentTarget.id}/installments/${installmentId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(values) }
+    )
+      .then(({ payment }) => {
+        sileo.success({ title: "Abono actualizado" });
+        setInstallmentTarget({ ...toInstallmentModalPayment({ ...payment, kind: "MONTHLY_PAYMENT" }), mode: "history" });
+        router.refresh();
+      })
+      .catch((error: Error) => {
+        sileo.error({ title: error.message });
+        throw error;
+      });
+  }
+
+  async function deleteInstallment(installmentId: string) {
+    if (!installmentTarget || installmentTarget.kind !== "MONTHLY_PAYMENT") return;
+
+    await clientApiFetch<{ payment: DuePayment }>(
+      `/api/monthly-payments/${installmentTarget.id}/installments/${installmentId}`,
+      token,
+      { method: "DELETE" }
+    )
+      .then(({ payment }) => {
+        sileo.success({ title: "Abono eliminado" });
+        if (payment.installments?.length) {
+          setInstallmentTarget({ ...toInstallmentModalPayment({ ...payment, kind: "MONTHLY_PAYMENT" }), mode: "history" });
+        } else {
+          closeInstallmentModal();
+        }
+        router.refresh();
+      })
+      .catch((error: Error) => {
+        sileo.error({ title: error.message });
+        throw error;
+      });
+  }
+
   async function notifyByWhatsapp(card: PaymentCard) {
     const monthlyPaymentIds = card.items
       .filter((item) => item.kind === "MONTHLY_PAYMENT")
@@ -536,6 +578,8 @@ export function DuePaymentsPanel({
         loading={submittingInstallment}
         onClose={closeInstallmentModal}
         onSubmit={saveInstallment}
+        onEditInstallment={installmentTarget?.kind === "MONTHLY_PAYMENT" ? editInstallment : undefined}
+        onDeleteInstallment={installmentTarget?.kind === "MONTHLY_PAYMENT" ? deleteInstallment : undefined}
       />
     </div>
   );
