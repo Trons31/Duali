@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { NotificationBootstrap } from "@/components/notifications/notification-bootstrap";
-import { startOfLocalDay, startOfNextLocalDay } from "@/lib/dates";
+import { getDashboardAlertCounts } from "@/lib/dashboard-data";
 import { ensureCurrentMonthlyPayments } from "@/lib/monthly-payments";
-import { prisma } from "@/lib/prisma";
 import { ensureClientSubscription, serializeSubscription } from "@/lib/subscriptions";
 import { auth } from "@/lib/web-auth";
 
@@ -25,37 +24,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const clientId = session.user.id;
   await ensureCurrentMonthlyPayments(clientId);
 
-  const todayStart = startOfLocalDay();
-  const tomorrowStart = startOfNextLocalDay();
-
-  const [pendingMonthlyCount, overdueMonthlyCount, enrollmentPendingCount, subscription] = await Promise.all([
-    prisma.monthlyPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PENDIENTE",
-        fechaVencimiento: { gte: todayStart, lt: tomorrowStart },
-        student: { estado: "ACTIVO", deletedAt: null }
-      }
-    }),
-    prisma.monthlyPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        student: { estado: "ACTIVO", deletedAt: null },
-        OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
-      }
-    }),
-    prisma.enrollmentPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        student: { estado: "ACTIVO", deletedAt: null },
-        OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE" }]
-      }
-    }),
+  const [alertCounts, subscription] = await Promise.all([
+    getDashboardAlertCounts(clientId),
     ensureClientSubscription(clientId)
   ]);
+  const { pendingMonthlyCount, overdueMonthlyCount, enrollmentPendingCount } = alertCounts;
 
   const plan = serializeSubscription(subscription);
 
@@ -89,7 +62,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     >
       <NotificationBootstrap />
       {children}
-      <div className="h-24 xl:hidden" />
     </DashboardShell>
   );
 }

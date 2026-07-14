@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { startOfLocalDay, startOfNextLocalDay } from "./dates";
 import { ensureCurrentMonthlyPayments } from "./monthly-payments";
 import { processNotificationQueue, queueNotification } from "./notification-queue";
@@ -35,24 +35,22 @@ export async function queueAdminPaymentReminders() {
   for (const client of clients) {
     await ensureCurrentMonthlyPayments(client.id);
 
-    const [monthlyDueToday, monthlyOverdue, enrollmentDueToday, enrollmentOverdue] = await Promise.all([
-      prisma.monthlyPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart }, student: { estado: "ACTIVO", deletedAt: null } },
-        include: { student: true, group: true }
-      }),
-      prisma.monthlyPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
-        include: { student: true, group: true }
-      }),
-      prisma.enrollmentPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart }, student: { estado: "ACTIVO", deletedAt: null } },
-        include: { student: { include: { group: true } } }
-      }),
-      prisma.enrollmentPayment.findMany({
-        where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
-        include: { student: { include: { group: true } } }
-      })
-    ]);
+    const monthlyDueToday = await prisma.monthlyPayment.findMany({
+      where: { clientId: client.id, deletedAt: null, estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart }, student: { estado: "ACTIVO", deletedAt: null } },
+      include: { student: true, group: true }
+    });
+    const monthlyOverdue = await prisma.monthlyPayment.findMany({
+      where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
+      include: { student: true, group: true }
+    });
+    const enrollmentDueToday = await prisma.enrollmentPayment.findMany({
+      where: { clientId: client.id, deletedAt: null, estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart }, student: { estado: "ACTIVO", deletedAt: null } },
+      include: { student: { include: { group: true } } }
+    });
+    const enrollmentOverdue = await prisma.enrollmentPayment.findMany({
+      where: { clientId: client.id, deletedAt: null, student: { estado: "ACTIVO", deletedAt: null }, OR: [{ estado: "VENCIDO" }, { estado: "ABONADO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }] },
+      include: { student: { include: { group: true } } }
+    });
 
     for (const payment of monthlyDueToday) {
       const name = `${payment.student.nombre} ${payment.student.apellido}`;

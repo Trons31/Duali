@@ -1,12 +1,30 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronLeft, FiChevronRight, FiPhone, FiPlus, FiRefreshCw, FiSearch, FiUsers } from "react-icons/fi";
+import {
+  FiBookOpen,
+  FiCheck,
+  FiCheckCircle,
+  FiChevronDown,
+  FiChevronLeft,
+  FiChevronRight,
+  FiCircle,
+  FiClock,
+  FiFilter,
+  FiPauseCircle,
+  FiPhone,
+  FiPlus,
+  FiRefreshCw,
+  FiSearch,
+  FiUserX,
+  FiUsers,
+  FiX
+} from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -55,13 +73,13 @@ type StudentFormValues = {
   motivoEstado: string;
 };
 
-const FILTER_OPTIONS: Array<{ label: string; value: StudentListFilter }> = [
-  { label: "Todos", value: "todos" },
-  { label: "Activos", value: "activos" },
-  { label: "Pausados", value: "pausados" },
-  { label: "Al día", value: "aldia" },
-  { label: "Pendientes", value: "pendientes" },
-  { label: "Inactivos", value: "inactivos" }
+const FILTER_OPTIONS: Array<{ label: string; value: StudentListFilter; icon: ReactNode; iconClass: string }> = [
+  { label: "Todos", value: "todos", icon: <FiUsers />, iconClass: "text-brand-600" },
+  { label: "Activos", value: "activos", icon: <FiCircle />, iconClass: "text-brand-600" },
+  { label: "Pausados", value: "pausados", icon: <FiPauseCircle />, iconClass: "text-amber-500" },
+  { label: "Al día", value: "aldia", icon: <FiCheckCircle />, iconClass: "text-brand-600" },
+  { label: "Pendientes", value: "pendientes", icon: <FiClock />, iconClass: "text-orange-500" },
+  { label: "Inactivos", value: "inactivos", icon: <FiUserX />, iconClass: "text-ink-500" }
 ];
 
 const PAYMENT_METHODS = [
@@ -94,6 +112,8 @@ export function StudentsPanelCards({
   const [paymentHistoryError, setPaymentHistoryError] = useState<string | null>(null);
   const [paymentHistorySuccess, setPaymentHistorySuccess] = useState<string | null>(null);
   const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"recent" | "name-asc" | "name-desc">("recent");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const {
     register,
     handleSubmit,
@@ -121,9 +141,19 @@ export function StudentsPanelCards({
   const historyPeriods = createMonthlyPeriodRange(Number(historyStartMonth), Number(historyStartYear));
   const startDayOptions = dayOptionsForMonth(Number(historyStartMonth), Number(historyStartYear));
 
-  const visibleStudents = students.items;
+  const visibleStudents = useMemo(() => {
+    const items = [...students.items];
+    if (sortOrder === "name-asc") {
+      return items.sort((a, b) => `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`, "es"));
+    }
+    if (sortOrder === "name-desc") {
+      return items.sort((a, b) => `${b.nombre} ${b.apellido}`.localeCompare(`${a.nombre} ${a.apellido}`, "es"));
+    }
+    return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [sortOrder, students.items]);
   const currentFilter = students.filters.status;
   const currentGroupId = students.filters.groupId ?? "";
+  const activeFilterCount = Number(currentFilter !== "todos") + Number(Boolean(currentGroupId));
   const pagination = students.pagination;
 
   useEffect(() => {
@@ -506,84 +536,166 @@ export function StudentsPanelCards({
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Directorio</p>
-                <h1 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950 sm:text-[2.2rem]">Alumnos</h1>
-                <p className="mt-2 text-sm text-ink-500">Administra estudiantes, cobros y estado de mensualidad.</p>
-              </div>
-              <Button className="min-h-11 rounded-[18px] px-5 text-sm font-semibold" onClick={openCreateModal}>
-                <FiPlus className="size-4" />
-                Agregar alumno
-              </Button>
+        <header className="flex flex-col gap-4 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+              <FiBookOpen className="size-5" />
             </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-brand-700">Directorio</p>
+              <h1 className="mt-1 text-[2rem] font-black leading-none text-ink-950 sm:text-[2.25rem]">Alumnos</h1>
+              <p className="mt-2 max-w-xl text-sm leading-5 text-ink-500">
+                Administra estudiantes, cobros y estado de mensualidad.
+              </p>
+            </div>
+          </div>
 
+          <Button
+            className="min-h-10 self-end rounded-xl px-4 py-2.5 text-sm font-bold sm:shrink-0"
+            onClick={openCreateModal}
+          >
+            <FiPlus className="size-4" />
+            Agregar alumno
+          </Button>
+        </header>
+
+        <section className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-ink-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div>
+              <h2 className="text-xl font-black text-ink-950">
+                Listado de alumnos <span className="font-semibold text-ink-500">({students.pagination.total})</span>
+              </h2>
+              <p className="mt-1 text-sm text-ink-500">
+                Página {students.pagination.page} de {students.pagination.totalPages}
+              </p>
+            </div>
+            <label className="flex items-center justify-between gap-3 text-sm font-semibold text-ink-600 sm:justify-start">
+              <span>Ordenar por</span>
+              <span className="relative">
+                <select
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}
+                  className="h-10 appearance-none rounded-xl border border-ink-200 bg-white pl-3 pr-9 text-sm font-semibold text-ink-800 outline-none transition focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
+                >
+                  <option value="recent">Más recientes</option>
+                  <option value="name-asc">Nombre A-Z</option>
+                  <option value="name-desc">Nombre Z-A</option>
+                </select>
+                <FiChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
+              </span>
+            </label>
+          </div>
+
+          <div className="border-b border-ink-100 p-4 sm:px-6 sm:py-5">
             <form
-              className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto]"
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
                 updateList({ q: query, page: 1 });
               }}
             >
-              <div className="relative">
-                <FiSearch className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
+              <label className="relative block min-w-0">
+                <span className="sr-only">Buscar alumnos</span>
+                <FiSearch className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Buscar por nombre, apellido o teléfono"
-                  className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
+                  className="field-base h-11 rounded-xl py-2 pl-10 pr-12 text-sm"
                 />
-              </div>
-              <select
-                value={currentGroupId}
-                onChange={(event) => updateList({ groupId: event.target.value, page: 1 })}
-                className="field-base h-11 rounded-[18px] text-[14px]"
+                <button
+                  type="submit"
+                  className="absolute right-1.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700 focus:outline-none focus:ring-4 focus:ring-brand-100"
+                  title="Buscar"
+                  aria-label="Buscar alumnos"
+                >
+                  <FiSearch className="size-4" />
+                </button>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((open) => !open)}
+                className={cn(
+                  "inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                  filtersOpen || activeFilterCount > 0
+                    ? "border-brand-200 bg-brand-50 text-brand-700"
+                    : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+                )}
+                aria-expanded={filtersOpen}
+                aria-controls="student-filters"
               >
-                <option value="">Todos los grupos</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.nombre}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit" className="min-h-11 rounded-[18px] px-5 text-sm font-semibold">
-                Buscar
-              </Button>
+                <FiFilter className="size-4" />
+                <span className="hidden min-[360px]:inline">Filtros</span>
+                {activeFilterCount > 0 ? (
+                  <span className="flex size-5 items-center justify-center rounded-full bg-brand-600 text-[10px] text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+                <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+              </button>
             </form>
 
-            <div className="flex flex-wrap gap-2">
-              {FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => updateList({ status: option.value, page: 1 })}
-                  className={cn(
-                    "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                    currentFilter === option.value
-                      ? "border-ink-950 bg-ink-950 text-white"
-                      : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
+            {filtersOpen ? (
+              <div id="student-filters" className="mt-4 border-t border-ink-100 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-ink-800">Filtrar alumnos</p>
+                  {activeFilterCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => updateList({ status: "todos", groupId: "", page: 1 })}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-500 transition hover:text-brand-700"
+                    >
+                      <FiX className="size-4" />
+                      Limpiar
+                    </button>
+                  ) : null}
+                </div>
 
-        <section className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
-          <div className="flex flex-col gap-3 border-b border-ink-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <h2 className="text-lg font-bold text-ink-950">Listado de alumnos</h2>
-              <p className="mt-1 text-sm text-ink-500">
-                {students.pagination.total} total · pág. {students.pagination.page}/{students.pagination.totalPages}
-              </p>
-            </div>
-            <p className="text-sm text-ink-500">Fichas organizadas por alumno con la información clave bien alineada.</p>
+                <label className="relative mt-3 block max-w-sm">
+                  <span className="sr-only">Filtrar por grupo</span>
+                  <FiUsers className="pointer-events-none absolute left-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-brand-600" />
+                  <select
+                    value={currentGroupId}
+                    onChange={(event) => updateList({ groupId: event.target.value, page: 1 })}
+                    className="field-base h-11 appearance-none rounded-xl py-2 pl-10 pr-10 text-sm"
+                  >
+                    <option value="">Todos los grupos</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <FiChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
+                </label>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 min-[380px]:grid-cols-3 lg:flex lg:flex-wrap">
+                  {FILTER_OPTIONS.map((option) => {
+                    const active = currentFilter === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateList({ status: option.value, page: 1 })}
+                        className={cn(
+                          "inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold transition sm:text-sm lg:px-4",
+                          active
+                            ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                            : "border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+                        )}
+                        aria-pressed={active}
+                      >
+                        <span className={cn("text-sm", active ? "text-white" : option.iconClass)}>{option.icon}</span>
+                        <span className="truncate">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {!visibleStudents.length ? (
@@ -596,13 +708,13 @@ export function StudentsPanelCards({
             </div>
           ) : (
             <>
-              <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+              <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 xl:grid-cols-2">
                 {visibleStudents.map((student) => {
                   const contact = resolveStudentContact(student);
                   return (
                     <article
                       key={student.id}
-                      className="rounded-[24px] border border-ink-100 bg-white px-4 py-4 shadow-sm transition hover:border-ink-200 hover:shadow-md"
+                      className="h-full rounded-2xl border border-ink-100 bg-white p-4 shadow-sm transition hover:border-brand-100 hover:shadow-md"
                     >
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -610,7 +722,7 @@ export function StudentsPanelCards({
                             <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-brand-50 text-sm font-bold text-brand-700">
                               {getInitials(student.nombre, student.apellido)}
                             </div>
-                            <button type="button" className="text-left" onClick={() => openEditModal(student)}>
+                            <button type="button" className="min-w-0 text-left" onClick={() => openEditModal(student)}>
                               <div className="flex flex-wrap items-center gap-2">
                                 <h3 className="text-[15px] font-semibold text-ink-950">
                                   {student.nombre} {student.apellido}
@@ -642,7 +754,7 @@ export function StudentsPanelCards({
                           </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid grid-cols-2 gap-2.5">
                           <InfoBlock
                             label="Mensualidad"
                             value={student.precioMensualidad ? currency(student.precioMensualidad) : "Usa valor del grupo"}
@@ -1726,13 +1838,13 @@ function InfoBlock({
   icon?: ReactNode;
 }) {
   return (
-    <div className="rounded-[18px] border border-ink-100 bg-ink-50/65 px-4 py-3">
-      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-400">{label}</p>
+    <div className="min-w-0 rounded-2xl border border-ink-100 bg-ink-50/65 p-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400 sm:text-[11px]">{label}</p>
       <div className="mt-2 flex items-center gap-2">
         {icon}
-        <p className="text-[15px] font-semibold text-ink-950">{value}</p>
+        <p className="min-w-0 break-words text-sm font-semibold leading-5 text-ink-950 sm:text-[15px]">{value}</p>
       </div>
-      <p className="mt-1 text-xs text-ink-500">{helper}</p>
+      <p className="mt-1 break-words text-[11px] leading-4 text-ink-500 sm:text-xs">{helper}</p>
     </div>
   );
 }

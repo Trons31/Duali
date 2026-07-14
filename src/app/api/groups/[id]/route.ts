@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { requireClient } from "@/lib/auth";
 import { ApiError, handleError, noContent, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
@@ -78,61 +78,59 @@ export async function GET(request: Request, context: Params) {
         : {})
     };
 
-    const [total, students, activeStudents, studentsWithMonthlyFee, pendingCount, overdueCount] = await Promise.all([
-      prisma.student.count({ where: studentWhere }),
-      prisma.student.findMany({
-        where: studentWhere,
-        orderBy: [{ estado: "asc" }, { nombre: "asc" }, { apellido: "asc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          monthlyPayments: {
-            where: {
-              deletedAt: null,
-              mes: currentMonth,
-              anio: currentYear
-            },
-            orderBy: { createdAt: "desc" },
-            take: 1,
-            select: {
-              id: true,
-              mes: true,
-              anio: true,
-              monto: true,
-              estado: true,
-              fechaVencimiento: true,
-              fechaPago: true
-            }
+    const total = await prisma.student.count({ where: studentWhere });
+    const students = await prisma.student.findMany({
+      where: studentWhere,
+      orderBy: [{ estado: "asc" }, { nombre: "asc" }, { apellido: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        monthlyPayments: {
+          where: {
+            deletedAt: null,
+            mes: currentMonth,
+            anio: currentYear
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            mes: true,
+            anio: true,
+            monto: true,
+            estado: true,
+            fechaVencimiento: true,
+            fechaPago: true
           }
         }
-      }),
-      prisma.student.count({
-        where: { clientId, grupoId: id, deletedAt: null, estado: "ACTIVO" }
-      }),
-      prisma.student.count({
-        where: { clientId, grupoId: id, deletedAt: null, estado: "ACTIVO", precioMensualidad: { gt: 0 } }
-      }),
-      prisma.monthlyPayment.count({
-        where: {
-          clientId,
-          grupoId: id,
-          deletedAt: null,
-          mes: currentMonth,
-          anio: currentYear,
-          estado: { in: ["PENDIENTE", "ABONADO"] }
-        }
-      }),
-      prisma.monthlyPayment.count({
-        where: {
-          clientId,
-          grupoId: id,
-          deletedAt: null,
-          mes: currentMonth,
-          anio: currentYear,
-          estado: "VENCIDO"
-        }
-      })
-    ]);
+      }
+    });
+    const activeStudents = await prisma.student.count({
+      where: { clientId, grupoId: id, deletedAt: null, estado: "ACTIVO" }
+    });
+    const studentsWithMonthlyFee = await prisma.student.count({
+      where: { clientId, grupoId: id, deletedAt: null, estado: "ACTIVO", precioMensualidad: { gt: 0 } }
+    });
+    const pendingCount = await prisma.monthlyPayment.count({
+      where: {
+        clientId,
+        grupoId: id,
+        deletedAt: null,
+        mes: currentMonth,
+        anio: currentYear,
+        estado: { in: ["PENDIENTE", "ABONADO"] }
+      }
+    });
+    const overdueCount = await prisma.monthlyPayment.count({
+      where: {
+        clientId,
+        grupoId: id,
+        deletedAt: null,
+        mes: currentMonth,
+        anio: currentYear,
+        estado: "VENCIDO"
+      }
+    });
 
     const estimatedIncomeRows = await prisma.student.findMany({
       where: {

@@ -4,7 +4,16 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronDown, FiChevronUp, FiDollarSign, FiMessageCircle, FiSearch } from "react-icons/fi";
+import {
+  FiCheck,
+  FiChevronDown,
+  FiChevronUp,
+  FiDollarSign,
+  FiFilter,
+  FiMessageCircle,
+  FiSearch,
+  FiX
+} from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import {
   PaymentInstallmentModal,
@@ -49,6 +58,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
   const [notifyingPaymentId, setNotifyingPaymentId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const pendingPayments = useMemo(
     () => payments.filter((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO"),
@@ -216,101 +226,131 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-4xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="space-y-5">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Cobros</p>
-              <h1 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950 sm:text-[2.2rem]">Inscripciones</h1>
-              <p className="mt-2 text-sm text-ink-500">Revisa las inscripciones pendientes y el historial de pagos ya registrados.</p>
-            </div>
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <header className="flex min-w-0 items-start gap-3 px-1">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+            <FiDollarSign className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-brand-700">Cobros</p>
+            <h1 className="mt-1 text-[1.75rem] font-black leading-none text-ink-950 sm:text-[2rem]">Inscripciones</h1>
+            <p className="mt-2 text-sm leading-5 text-ink-500">Consulta saldos pendientes, abonos e inscripciones pagadas.</p>
+          </div>
+        </header>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setView("pending")}
-                className={cn(
-                  "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                  view === "pending"
-                    ? "border-ink-950 bg-ink-950 text-white"
-                    : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                )}
-              >
-                Pendientes
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("paid")}
-                className={cn(
-                  "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                  view === "paid"
-                    ? "border-ink-950 bg-ink-950 text-white"
-                    : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                )}
-              >
-                Pagadas
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("abonables")}
-                className={cn(
-                  "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                  view === "abonables"
-                    ? "border-ink-950 bg-ink-950 text-white"
-                    : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                )}
-              >
-                Abonables
-              </button>
-            </div>
+        <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:px-6 sm:py-5">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <label className="relative block min-w-0">
+              <span className="sr-only">Buscar inscripción</span>
+              <FiSearch className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Nombre, apellido o grupo"
+                className="field-base h-11 rounded-xl py-2 pl-10 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={cn(
+                "inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                filtersOpen || view !== "pending"
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+              )}
+              aria-expanded={filtersOpen}
+              aria-controls="enrollment-filters"
+            >
+              <FiFilter className="size-4" />
+              <span className="hidden min-[360px]:inline">Filtros</span>
+              {view !== "pending" ? <span className="size-2 rounded-full bg-brand-600" /> : null}
+              <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+            </button>
+          </div>
 
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <div className="relative">
-                <FiSearch className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Nombre, apellido o grupo"
-                  className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
-                />
+          {filtersOpen ? (
+            <div id="enrollment-filters" className="mt-4 border-t border-ink-100 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-ink-800">Estado de inscripción</p>
+                {view !== "pending" ? (
+                  <button
+                    type="button"
+                    onClick={() => setView("pending")}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-500 transition hover:text-brand-700"
+                  >
+                    <FiX className="size-4" />
+                    Limpiar
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[
+                  { value: "pending" as const, label: "Pendientes" },
+                  { value: "paid" as const, label: "Pagadas" },
+                  { value: "abonables" as const, label: "Abonables" }
+                ].map((option) => {
+                  const active = view === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setView(option.value)}
+                      className={cn(
+                        "min-h-10 min-w-0 truncate rounded-xl border px-2 text-[11px] font-semibold transition sm:text-sm",
+                        active
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+                      )}
+                      aria-pressed={active}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {view === "paid" ? (
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                  className="field-base h-11 rounded-[18px] text-[14px]"
-                />
-              ) : (
-                <div className="rounded-[18px] border border-ink-100 bg-ink-50/70 px-4 py-3 text-sm text-ink-500">
-                  {view === "abonables"
-                    ? `${filteredAbonables.length} ${filteredAbonables.length === 1 ? "inscripcion abonable" : "inscripciones abonables"}`
-                    : `${filteredPending.length} ${filteredPending.length === 1 ? "inscripcion pendiente" : "inscripciones pendientes"}`}
-                </div>
-              )}
+                <label className="mt-3 block max-w-xs">
+                  <span className="mb-2 block text-xs font-bold text-ink-600">Mes de pago</span>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(event) => setSelectedMonth(event.target.value)}
+                    className="field-base h-11 rounded-xl py-2 text-sm"
+                  />
+                </label>
+              ) : null}
             </div>
-          </div>
+          ) : null}
+
+          <p className="mt-3 text-xs font-semibold text-ink-500">
+            {view === "paid"
+              ? `${filteredPaid.length} ${filteredPaid.length === 1 ? "inscripción pagada" : "inscripciones pagadas"}`
+              : view === "abonables"
+                ? `${filteredAbonables.length} ${filteredAbonables.length === 1 ? "inscripción abonable" : "inscripciones abonables"}`
+                : `${filteredPending.length} ${filteredPending.length === 1 ? "inscripción pendiente" : "inscripciones pendientes"}`}
+          </p>
         </section>
 
         {view === "pending" ? (
-          <section className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+          <section className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
             <div className="border-b border-ink-100 px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-bold text-ink-950">Inscripciones pendientes</h2>
+              <h2 className="text-lg font-black text-ink-950">Inscripciones pendientes</h2>
               <p className="mt-1 text-sm text-ink-500">
                 {filteredPending.length} {filteredPending.length === 1 ? "registro" : "registros"}
               </p>
             </div>
 
             {filteredPending.length ? (
-              <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+              <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                 {filteredPending.map((payment) => (
                   <article
                     key={payment.id}
-                    className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                    className="h-full rounded-2xl border border-ink-100 bg-white p-4 shadow-sm"
                   >
-                    <div className="space-y-5">
+                    <div className="flex h-full flex-col gap-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -322,31 +362,31 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                           <p className="mt-1 text-sm text-ink-500">{payment.student.group?.nombre ?? "Sin grupo"} · vence {formatDate(payment.fechaVencimiento)}</p>
                           <p className="mt-2 text-sm font-semibold text-rose-600">{enrollmentDelayCopy(payment)}</p>
                         </div>
-                        <p className="text-[1.8rem] font-black tracking-tight text-rose-700">{currency(payment.monto)}</p>
+                        <p className="shrink-0 text-2xl font-black leading-none text-rose-700">{currency(payment.monto)}</p>
                       </div>
 
-                      <div className="grid gap-3">
+                      <div className="mt-auto grid gap-2">
                         <Button
                           type="button"
                           variant="secondary"
-                          className="min-h-14 rounded-[22px] border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                          className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
                           loading={notifyingPaymentId === payment.id}
                           onClick={() => notifyByWhatsapp(payment)}
                         >
-                          <FiMessageCircle className="size-5" />
+                          <FiMessageCircle className="size-4" />
                           Notificar por WhatsApp
                         </Button>
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(payment)}>
-                          <FiCheck className="size-5" />
+                        <Button type="button" className="min-h-11 rounded-xl py-2.5 text-[13px]" onClick={() => openPayModal(payment)}>
+                          <FiCheck className="size-4" />
                           Marcar pagada
                         </Button>
                         <Button
                           type="button"
                           variant="secondary"
-                          className="min-h-14 rounded-[22px] border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          className="min-h-11 rounded-xl border-amber-200 bg-amber-50 py-2.5 text-[13px] text-amber-700 hover:bg-amber-100"
                           onClick={() => openInstallmentModal(payment)}
                         >
-                          <FiDollarSign className="size-5" />
+                          <FiDollarSign className="size-4" />
                           Abonar
                         </Button>
                       </div>
@@ -362,22 +402,22 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
             )}
           </section>
         ) : view === "abonables" ? (
-          <section className="rounded-[28px] border border-sky-100 bg-white shadow-soft">
+          <section className="rounded-[24px] border border-sky-100 bg-white shadow-sm">
             <div className="border-b border-sky-100 px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-bold text-ink-950">Abonables</h2>
+              <h2 className="text-lg font-black text-ink-950">Abonables</h2>
               <p className="mt-1 text-sm text-ink-500">
                 {filteredAbonables.length} {filteredAbonables.length === 1 ? "inscripcion con abonos activos" : "inscripciones con abonos activos"}
               </p>
             </div>
 
             {filteredAbonables.length ? (
-              <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+              <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                 {filteredAbonables.map((payment) => (
                   <article
                     key={payment.id}
-                    className="rounded-[28px] border border-sky-100 bg-sky-50/50 px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                    className="h-full rounded-2xl border border-sky-100 bg-sky-50/50 p-4 shadow-sm"
                   >
-                    <div className="space-y-5">
+                    <div className="flex h-full flex-col gap-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -388,7 +428,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                           </div>
                           <p className="mt-1 text-sm text-ink-500">{payment.student.group?.nombre ?? "Sin grupo"} · Inscripcion</p>
                         </div>
-                        <p className="text-[1.8rem] font-black tracking-tight text-sky-700">{currency(paymentRemainingAmount(payment))}</p>
+                        <p className="shrink-0 text-2xl font-black leading-none text-sky-700">{currency(paymentRemainingAmount(payment))}</p>
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-3">
@@ -407,12 +447,12 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                         <Button
                           type="button"
                           variant="secondary"
-                          className="min-h-14 rounded-[22px] border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                          className="min-h-11 rounded-xl border-sky-200 bg-white py-2.5 text-[13px] text-sky-700 hover:bg-sky-50"
                           onClick={() => openInstallmentModal(payment, "history")}
                         >
                           Ver historial
                         </Button>
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayBalanceModal(payment)}>
+                        <Button type="button" className="min-h-11 rounded-xl py-2.5 text-[13px]" onClick={() => openPayBalanceModal(payment)}>
                           Pagar saldo
                         </Button>
                       </div>
@@ -429,9 +469,9 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
           </section>
         ) : (
           <section className="space-y-5">
-            <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Historial</p>
-              <h2 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950">Pagadas con exito</h2>
+            <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:px-6 sm:py-5">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-ink-400">Historial</p>
+              <h2 className="mt-1.5 text-xl font-black text-ink-950">Pagadas con éxito</h2>
               <p className="mt-2 text-sm text-ink-500">
                 {paidSummary.totalCount} cobros · {currency(paidSummary.totalAmount)}
               </p>
@@ -442,10 +482,10 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                 const isCollapsed = Boolean(collapsedDays[group.key]);
 
                 return (
-                  <section key={group.key} className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+                  <section key={group.key} className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
                     <div className="flex items-start justify-between gap-3 px-5 py-4 sm:px-6">
                       <div>
-                        <h3 className="text-[1.45rem] font-black tracking-tight text-ink-950">{group.title}</h3>
+                        <h3 className="text-lg font-black text-ink-950">{group.title}</h3>
                         <p className="mt-1 text-sm font-semibold text-ink-400">
                           {group.count} {group.count === 1 ? "registro" : "registros"} · {currency(group.totalAmount)}
                         </p>
@@ -453,19 +493,19 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                       <button
                         type="button"
                         onClick={() => toggleDay(group.key)}
-                        className="rounded-full p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
+                        className="rounded-xl p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
                         aria-label={isCollapsed ? "Mostrar pagos del dia" : "Ocultar pagos del dia"}
                       >
-                        {isCollapsed ? <FiChevronDown className="size-6" /> : <FiChevronUp className="size-6" />}
+                        {isCollapsed ? <FiChevronDown className="size-5" /> : <FiChevronUp className="size-5" />}
                       </button>
                     </div>
 
                     {isCollapsed ? null : (
-                      <div className="grid gap-4 border-t border-ink-100 px-4 py-4 sm:px-6 sm:py-6">
+                      <div className="grid gap-3 border-t border-ink-100 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                         {group.items.map((payment) => (
                           <article
                             key={payment.id}
-                            className="rounded-[24px] border border-ink-100 bg-white px-5 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.06)]"
+                            className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm"
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div>
@@ -476,7 +516,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                                   Inscripcion{payment.student.group?.nombre ? ` · ${payment.student.group.nombre}` : ""}
                                 </p>
                               </div>
-                              <p className="text-[1.8rem] font-black tracking-tight text-brand-600">{currency(payment.monto)}</p>
+                              <p className="shrink-0 text-2xl font-black leading-none text-brand-600">{currency(payment.monto)}</p>
                             </div>
                           </article>
                         ))}
@@ -486,7 +526,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                 );
               })
             ) : (
-              <section className="rounded-[28px] border border-ink-100 bg-white px-6 py-14 text-center shadow-soft">
+              <section className="rounded-[24px] border border-ink-100 bg-white px-6 py-14 text-center shadow-sm">
                 <h3 className="text-lg font-bold text-ink-950">No hay inscripciones pagadas</h3>
                 <p className="mt-2 text-sm text-ink-500">Prueba con otro mes o revisa si ya registraste pagos de inscripcion.</p>
               </section>

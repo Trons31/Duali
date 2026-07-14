@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { sileo } from "sileo";
-import { FiCalendar, FiChevronDown, FiChevronUp, FiPlus } from "react-icons/fi";
+import { FiCalendar, FiChevronDown, FiChevronUp, FiFilter, FiPlus, FiTrendingDown } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -46,6 +46,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ExpenseItem | null>(null);
   const [filterMode, setFilterMode] = useState<ExpenseFilterMode>("day");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(currentMonthValue());
   const [selectedDay, setSelectedDay] = useState(new Date().getDate());
   const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
@@ -80,7 +81,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
       block: "nearest",
       inline: "center"
     });
-  }, [selectedDay, selectedMonth]);
+  }, [filtersOpen, selectedDay, selectedMonth]);
 
   const expensesForSelectedDay = useMemo(
     () => monthlyExpenses.filter((expense) => normalizeDateKey(expense.fecha) === selectedDate),
@@ -154,119 +155,154 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="space-y-5">
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Finanzas</p>
-                <h1 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950 sm:text-[2.2rem]">Egresos</h1>
-                <p className="mt-2 text-sm text-ink-500">
-                  {filterMode === "day"
-                    ? `${expensesForSelectedDay.length} ese día · ${currency(totalForSelectedDay)}`
-                    : `${monthSummary.totalCount} en el mes · ${currency(monthSummary.totalAmount)}`}
-                </p>
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <header className="flex min-w-0 items-start justify-between gap-3 px-1">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+              <FiTrendingDown className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-rose-600">Finanzas</p>
+              <h1 className="mt-1 text-[1.75rem] font-black leading-none text-ink-950 sm:text-[2rem]">Egresos</h1>
+              <p className="mt-2 hidden text-sm leading-5 text-ink-500 sm:block">Registra y consulta los gastos de tu negocio.</p>
+            </div>
+          </div>
+          <Button className="min-h-10 shrink-0 rounded-xl px-3 text-xs font-bold sm:px-4 sm:text-sm" onClick={openCreateModal}>
+            <FiPlus className="size-4" />
+            Nuevo egreso
+          </Button>
+        </header>
+
+        <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:px-6 sm:py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-ink-500">
+                {filterMode === "day"
+                  ? monthDays.find((day) => day.day === selectedDay)?.label
+                  : formatMonthLabel(selectedMonth)}
+              </p>
+              <p className="mt-1 text-base font-black text-ink-950 sm:text-lg">
+                {filterMode === "day"
+                  ? `${expensesForSelectedDay.length} egresos · ${currency(totalForSelectedDay)}`
+                  : `${monthSummary.totalCount} egresos · ${currency(monthSummary.totalAmount)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                filtersOpen
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+              )}
+              aria-expanded={filtersOpen}
+              aria-controls="expense-filters"
+            >
+              <FiFilter className="size-4" />
+              <span className="hidden min-[360px]:inline">Filtros</span>
+              <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+            </button>
+          </div>
+
+          {filtersOpen ? (
+            <div id="expense-filters" className="mt-4 border-t border-ink-100 pt-4">
+              <p className="text-sm font-bold text-ink-800">Periodo</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-sm">
+                {([
+                  { value: "day", label: "Por día" },
+                  { value: "month", label: "Por mes" }
+                ] as const).map((option) => {
+                  const active = filterMode === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setFilterMode(option.value)}
+                      className={cn(
+                        "min-h-10 rounded-xl border px-3 text-xs font-semibold transition sm:text-sm",
+                        active
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+                      )}
+                      aria-pressed={active}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFilterMode("day")}
-                  className={cn(
-                    "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                    filterMode === "day"
-                      ? "border-ink-950 bg-ink-950 text-white"
-                      : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                  )}
-                >
-                  Por día
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode("month")}
-                  className={cn(
-                    "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                    filterMode === "month"
-                      ? "border-ink-950 bg-ink-950 text-white"
-                      : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                  )}
-                >
-                  Por mes
-                </button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,220px)_auto] sm:items-center">
-                <div className="relative min-w-0">
-                  <FiCalendar className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
+              <label className="mt-4 block max-w-xs">
+                <span className="mb-2 block text-xs font-bold text-ink-600">Mes</span>
+                <span className="relative block">
+                  <FiCalendar className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
                   <input
                     type="month"
                     value={selectedMonth}
                     onChange={(event) => setSelectedMonth(event.target.value)}
-                    className="field-base h-11 w-full rounded-[18px] pl-11 pr-4 text-[14px]"
+                    className="field-base h-11 w-full rounded-xl py-2 pl-10 pr-3 text-sm"
                   />
+                </span>
+              </label>
+
+              {filterMode === "day" ? (
+                <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
+                  <div className="flex min-w-max gap-2">
+                    {monthDays.map((day) => {
+                      const isSelected = day.day === selectedDay;
+                      const count = countByDay.get(day.dateKey) ?? 0;
+
+                      return (
+                        <button
+                          key={day.dateKey}
+                          ref={(node) => {
+                            dayButtonRefs.current[day.dateKey] = node;
+                          }}
+                          type="button"
+                          onClick={() => setSelectedDay(day.day)}
+                          className={cn(
+                            "relative min-h-10 rounded-xl border px-3 text-xs font-semibold transition",
+                            isSelected
+                              ? "border-rose-500 bg-rose-500 text-white"
+                              : "border-ink-200 bg-ink-50 text-ink-700 hover:bg-white"
+                          )}
+                        >
+                          {day.label}
+                          {count > 0 ? (
+                            <span
+                              className={cn(
+                                "absolute right-1.5 top-1.5 size-1.5 rounded-full",
+                                isSelected ? "bg-white" : "bg-rose-400"
+                              )}
+                            />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <Button className="min-h-11 w-full rounded-[18px] px-5 text-sm font-semibold sm:w-auto" onClick={openCreateModal}>
-                  <FiPlus className="size-4" />
-                  Nuevo egreso
-                </Button>
-              </div>
+              ) : null}
             </div>
-
-            {filterMode === "day" ? (
-              <div className="-mx-5 overflow-x-auto px-5 pb-1 sm:-mx-6 sm:px-6">
-                <div className="flex min-w-max gap-3">
-                  {monthDays.map((day) => {
-                    const isSelected = day.day === selectedDay;
-                    const count = countByDay.get(day.dateKey) ?? 0;
-
-                    return (
-                      <button
-                        key={day.dateKey}
-                        ref={(node) => {
-                          dayButtonRefs.current[day.dateKey] = node;
-                        }}
-                        type="button"
-                        onClick={() => setSelectedDay(day.day)}
-                        className={cn(
-                          "relative rounded-[18px] px-5 py-3 text-sm font-semibold transition",
-                          isSelected
-                            ? "bg-rose-500 text-white shadow-soft"
-                            : "border border-ink-200 bg-ink-50 text-ink-700 hover:border-ink-300 hover:bg-white"
-                        )}
-                      >
-                        {day.label}
-                        {count > 0 ? (
-                          <span
-                            className={cn(
-                              "absolute right-2 top-2 size-2 rounded-full",
-                              isSelected ? "bg-white/85" : "bg-rose-400"
-                            )}
-                          />
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          ) : null}
         </section>
 
         {filterMode === "day" ? (
           expensesForSelectedDay.length ? (
-            <section className="grid gap-4 xl:grid-cols-2">
+            <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
               {expensesForSelectedDay.map((expense) => (
                 <ExpenseCard key={expense.id} expense={expense} onDelete={() => setDeleteTarget(expense)} />
               ))}
             </section>
           ) : (
-            <section className="rounded-[28px] border border-ink-100 bg-white px-6 py-16 text-center shadow-soft">
-              <div className="mx-auto flex size-20 items-center justify-center rounded-[28px] bg-ink-50 text-ink-300">
-                <FiCalendar className="size-8" />
+            <section className="rounded-[24px] border border-ink-100 bg-white px-6 py-12 text-center shadow-sm">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-ink-50 text-ink-300">
+                <FiCalendar className="size-5" />
               </div>
-              <h2 className="mt-6 text-[1.9rem] font-black tracking-tight text-ink-950">Sin egresos ese día</h2>
-              <p className="mt-2 text-sm text-ink-500">Toca el botón para registrar un gasto del día seleccionado.</p>
+              <h2 className="mt-4 text-base font-black text-ink-950">Sin egresos ese día</h2>
+              <p className="mt-2 text-sm text-ink-500">Registra un gasto para la fecha seleccionada.</p>
             </section>
           )
         ) : groupedMonthExpenses.length ? (
@@ -274,10 +310,10 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
             const isCollapsed = Boolean(collapsedDays[group.key]);
 
             return (
-              <section key={group.key} className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+              <section key={group.key} className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
                 <div className="flex items-start justify-between gap-3 px-5 py-4 sm:px-6">
                   <div>
-                    <h2 className="text-[1.45rem] font-black tracking-tight text-ink-950">{group.title}</h2>
+                    <h2 className="text-lg font-black text-ink-950">{group.title}</h2>
                     <p className="mt-1 text-sm font-semibold text-ink-400">
                       {group.count} {group.count === 1 ? "registro" : "registros"} · {currency(group.totalAmount)}
                     </p>
@@ -285,15 +321,15 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
                   <button
                     type="button"
                     onClick={() => toggleDaySection(group.key)}
-                    className="rounded-full p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
+                    className="rounded-xl p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
                     aria-label={isCollapsed ? "Mostrar egresos del día" : "Ocultar egresos del día"}
                   >
-                    {isCollapsed ? <FiChevronDown className="size-6" /> : <FiChevronUp className="size-6" />}
+                    {isCollapsed ? <FiChevronDown className="size-5" /> : <FiChevronUp className="size-5" />}
                   </button>
                 </div>
 
                 {isCollapsed ? null : (
-                  <div className="grid gap-4 border-t border-ink-100 px-4 py-4 sm:px-6 sm:py-6 xl:grid-cols-2">
+                  <div className="grid gap-3 border-t border-ink-100 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                     {group.items.map((expense) => (
                       <ExpenseCard key={expense.id} expense={expense} onDelete={() => setDeleteTarget(expense)} />
                     ))}
@@ -303,11 +339,11 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
             );
           })
         ) : (
-          <section className="rounded-[28px] border border-ink-100 bg-white px-6 py-16 text-center shadow-soft">
-            <div className="mx-auto flex size-20 items-center justify-center rounded-[28px] bg-ink-50 text-ink-300">
-              <FiCalendar className="size-8" />
+          <section className="rounded-[24px] border border-ink-100 bg-white px-6 py-12 text-center shadow-sm">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-ink-50 text-ink-300">
+              <FiCalendar className="size-5" />
             </div>
-            <h2 className="mt-6 text-[1.9rem] font-black tracking-tight text-ink-950">Sin egresos ese mes</h2>
+            <h2 className="mt-4 text-base font-black text-ink-950">Sin egresos ese mes</h2>
             <p className="mt-2 text-sm text-ink-500">Selecciona otro mes o registra un nuevo gasto.</p>
           </section>
         )}
@@ -347,10 +383,10 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
           </Field>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button className="min-h-11 flex-1 rounded-[18px]" type="button" variant="secondary" onClick={closeCreateModal}>
+            <Button className="min-h-11 flex-1 rounded-xl" type="button" variant="secondary" onClick={closeCreateModal}>
               Cancelar
             </Button>
-            <Button className="min-h-11 flex-1 rounded-[18px]" type="submit" loading={isSubmitting}>
+            <Button className="min-h-11 flex-1 rounded-xl" type="submit" loading={isSubmitting}>
               Registrar egreso
             </Button>
           </div>
@@ -371,24 +407,24 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
 
 function ExpenseCard({ expense, onDelete }: { expense: ExpenseItem; onDelete: () => void }) {
   return (
-    <article className="rounded-[24px] border border-ink-100 bg-white px-5 py-5 shadow-[0_10px_26px_rgba(15,23,42,0.06)]">
+    <article className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-400">{expense.categoria || "General"}</p>
           <h3 className="mt-2 text-[15px] font-semibold text-ink-950">{expense.concepto}</h3>
           <p className="mt-2 text-sm text-ink-500">{expense.descripcion || "Sin descripción."}</p>
         </div>
-        <Button type="button" variant="danger" onClick={onDelete}>
+        <Button className="min-h-9 shrink-0 rounded-xl px-3 text-xs" type="button" variant="danger" onClick={onDelete}>
           Eliminar
         </Button>
       </div>
 
-      <div className="mt-5 flex items-end justify-between gap-4">
+      <div className="mt-4 flex items-end justify-between gap-4 border-t border-ink-100 pt-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-400">Fecha</p>
           <p className="mt-2 text-sm font-semibold text-ink-900">{formatDate(expense.fecha)}</p>
         </div>
-        <p className="text-[1.9rem] font-black tracking-tight text-rose-700">{currency(expense.monto)}</p>
+        <p className="shrink-0 text-2xl font-black leading-none text-rose-700">{currency(expense.monto)}</p>
       </div>
     </article>
   );
@@ -420,6 +456,11 @@ function currentMonthValue() {
 function buildSelectedDate(monthValue: string, day: number) {
   const [year, month] = monthValue.split("-").map(Number);
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(monthValue: string) {
+  const [year, month] = monthValue.split("-").map(Number);
+  return `${MONTH_NAMES[month - 1] ?? month} ${year}`;
 }
 
 function buildMonthDays(monthValue: string) {

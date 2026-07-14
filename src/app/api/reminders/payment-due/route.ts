@@ -12,46 +12,44 @@ export async function GET(request: Request) {
     const now = new Date();
     const soon = addDays(now, days);
 
-    const [clientConfig, payments, enrollments] = await Promise.all([
-      prisma.client.findFirst({
-        where: { id: clientId, deletedAt: null },
-        select: {
-          businessName: true,
-          paymentMethods: true,
-          paymentMethodItems: true,
-          whatsappMessageTemplate: true
-        }
-      }),
-      prisma.monthlyPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          estado: { in: ["PENDIENTE", "VENCIDO"] },
-          fechaVencimiento: { lte: soon }
-        },
-        include: { student: true, group: true },
-        orderBy: { fechaVencimiento: "asc" }
-      }),
-      prisma.enrollmentPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          estado: { in: ["PENDIENTE", "VENCIDO"] },
-          fechaVencimiento: { lte: soon }
-        },
-        include: { student: { include: { group: true } } },
-        orderBy: { fechaVencimiento: "asc" }
-      })
-    ]);
+    const clientConfig = await prisma.client.findFirst({
+      where: { id: clientId, deletedAt: null },
+      select: {
+        businessName: true,
+        paymentMethods: true,
+        paymentMethodItems: true,
+        whatsappMessageTemplate: true
+      }
+    });
+    const payments = await prisma.monthlyPayment.findMany({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: { in: ["PENDIENTE", "VENCIDO"] },
+        fechaVencimiento: { lte: soon }
+      },
+      include: { student: true, group: true },
+      orderBy: { fechaVencimiento: "asc" }
+    });
+    const enrollments = await prisma.enrollmentPayment.findMany({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: { in: ["PENDIENTE", "VENCIDO"] },
+        fechaVencimiento: { lte: soon }
+      },
+      include: { student: { include: { group: true } } },
+      orderBy: { fechaVencimiento: "asc" }
+    });
     if (!clientConfig) throw new Error("Cliente no encontrado");
 
     return ok(
       [
         ...payments.map((payment) => ({
-        ...payment,
-        kind: "MONTHLY_PAYMENT",
-        reminder: buildReminderForPayment(payment, clientConfig),
-        isOverdue: payment.fechaVencimiento < now
+          ...payment,
+          kind: "MONTHLY_PAYMENT",
+          reminder: buildReminderForPayment(payment, clientConfig),
+          isOverdue: payment.fechaVencimiento < now
         })),
         ...enrollments.map((payment) => ({
           ...payment,

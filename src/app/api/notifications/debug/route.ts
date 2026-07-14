@@ -48,95 +48,92 @@ export async function GET(request: Request) {
     const { clientId } = await requireClient(request);
     const now = new Date();
 
-    const [tokens, recentNotifications, recentOutbox, recentDeliveries, notificationCounts, outboxCounts, deliveryCounts] =
-      await Promise.all([
-        prisma.pushToken.findMany({
-          where: { clientId },
-          orderBy: [{ updatedAt: "desc" }],
-          select: {
-            id: true,
-            token: true,
-            platform: true,
-            deviceName: true,
-            isActive: true,
-            lastUsedAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }),
-        prisma.notification.findMany({
-          where: { clientId },
-          orderBy: [{ createdAt: "desc" }],
-          take: 20,
-          select: {
-            id: true,
-            sequence: true,
-            type: true,
-            title: true,
-            status: true,
-            attempts: true,
-            nextAttemptAt: true,
-            sentAt: true,
-            deliveredAt: true,
-            readAt: true,
-            error: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }),
-        prisma.notificationOutbox.findMany({
-          where: { clientId },
-          orderBy: [{ updatedAt: "desc" }],
-          take: 20,
-          select: {
-            id: true,
-            notificationId: true,
-            status: true,
-            attemptCount: true,
-            nextAttemptAt: true,
-            processingStartedAt: true,
-            lastAttemptAt: true,
-            sentAt: true,
-            lastError: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }),
-        prisma.notificationDelivery.findMany({
-          where: { clientId },
-          orderBy: [{ updatedAt: "desc" }],
-          take: 20,
-          select: {
-            id: true,
-            notificationId: true,
-            channel: true,
-            attempt: true,
-            status: true,
-            providerMessageId: true,
-            lastError: true,
-            sentAt: true,
-            deliveredAt: true,
-            failedAt: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }),
-        prisma.notification.groupBy({
-          by: ["status"],
-          where: { clientId },
-          _count: { _all: true }
-        }),
-        prisma.notificationOutbox.groupBy({
-          by: ["status"],
-          where: { clientId },
-          _count: { _all: true }
-        }),
-        prisma.notificationDelivery.groupBy({
-          by: ["channel", "status"],
-          where: { clientId },
-          _count: { _all: true }
-        })
-      ]);
+    const tokens = await prisma.pushToken.findMany({
+      where: { clientId },
+      orderBy: [{ updatedAt: "desc" }],
+      select: {
+        id: true,
+        token: true,
+        platform: true,
+        deviceName: true,
+        isActive: true,
+        lastUsedAt: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    const recentNotifications = await prisma.notification.findMany({
+      where: { clientId },
+      orderBy: [{ createdAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        sequence: true,
+        type: true,
+        title: true,
+        status: true,
+        attempts: true,
+        nextAttemptAt: true,
+        sentAt: true,
+        deliveredAt: true,
+        readAt: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    const recentOutbox = await prisma.notificationOutbox.findMany({
+      where: { clientId },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        notificationId: true,
+        status: true,
+        attemptCount: true,
+        nextAttemptAt: true,
+        processingStartedAt: true,
+        lastAttemptAt: true,
+        sentAt: true,
+        lastError: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    const recentDeliveries = await prisma.notificationDelivery.findMany({
+      where: { clientId },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        notificationId: true,
+        channel: true,
+        attempt: true,
+        status: true,
+        providerMessageId: true,
+        lastError: true,
+        sentAt: true,
+        deliveredAt: true,
+        failedAt: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    const notificationCounts = await prisma.notification.groupBy({
+      by: ["status"],
+      where: { clientId },
+      _count: { _all: true }
+    });
+    const outboxCounts = await prisma.notificationOutbox.groupBy({
+      by: ["status"],
+      where: { clientId },
+      _count: { _all: true }
+    });
+    const deliveryCounts = await prisma.notificationDelivery.groupBy({
+      by: ["channel", "status"],
+      where: { clientId },
+      _count: { _all: true }
+    });
 
     const duePendingCount = await prisma.notificationOutbox.count({
       where: {

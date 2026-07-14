@@ -75,7 +75,7 @@ export function AdminSubscriptionsPanel({ data }: { data: AdminSubscriptionsResp
   }
 
   return (
-    <main className="min-h-screen bg-white px-4 py-6 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-ink-50 px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>

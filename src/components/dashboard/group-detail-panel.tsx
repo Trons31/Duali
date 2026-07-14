@@ -240,7 +240,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
   });
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-5xl space-y-5">
         <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
           <div className="space-y-5">

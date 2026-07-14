@@ -12,21 +12,21 @@ export default async function AdminPage() {
     orderBy: { createdAt: "desc" }
   });
 
-  const clientsWithSubscriptions = await Promise.all(
-    clients.map(async (client) => {
-      const subscription = await ensureClientSubscription(client.id);
+  const clientsWithSubscriptions = [];
 
-      return {
-        id: client.id,
-        nombre: client.nombre,
-        email: client.email,
-        telefono: client.telefono,
-        businessName: client.businessName,
-        createdAt: client.createdAt.toISOString(),
-        subscription: serializeSubscription(subscription)
-      };
-    })
-  );
+  for (const client of clients) {
+    const subscription = await ensureClientSubscription(client.id);
+
+    clientsWithSubscriptions.push({
+      id: client.id,
+      nombre: client.nombre,
+      email: client.email,
+      telefono: client.telefono,
+      businessName: client.businessName,
+      createdAt: client.createdAt.toISOString(),
+      subscription: serializeSubscription(subscription)
+    });
+  }
 
   const data: AdminSubscriptionsResponse = {
     clients: clientsWithSubscriptions,

@@ -39,7 +39,7 @@ export function AdminLoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-ink-50 px-4 py-10">
       <section className="w-full max-w-md rounded-[28px] border border-ink-100 bg-white px-6 py-6 shadow-soft">
         <div className="flex items-center gap-3">
           <BrandLogo size={54} priority />

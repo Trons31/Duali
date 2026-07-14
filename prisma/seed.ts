@@ -1,3 +1,4 @@
+import "../src/lib/prisma-debug";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -85,12 +86,10 @@ async function main() {
     }
   });
 
-  console.log("Seed listo: admin@demo.com / Password123!");
 }
 
 main()
-  .catch((error) => {
-    console.error(error);
+  .catch(() => {
     process.exit(1);
   })
   .finally(async () => {

@@ -2,10 +2,31 @@ import { currentMonthlyPeriod, endOfCurrentMonth, monthlyDueDateForPeriod, payme
 import { prisma } from "./prisma";
 import { reactivateExpiredStudentPauses } from "./student-billing";
 
-export async function ensureCurrentMonthlyPayments(clientId: string) {
-  await prisma.$transaction(async (tx) => {
-    await reactivateExpiredStudentPauses(tx, clientId);
-  });
+const pendingEnsures = new Map<string, Promise<void>>();
+const lastSuccessfulEnsure = new Map<string, number>();
+const ENSURE_CACHE_MS = 30_000;
+
+export function ensureCurrentMonthlyPayments(clientId: string) {
+  const lastEnsure = lastSuccessfulEnsure.get(clientId) ?? 0;
+  if (Date.now() - lastEnsure < ENSURE_CACHE_MS) return Promise.resolve();
+
+  const pending = pendingEnsures.get(clientId);
+  if (pending) return pending;
+
+  const ensure = runEnsureCurrentMonthlyPayments(clientId)
+    .then(() => {
+      lastSuccessfulEnsure.set(clientId, Date.now());
+    })
+    .finally(() => {
+      if (pendingEnsures.get(clientId) === ensure) pendingEnsures.delete(clientId);
+    });
+
+  pendingEnsures.set(clientId, ensure);
+  return ensure;
+}
+
+async function runEnsureCurrentMonthlyPayments(clientId: string) {
+  await reactivateExpiredStudentPauses(prisma, clientId);
 
   const { mes, anio } = currentMonthlyPeriod();
   const todayStart = startOfLocalDay();

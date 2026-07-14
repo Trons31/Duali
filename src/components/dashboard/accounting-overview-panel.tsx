@@ -10,6 +10,7 @@ import {
   FiChevronUp,
   FiCreditCard,
   FiDollarSign,
+  FiFilter,
   FiLayers,
   FiTrendingDown,
   FiTrendingUp
@@ -36,6 +37,7 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
   const router = useRouter();
   const pathname = usePathname();
   const [closedDays, setClosedDays] = useState<Record<string, boolean>>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const groupedMovements = useMemo(() => groupMovementsByDay(data.movements), [data.movements]);
 
@@ -59,33 +61,64 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
   const monthInputValue = `${data.period.year}-${String(data.period.month).padStart(2, "0")}`;
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="space-y-5">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Historial</p>
-              <h1 className="mt-2 text-[1.7rem] font-black tracking-tight text-ink-950 sm:text-[2rem]">
-                {data.period.monthLabel}
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-ink-500">
-                Revisa ingresos, egresos, metodos de pago y movimientos del mes seleccionado.
-              </p>
-            </div>
-
-            <label className="relative block max-w-[260px]">
-              <FiCalendar className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
-              <input
-                type="month"
-                value={monthInputValue}
-                onChange={(event) => handleMonthInput(event.target.value)}
-                className="field-base h-11 w-full rounded-[18px] pl-11 pr-4 text-[14px]"
-              />
-            </label>
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <header className="flex min-w-0 items-start gap-3 px-1">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+            <FiTrendingUp className="size-5" />
           </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-brand-700">Finanzas</p>
+            <h1 className="mt-1 text-[1.75rem] font-black leading-none text-ink-950 sm:text-[2rem]">Contabilidad</h1>
+            <p className="mt-2 hidden text-sm leading-5 text-ink-500 sm:block">
+              Consulta el balance y los movimientos de tu negocio.
+            </p>
+          </div>
+        </header>
+
+        <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:px-6 sm:py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-ink-500">Periodo seleccionado</p>
+              <p className="mt-1 text-base font-black text-ink-950 sm:text-lg">{data.period.monthLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                filtersOpen
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+              )}
+              aria-expanded={filtersOpen}
+              aria-controls="accounting-filters"
+            >
+              <FiFilter className="size-4" />
+              <span className="hidden min-[360px]:inline">Filtros</span>
+              <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+            </button>
+          </div>
+
+          {filtersOpen ? (
+            <div id="accounting-filters" className="mt-4 border-t border-ink-100 pt-4">
+              <label className="block max-w-xs">
+                <span className="mb-2 block text-xs font-bold text-ink-600">Mes</span>
+                <span className="relative block">
+                  <FiCalendar className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
+                  <input
+                    type="month"
+                    value={monthInputValue}
+                    onChange={(event) => handleMonthInput(event.target.value)}
+                    className="field-base h-11 w-full rounded-xl py-2 pl-10 pr-3 text-sm"
+                  />
+                </span>
+              </label>
+            </div>
+          ) : null}
         </section>
 
-        <section className="grid grid-cols-2 gap-3 sm:gap-4">
+        <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <SummaryCard
             title="Ingresos"
             value={currency(data.summary.ingresos)}
@@ -116,48 +149,48 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
           />
         </section>
 
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
+        <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[1.5rem] font-black tracking-tight text-ink-950 sm:text-[1.7rem]">Metodos de pago</h2>
-              <p className="mt-2 text-sm text-ink-500">Distribucion del dinero cobrado entre mensualidades e inscripciones.</p>
+              <h2 className="text-lg font-black text-ink-950">Métodos de pago</h2>
+              <p className="mt-1 text-sm leading-5 text-ink-500">Distribución de los ingresos del periodo.</p>
             </div>
-            <div className="flex size-11 items-center justify-center rounded-[18px] bg-brand-50 text-brand-600">
-              <FiCreditCard className="size-5" />
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <FiCreditCard className="size-4" />
             </div>
           </div>
 
           {data.paymentMethods.length ? (
-            <div className="mt-6 space-y-5">
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
               {data.paymentMethods.map((method) => (
-                <div key={method.method} className="space-y-2.5">
+                <div key={method.method} className="space-y-2.5 rounded-2xl border border-ink-100 p-4">
                   <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <p className="text-[15px] font-bold text-ink-950">{method.method}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink-950">{method.method}</p>
                       <p className="mt-1 text-sm font-semibold text-ink-400">
                         {method.count} {method.count === 1 ? "cobro" : "cobros"} · {method.percentage}%
                       </p>
                     </div>
-                    <p className="text-[1.45rem] font-black tracking-tight text-brand-600">{currency(method.amount)}</p>
+                    <p className="shrink-0 text-lg font-black text-brand-600">{currency(method.amount)}</p>
                   </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-brand-50">
+                  <div className="h-2 overflow-hidden rounded-full bg-brand-50">
                     <div className="h-full rounded-full bg-brand-600" style={{ width: `${Math.max(method.percentage, 6)}%` }} />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="mt-6 rounded-[24px] border border-dashed border-ink-200 bg-ink-50 px-5 py-10 text-center">
-              <p className="text-base font-bold text-ink-900">Aun no hay ingresos en este mes</p>
-              <p className="mt-2 text-sm text-ink-500">Cuando registres cobros pagados, aqui veras su distribucion por metodo.</p>
+            <div className="mt-5 rounded-2xl border border-dashed border-ink-200 bg-ink-50 px-5 py-8 text-center">
+              <p className="text-sm font-bold text-ink-900">Aún no hay ingresos en este mes</p>
+              <p className="mt-2 text-sm text-ink-500">Los cobros registrados aparecerán distribuidos por método.</p>
             </div>
           )}
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-end justify-between gap-4 px-1">
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-4 px-1 py-1">
             <div>
-              <h2 className="text-[1.7rem] font-black tracking-tight text-ink-950 sm:text-[1.9rem]">Movimientos</h2>
+              <h2 className="text-lg font-black text-ink-950">Movimientos</h2>
               <p className="mt-1 text-sm font-semibold text-ink-400">
                 {data.summary.movimientos} {data.summary.movimientos === 1 ? "registro" : "registros"}
               </p>
@@ -169,10 +202,10 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
               const isClosed = Boolean(closedDays[group.key]);
 
               return (
-                <section key={group.key} className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+                <section key={group.key} className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
                   <div className="flex items-start justify-between gap-3 px-5 py-4 sm:px-6">
                     <div>
-                      <h3 className="text-[1.25rem] font-black tracking-tight text-ink-950 sm:text-[1.4rem]">{group.title}</h3>
+                      <h3 className="text-base font-black text-ink-950 sm:text-lg">{group.title}</h3>
                       <p className="mt-1 text-sm font-semibold text-ink-400">
                         {group.count} {group.count === 1 ? "movimiento" : "movimientos"} · {currency(group.totalAmount)}
                       </p>
@@ -180,15 +213,15 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
                     <button
                       type="button"
                       onClick={() => toggleDay(group.key)}
-                      className="rounded-full p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
+                      className="rounded-xl p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
                       aria-label={isClosed ? "Mostrar movimientos del dia" : "Ocultar movimientos del dia"}
                     >
-                      {isClosed ? <FiChevronDown className="size-6" /> : <FiChevronUp className="size-6" />}
+                      {isClosed ? <FiChevronDown className="size-5" /> : <FiChevronUp className="size-5" />}
                     </button>
                   </div>
 
                   {isClosed ? null : (
-                    <div className="grid gap-4 border-t border-ink-100 px-4 py-4 sm:px-6 sm:py-6">
+                    <div className="grid gap-3 border-t border-ink-100 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                       {group.items.map((movement) => (
                         <MovementCard key={`${group.key}-${movement.type}-${movement.id}`} movement={movement} />
                       ))}
@@ -198,12 +231,12 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
               );
             })
           ) : (
-            <section className="rounded-[28px] border border-ink-100 bg-white px-6 py-16 text-center shadow-soft">
-              <div className="mx-auto flex size-20 items-center justify-center rounded-[28px] bg-ink-50 text-ink-300">
-                <FiCalendar className="size-8" />
+            <section className="rounded-[24px] border border-ink-100 bg-white px-6 py-12 text-center shadow-sm">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-ink-50 text-ink-300">
+                <FiCalendar className="size-5" />
               </div>
-              <h2 className="mt-6 text-[1.75rem] font-black tracking-tight text-ink-950">Sin movimientos ese mes</h2>
-              <p className="mt-2 text-sm text-ink-500">Prueba con otro mes o registra cobros y egresos para ver actividad aqui.</p>
+              <h2 className="mt-4 text-base font-black text-ink-950">Sin movimientos ese mes</h2>
+              <p className="mt-2 text-sm text-ink-500">Prueba con otro mes o registra cobros y egresos.</p>
             </section>
           )}
         </section>
@@ -227,47 +260,40 @@ function SummaryCard({
 }) {
   const toneStyles = {
     success: {
-      card: "bg-emerald-50",
-      value: "text-brand-600",
-      icon: "text-brand-600"
+      value: "text-emerald-700",
+      icon: "bg-emerald-50 text-emerald-600"
     },
     warning: {
-      card: "bg-amber-50",
-      value: "text-amber-600",
-      icon: "text-amber-500"
+      value: "text-amber-500",
+      icon: "bg-amber-50 text-amber-500"
     },
     violet: {
-      card: "bg-violet-50",
       value: "text-violet-600",
-      icon: "text-violet-500"
+      icon: "bg-violet-50 text-violet-600"
     },
     blue: {
-      card: "bg-sky-50",
-      value: "text-sky-600",
-      icon: "text-sky-500"
+      value: "text-blue-600",
+      icon: "bg-blue-50 text-blue-600"
     }
   }[tone];
 
   return (
-    <article className={cn("rounded-[28px] border border-ink-100 px-4 py-4 shadow-soft sm:px-5 sm:py-5", toneStyles.card)}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[11px] font-bold leading-none text-ink-500 sm:text-[12px]">{title}</p>
-        <div className={cn("flex size-8 shrink-0 items-center justify-center rounded-[14px] bg-white/75 sm:size-9", toneStyles.icon)}>
+    <article className="flex h-[152px] min-w-0 flex-col rounded-2xl border border-ink-100 bg-white p-3 shadow-sm transition hover:shadow-md sm:h-auto sm:rounded-[24px] sm:p-6">
+      <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-start gap-2 sm:flex sm:gap-4">
+        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-12 sm:rounded-2xl", toneStyles.icon)}>
           {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="min-h-8 text-[11px] font-bold leading-4 text-ink-500 sm:min-h-0 sm:text-sm">{title}</p>
+          <p className={cn("mt-1.5 break-words text-lg font-black leading-none sm:mt-3 sm:text-2xl", toneStyles.value)}>
+            {value}
+          </p>
         </div>
       </div>
 
-      <div className="mt-3 min-w-0">
-        <p
-          className={cn(
-            "truncate text-[1.2rem] font-black tracking-tight leading-none sm:text-[1.55rem]",
-            toneStyles.value
-          )}
-        >
-          {value}
-        </p>
-        <p className="mt-2 text-[11px] font-semibold leading-snug text-ink-500 sm:text-[12px]">{caption}</p>
-      </div>
+      <p className="mt-auto min-w-0 pt-3 text-[11px] font-medium leading-4 text-ink-500 sm:truncate sm:pt-8 sm:text-sm">
+        {caption}
+      </p>
     </article>
   );
 }
@@ -276,22 +302,22 @@ function MovementCard({ movement }: { movement: AccountingMovement }) {
   const isIncome = movement.direction === "income";
 
   return (
-    <article className="rounded-[24px] border border-ink-100 bg-white px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.06)] sm:px-5">
+    <article className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div
           className={cn(
-            "flex size-14 shrink-0 items-center justify-center rounded-[20px]",
+            "flex size-10 shrink-0 items-center justify-center rounded-xl",
             isIncome ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"
           )}
         >
-          {isIncome ? <FiArrowDownRight className="size-6" /> : <FiArrowUpRight className="size-6" />}
+          {isIncome ? <FiArrowDownRight className="size-4" /> : <FiArrowUpRight className="size-4" />}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="truncate text-[14px] font-bold leading-tight text-ink-950 sm:text-[15px]">{movement.title}</h3>
-              <p className="mt-1 text-[12px] font-semibold leading-snug text-ink-500 sm:text-[13px]">{movement.subtitle}</p>
+              <h3 className="truncate text-sm font-bold leading-tight text-ink-950">{movement.title}</h3>
+              <p className="mt-1 text-xs font-semibold leading-snug text-ink-500 sm:text-[13px]">{movement.subtitle}</p>
               {movement.type === "ABONO" ? (
                 <p className="mt-2 text-[12px] font-bold text-sky-700">
                   Abono: {currency(movement.amount)} · Quedo debiendo: {currency(movement.remainingBalance ?? 0)}
@@ -302,7 +328,7 @@ function MovementCard({ movement }: { movement: AccountingMovement }) {
             <div className="shrink-0 text-right">
               <p
                 className={cn(
-                  "text-[1.05rem] font-black tracking-tight leading-none sm:text-[1.45rem]",
+                  "text-base font-black leading-none sm:text-xl",
                   isIncome ? "text-brand-600" : "text-rose-600"
                 )}
               >

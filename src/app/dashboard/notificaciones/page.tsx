@@ -6,7 +6,7 @@ export default async function NotificationsPage() {
   const payload = await apiFetch<{ notifications: NotificationItem[] }>("/api/notifications?afterSequence=0&limit=100");
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <section className="px-1 py-1 sm:px-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-ink-400">Bandeja</p>

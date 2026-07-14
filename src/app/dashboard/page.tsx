@@ -1,28 +1,20 @@
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
-import { apiFetch } from "@/lib/server-api";
+import {
+  getDashboardGroupSummaries,
+  getDashboardPendingPayments,
+  toDashboardDueItems,
+  toGroupSummaries
+} from "@/lib/dashboard-data";
+import { getAccountingSummary } from "@/lib/accounting";
 import { auth } from "@/lib/web-auth";
-import type { AccountingSummary, GroupSummary } from "@/lib/web-types";
-
-type DueItem = {
-  id: string;
-  kind: "MONTHLY_PAYMENT" | "ENROLLMENT_PAYMENT";
-  monto: number | string;
-  fechaVencimiento: string;
-  student: {
-    nombre: string;
-    apellido: string;
-  };
-  group?: {
-    nombre: string;
-  } | null;
-};
 
 export default async function DashboardPage() {
   const session = await auth();
+  const clientId = session?.user?.id ?? "";
   const [summary, pending, groups] = await Promise.all([
-    apiFetch<AccountingSummary>("/api/accounting/summary"),
-    apiFetch<DueItem[]>("/api/monthly-payments/pending"),
-    apiFetch<GroupSummary[]>("/api/groups")
+    getAccountingSummary(clientId),
+    getDashboardPendingPayments(clientId),
+    getDashboardGroupSummaries(clientId)
   ]);
 
   return (
@@ -30,8 +22,8 @@ export default async function DashboardPage() {
       userName={session?.user?.name}
       businessName={session?.user?.businessName ?? "Duali"}
       summary={summary}
-      pending={pending}
-      groups={groups}
+      pending={toDashboardDueItems(pending)}
+      groups={toGroupSummaries(groups)}
     />
   );
 }

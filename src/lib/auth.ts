@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt, { SignOptions } from "jsonwebtoken";
-import { Client, Prisma } from "@prisma/client";
+import type { Client, Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { ApiError } from "./http";
 

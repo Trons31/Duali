@@ -13,21 +13,21 @@ import {
 
 export const navSections = [
   {
-    title: "General",
+    title: "PRINCIPAL",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: FiGrid },
+      { href: "/dashboard", label: "Inicio", icon: FiGrid },
       { href: "/dashboard/notificaciones", label: "Notificaciones", icon: FiBell }
     ]
   },
   {
-    title: "Academia",
+    title: "ACADEMIA",
     items: [
       { href: "/dashboard/estudiantes", label: "Estudiantes", icon: FiUsers },
       { href: "/dashboard/grupos", label: "Grupos", icon: FiLayers }
     ]
   },
   {
-    title: "Cobros",
+    title: "COBROS",
     items: [
       { href: "/dashboard/cobros/pagos", label: "Pagos", icon: FiCheckCircle },
       { href: "/dashboard/cobros/pendientes", label: "Pendientes", icon: FiBookOpen },
@@ -36,14 +36,14 @@ export const navSections = [
     ]
   },
   {
-    title: "Finanzas",
+    title: "FINANZAS",
     items: [
       { href: "/dashboard/egresos", label: "Egresos", icon: FiDollarSign },
       { href: "/dashboard/contabilidad", label: "Contabilidad", icon: FiTrendingUp }
     ]
   },
   {
-    title: "Cuenta",
+    title: "CUENTA",
     items: [
       { href: "/dashboard/mi-plan", label: "Mi plan", icon: FiCreditCard },
       { href: "/dashboard/perfil", label: "Perfil", icon: FiSettings }

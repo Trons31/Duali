@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FiChevronDown, FiChevronUp } from "react-icons/fi";
+import { FiChevronDown, FiChevronUp, FiDollarSign, FiFilter, FiX } from "react-icons/fi";
 import { cn, currency } from "@/lib/web-utils";
 import type { PaymentHistoryFilter, PaymentHistoryResponse } from "@/lib/web-types";
 
@@ -25,6 +25,7 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
   const router = useRouter();
   const pathname = usePathname();
   const [closedDays, setClosedDays] = useState<Record<string, boolean>>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const groupedByDay = useMemo(() => {
     const map = new Map<
@@ -79,62 +80,106 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-4xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="space-y-5">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Historial</p>
-              <h1 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950 sm:text-[2.2rem]">Pagados con exito</h1>
-              <p className="mt-2 text-sm text-ink-500">
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <header className="flex min-w-0 items-start gap-3 px-1">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+            <FiDollarSign className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-brand-700">Historial</p>
+            <h1 className="mt-1 text-[1.75rem] font-black leading-none text-ink-950 sm:text-[2rem]">Pagados con éxito</h1>
+            <p className="mt-2 text-sm leading-5 text-ink-500">Consulta los ingresos registrados por fecha.</p>
+          </div>
+        </header>
+
+        <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:px-6 sm:py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-ink-500">
+                {data.filters.period === "week" ? "Esta semana" : "Periodo mensual"}
+              </p>
+              <p className="mt-1 text-base font-black text-ink-950 sm:text-lg">
                 {data.summary.totalCount} cobros · {currency(data.summary.totalAmount)}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={cn(
+                "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                filtersOpen || data.filters.period === "week"
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+              )}
+              aria-expanded={filtersOpen}
+              aria-controls="payment-history-filters"
+            >
+              <FiFilter className="size-4" />
+              <span className="hidden min-[360px]:inline">Filtros</span>
+              {data.filters.period === "week" ? <span className="size-2 rounded-full bg-brand-600" /> : null}
+              <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+            </button>
+          </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateFilters({ period: "week" })}
-                  className={cn(
-                    "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                    data.filters.period === "week"
-                      ? "border-ink-950 bg-ink-950 text-white"
-                      : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                  )}
-                >
-                  Esta semana
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateFilters({ period: "month" })}
-                  className={cn(
-                    "rounded-[16px] border px-4 py-2 text-[13px] font-semibold transition",
-                    data.filters.period === "month"
-                      ? "border-ink-950 bg-ink-950 text-white"
-                      : "border-ink-200 bg-white text-ink-700 hover:border-ink-300 hover:bg-ink-50"
-                  )}
-                >
-                  Por mes
-                </button>
+          {filtersOpen ? (
+            <div id="payment-history-filters" className="mt-4 border-t border-ink-100 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-ink-800">Periodo</p>
+                {data.filters.period === "week" ? (
+                  <button
+                    type="button"
+                    onClick={() => updateFilters({ period: "month", month: "" })}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-500 transition hover:text-brand-700"
+                  >
+                    <FiX className="size-4" />
+                    Limpiar
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[
+                  { value: "week" as const, label: "Esta semana" },
+                  { value: "month" as const, label: "Por mes" }
+                ].map((option) => {
+                  const active = data.filters.period === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateFilters({ period: option.value })}
+                      className={cn(
+                        "min-h-10 rounded-xl border px-3 text-xs font-semibold transition sm:text-sm",
+                        active
+                          ? "border-brand-600 bg-brand-600 text-white"
+                          : "border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+                      )}
+                      aria-pressed={active}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <label className="block space-y-2">
-                <span className="block text-sm font-black text-ink-900">Mes</span>
-                <input
-                  type="month"
-                  value={data.filters.month}
-                  onChange={(event) => updateFilters({ period: "month", month: event.target.value })}
-                  className="field-base h-11 rounded-[18px] text-[14px]"
-                />
-              </label>
+              {data.filters.period === "month" ? (
+                <label className="mt-3 block max-w-xs">
+                  <span className="mb-2 block text-xs font-bold text-ink-600">Mes</span>
+                  <input
+                    type="month"
+                    value={data.filters.month}
+                    onChange={(event) => updateFilters({ period: "month", month: event.target.value })}
+                    className="field-base h-11 rounded-xl py-2 text-sm"
+                  />
+                </label>
+              ) : null}
             </div>
-          </div>
+          ) : null}
         </section>
 
         {groupedByDay.length === 0 ? (
-          <section className="rounded-[28px] border border-ink-100 bg-white px-6 py-14 text-center shadow-soft">
-            <h2 className="text-lg font-bold text-ink-950">No hay pagos registrados</h2>
+          <section className="rounded-[24px] border border-ink-100 bg-white px-6 py-12 text-center shadow-sm">
+            <h2 className="text-base font-black text-ink-950">No hay pagos registrados</h2>
             <p className="mt-2 text-sm text-ink-500">Prueba con otra semana o selecciona un mes distinto.</p>
           </section>
         ) : (
@@ -142,10 +187,10 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
             const isClosed = Boolean(closedDays[group.key]);
 
             return (
-              <section key={group.key} className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+              <section key={group.key} className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
                 <div className="flex items-start justify-between gap-3 px-5 py-4 sm:px-6">
                   <div>
-                    <h2 className="text-[1.45rem] font-black tracking-tight text-ink-950">{group.title}</h2>
+                    <h2 className="text-lg font-black text-ink-950">{group.title}</h2>
                     <p className="mt-1 text-sm font-semibold text-ink-400">
                       {group.count} {group.count === 1 ? "registro" : "registros"} · {currency(group.totalAmount)}
                     </p>
@@ -153,19 +198,19 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
                   <button
                     type="button"
                     onClick={() => toggleDay(group.key)}
-                    className="rounded-full p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
+                    className="rounded-xl p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
                     aria-label={isClosed ? "Mostrar pagos del dia" : "Ocultar pagos del dia"}
                   >
-                    {isClosed ? <FiChevronDown className="size-6" /> : <FiChevronUp className="size-6" />}
+                    {isClosed ? <FiChevronDown className="size-5" /> : <FiChevronUp className="size-5" />}
                   </button>
                 </div>
 
                 {isClosed ? null : (
-                  <div className="grid gap-4 border-t border-ink-100 px-4 py-4 sm:px-6 sm:py-6">
+                  <div className="grid gap-3 border-t border-ink-100 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                     {group.items.map((item) => (
                       <article
                         key={`${group.key}-${item.kind}-${item.id}`}
-                        className="rounded-[24px] border border-ink-100 bg-white px-5 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.06)]"
+                        className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
@@ -189,7 +234,7 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
                           </div>
                           <p
                             className={cn(
-                              "shrink-0 text-[1.8rem] font-black tracking-tight",
+                              "shrink-0 text-2xl font-black leading-none",
                               item.kind === "PAYMENT_INSTALLMENT" ? "text-sky-700" : "text-brand-600"
                             )}
                           >

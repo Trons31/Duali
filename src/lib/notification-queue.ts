@@ -1,9 +1,4 @@
-import {
-  NotificationChannel,
-  NotificationDeliveryStatus,
-  NotificationQueueStatus,
-  Prisma
-} from "@prisma/client";
+import { Prisma, type NotificationChannel, type NotificationDeliveryStatus, type NotificationQueueStatus } from "@prisma/client";
 import { getPushFailureDetails, sendExpoPushNotifications } from "./push";
 import { prisma } from "./prisma";
 import { sendWebPushNotifications } from "./web-push";
@@ -464,21 +459,19 @@ async function processSingleOutboxEntry(outboxId: string) {
     }
   });
 
-  const [tokens, webSubscriptions] = await Promise.all([
-    prisma.pushToken.findMany({
-      where: { clientId: notification.clientId, isActive: true },
-      select: { token: true }
-    }),
-    prisma.webPushSubscription.findMany({
-      where: { clientId: notification.clientId, isActive: true },
-      select: {
-        endpoint: true,
-        p256dh: true,
-        auth: true,
-        expirationTime: true
-      }
-    })
-  ]);
+  const tokens = await prisma.pushToken.findMany({
+    where: { clientId: notification.clientId, isActive: true },
+    select: { token: true }
+  });
+  const webSubscriptions = await prisma.webPushSubscription.findMany({
+    where: { clientId: notification.clientId, isActive: true },
+    select: {
+      endpoint: true,
+      p256dh: true,
+      auth: true,
+      expirationTime: true
+    }
+  });
 
   if (!tokens.length && !webSubscriptions.length) {
     const exhausted = currentAttempt >= MAX_PROCESSING_ATTEMPTS;

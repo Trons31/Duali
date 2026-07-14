@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -21,7 +21,7 @@
     "date-fns": "^4.1.0",
     "expo-server-sdk": "^3.14.0",
     "jsonwebtoken": "^9.0.2",
-    "next": "^15.3.0",
+    "next": "15.5.20",
     "next-auth": "^5.0.0-beta.31",
     "postcss": "^8.5.14",
     "react": "^19.0.0",
@@ -43,6 +43,14 @@
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.14"
+    },
+    "tsx": {
+      "esbuild": "0.28.1"
+    }
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

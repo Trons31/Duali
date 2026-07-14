@@ -38,63 +38,61 @@ export async function GET(request: Request) {
     const from = period === "week" ? startOfWeek(now) : monthFrom;
     const to = period === "week" ? endOfWeek(now) : monthTo;
 
-    const [monthlyPayments, enrollmentPayments, installments] = await Promise.all([
-      prisma.monthlyPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          estado: "PAGADO",
-          cantidadAbonos: 0,
-          fechaPago: { gte: from, lte: to }
-        },
-        orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
-        include: {
-          student: true,
-          group: true
-        }
-      }),
-      prisma.enrollmentPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          estado: "PAGADO",
-          cantidadAbonos: 0,
-          fechaPago: { gte: from, lte: to }
-        },
-        orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
-        include: {
-          student: {
-            include: {
-              group: true
-            }
+    const monthlyPayments = await prisma.monthlyPayment.findMany({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PAGADO",
+        cantidadAbonos: 0,
+        fechaPago: { gte: from, lte: to }
+      },
+      orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
+      include: {
+        student: true,
+        group: true
+      }
+    });
+    const enrollmentPayments = await prisma.enrollmentPayment.findMany({
+      where: {
+        clientId,
+        deletedAt: null,
+        estado: "PAGADO",
+        cantidadAbonos: 0,
+        fechaPago: { gte: from, lte: to }
+      },
+      orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
+      include: {
+        student: {
+          include: {
+            group: true
           }
         }
-      }),
-      prisma.paymentInstallment.findMany({
-        where: {
-          clientId,
-          fechaAbono: { gte: from, lte: to }
+      }
+    });
+    const installments = await prisma.paymentInstallment.findMany({
+      where: {
+        clientId,
+        fechaAbono: { gte: from, lte: to }
+      },
+      orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
+      include: {
+        student: true,
+        monthlyPayment: {
+          include: {
+            group: true
+          }
         },
-        orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
-        include: {
-          student: true,
-          monthlyPayment: {
-            include: {
-              group: true
-            }
-          },
-          enrollmentPayment: {
-            include: {
-              student: {
-                include: {
-                  group: true
-                }
+        enrollmentPayment: {
+          include: {
+            student: {
+              include: {
+                group: true
               }
             }
           }
         }
-      })
-    ]);
+      }
+    });
     const debtByStudent = await getOpenDebtByStudent(
       clientId,
       installments.map((installment) => installment.estudianteId)

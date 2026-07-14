@@ -23,8 +23,6 @@ export function noContent() {
 }
 
 export function handleError(error: unknown) {
-  console.error(error);
-
   if (error instanceof ApiError) {
     return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
   }

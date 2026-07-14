@@ -21,10 +21,8 @@ export default async function StudentsPage({ searchParams }: { searchParams: Sea
 
   if (groupId) query.set("groupId", groupId);
 
-  const [students, groups] = await Promise.all([
-    apiFetch<StudentListResponse>(`/api/students?${query.toString()}`),
-    apiFetch<GroupSummary[]>("/api/groups")
-  ]);
+  const students = await apiFetch<StudentListResponse>(`/api/students?${query.toString()}`);
+  const groups = await apiFetch<GroupSummary[]>("/api/groups");
 
   return <StudentsPanelCards students={students} groups={groups} />;
 }

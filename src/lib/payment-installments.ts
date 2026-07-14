@@ -71,9 +71,7 @@ export async function registerPaymentInstallment(input: RegisterInstallmentInput
     return registerEnrollmentInstallment(tx, input, amountCents, method, paidAt);
   });
 
-  await persistStudentInstallmentMessage(input.clientId, result).catch((error) => {
-    console.error("No se pudo guardar el mensaje automatico del abono", error);
-  });
+  await persistStudentInstallmentMessage(input.clientId, result).catch(() => undefined);
 
   return result;
 }

@@ -1,6 +1,23 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { endOfCurrentMonth, startOfCurrentMonth, startOfLocalDay, startOfNextLocalDay } from "./dates";
 import { ensureCurrentMonthlyPayments } from "./monthly-payments";
+
+type AccountingSummaryRow = {
+  monthly_income: Prisma.Decimal | number | string;
+  supplies_income: Prisma.Decimal | number | string;
+  enrollment_income: Prisma.Decimal | number | string;
+  expenses: Prisma.Decimal | number | string;
+  pending_today_amount: Prisma.Decimal | number | string;
+  pending_enrollment_today_amount: Prisma.Decimal | number | string;
+  monthly_received_this_month: Prisma.Decimal | number | string;
+  enrollment_received_this_month: Prisma.Decimal | number | string;
+  active_students: bigint | number;
+  pending_today_payments: bigint | number;
+  pending_enrollment_today_payments: bigint | number;
+  overdue_payments: bigint | number;
+  overdue_enrollment_payments: bigint | number;
+};
 
 export async function getAccountingSummary(clientId: string) {
   await ensureCurrentMonthlyPayments(clientId);
@@ -10,110 +27,86 @@ export async function getAccountingSummary(clientId: string) {
   const todayStart = startOfLocalDay();
   const tomorrowStart = startOfNextLocalDay();
 
-  const [
-    monthlyIncome,
-    suppliesIncome,
-    enrollmentIncome,
-    expenses,
-    pendingTodayAmount,
-    pendingEnrollmentTodayAmount,
-    monthlyReceivedThisMonth,
-    enrollmentReceivedThisMonth,
-    activeStudents,
-    pendingTodayPayments,
-    pendingEnrollmentTodayPayments,
-    overduePayments,
-    overdueEnrollmentPayments
-  ] = await Promise.all([
-    prisma.monthlyPayment.aggregate({
-      where: { clientId, deletedAt: null, estado: "PAGADO" },
-      _sum: { monto: true }
-    }),
-    prisma.suppliesPayment.aggregate({
-      where: { clientId, deletedAt: null, estado: "PAGADO" },
-      _sum: { monto: true }
-    }),
-    prisma.enrollmentPayment.aggregate({
-      where: { clientId, deletedAt: null, estado: "PAGADO" },
-      _sum: { monto: true }
-    }),
-    prisma.expense.aggregate({
-      where: { clientId, deletedAt: null },
-      _sum: { monto: true }
-    }),
-    prisma.monthlyPayment.aggregate({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PENDIENTE",
-        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
-      },
-      _sum: { monto: true }
-    }),
-    prisma.enrollmentPayment.aggregate({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PENDIENTE",
-        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
-      },
-      _sum: { monto: true }
-    }),
-    prisma.monthlyPayment.aggregate({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PAGADO",
-        fechaPago: { gte: monthStart, lte: monthEnd }
-      },
-      _sum: { monto: true }
-    }),
-    prisma.enrollmentPayment.aggregate({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PAGADO",
-        fechaPago: { gte: monthStart, lte: monthEnd }
-      },
-      _sum: { monto: true }
-    }),
-    prisma.student.count({ where: { clientId, deletedAt: null, estado: "ACTIVO" } }),
-    prisma.monthlyPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PENDIENTE",
-        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
-      }
-    }),
-    prisma.enrollmentPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        estado: "PENDIENTE",
-        fechaVencimiento: { gte: todayStart, lt: tomorrowStart }
-      }
-    }),
-    prisma.monthlyPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
-      }
-    }),
-    prisma.enrollmentPayment.count({
-      where: {
-        clientId,
-        deletedAt: null,
-        OR: [{ estado: "VENCIDO" }, { estado: "PENDIENTE", fechaVencimiento: { lt: todayStart } }]
-      }
-    })
-  ]);
+  const [summary] = await prisma.$queryRaw<AccountingSummaryRow[]>(Prisma.sql`
+    WITH monthly AS (
+      SELECT
+        COALESCE(SUM("monto") FILTER (WHERE "estado"::text = 'PAGADO'), 0) AS monthly_income,
+        COALESCE(SUM("monto") FILTER (
+          WHERE "estado"::text = 'PENDIENTE'
+            AND "fechaVencimiento" >= ${todayStart}
+            AND "fechaVencimiento" < ${tomorrowStart}
+        ), 0) AS pending_today_amount,
+        COALESCE(SUM("monto") FILTER (
+          WHERE "estado"::text = 'PAGADO'
+            AND "fechaPago" >= ${monthStart}
+            AND "fechaPago" <= ${monthEnd}
+        ), 0) AS monthly_received_this_month,
+        COUNT(*) FILTER (
+          WHERE "estado"::text = 'PENDIENTE'
+            AND "fechaVencimiento" >= ${todayStart}
+            AND "fechaVencimiento" < ${tomorrowStart}
+        ) AS pending_today_payments,
+        COUNT(*) FILTER (
+          WHERE "estado"::text = 'VENCIDO'
+             OR ("estado"::text = 'PENDIENTE' AND "fechaVencimiento" < ${todayStart})
+        ) AS overdue_payments
+      FROM "monthly_payments"
+      WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
+    ),
+    enrollment AS (
+      SELECT
+        COALESCE(SUM("monto") FILTER (WHERE "estado"::text = 'PAGADO'), 0) AS enrollment_income,
+        COALESCE(SUM("monto") FILTER (
+          WHERE "estado"::text = 'PENDIENTE'
+            AND "fechaVencimiento" >= ${todayStart}
+            AND "fechaVencimiento" < ${tomorrowStart}
+        ), 0) AS pending_enrollment_today_amount,
+        COALESCE(SUM("monto") FILTER (
+          WHERE "estado"::text = 'PAGADO'
+            AND "fechaPago" >= ${monthStart}
+            AND "fechaPago" <= ${monthEnd}
+        ), 0) AS enrollment_received_this_month,
+        COUNT(*) FILTER (
+          WHERE "estado"::text = 'PENDIENTE'
+            AND "fechaVencimiento" >= ${todayStart}
+            AND "fechaVencimiento" < ${tomorrowStart}
+        ) AS pending_enrollment_today_payments,
+        COUNT(*) FILTER (
+          WHERE "estado"::text = 'VENCIDO'
+             OR ("estado"::text = 'PENDIENTE' AND "fechaVencimiento" < ${todayStart})
+        ) AS overdue_enrollment_payments
+      FROM "enrollment_payments"
+      WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
+    ),
+    supplies AS (
+      SELECT COALESCE(SUM("monto") FILTER (WHERE "estado"::text = 'PAGADO'), 0) AS supplies_income
+      FROM "supplies_payments"
+      WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
+    ),
+    expense_totals AS (
+      SELECT COALESCE(SUM("monto"), 0) AS expenses
+      FROM "expenses"
+      WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
+    ),
+    student_totals AS (
+      SELECT COUNT(*) FILTER (WHERE "estado"::text = 'ACTIVO') AS active_students
+      FROM "students"
+      WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
+    )
+    SELECT *
+    FROM monthly
+    CROSS JOIN enrollment
+    CROSS JOIN supplies
+    CROSS JOIN expense_totals
+    CROSS JOIN student_totals
+  `);
 
-  const ingresosMensualidades = Number(monthlyIncome._sum.monto ?? 0);
-  const ingresosUtiles = Number(suppliesIncome._sum.monto ?? 0);
-  const ingresosInscripciones = Number(enrollmentIncome._sum.monto ?? 0);
-  const totalGastos = Number(expenses._sum.monto ?? 0);
+  if (!summary) throw new Error("No se pudo calcular el resumen contable");
+
+  const ingresosMensualidades = Number(summary.monthly_income);
+  const ingresosUtiles = Number(summary.supplies_income);
+  const ingresosInscripciones = Number(summary.enrollment_income);
+  const totalGastos = Number(summary.expenses);
   const ingresosTotales = ingresosMensualidades + ingresosUtiles + ingresosInscripciones;
 
   return {
@@ -123,12 +116,13 @@ export async function getAccountingSummary(clientId: string) {
     ingresosTotales,
     gastosTotales: totalGastos,
     balance: ingresosTotales - totalGastos,
-    pendientesPorCobrar: Number(pendingTodayAmount._sum.monto ?? 0) + Number(pendingEnrollmentTodayAmount._sum.monto ?? 0),
-    pagosRecibidosEsteMes: Number(monthlyReceivedThisMonth._sum.monto ?? 0) + Number(enrollmentReceivedThisMonth._sum.monto ?? 0),
-    estudiantesActivos: activeStudents,
-    mensualidadesPendientes: pendingTodayPayments,
-    mensualidadesVencidas: overduePayments,
-    inscripcionesPendientes: pendingEnrollmentTodayPayments,
-    inscripcionesVencidas: overdueEnrollmentPayments
+    pendientesPorCobrar: Number(summary.pending_today_amount) + Number(summary.pending_enrollment_today_amount),
+    pagosRecibidosEsteMes:
+      Number(summary.monthly_received_this_month) + Number(summary.enrollment_received_this_month),
+    estudiantesActivos: Number(summary.active_students),
+    mensualidadesPendientes: Number(summary.pending_today_payments),
+    mensualidadesVencidas: Number(summary.overdue_payments),
+    inscripcionesPendientes: Number(summary.pending_enrollment_today_payments),
+    inscripcionesVencidas: Number(summary.overdue_enrollment_payments)
   };
 }

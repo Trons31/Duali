@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 type DebtInstallmentContext = {
@@ -21,38 +21,36 @@ export async function getOpenDebtByStudent(clientId: string, studentIds: string[
 
   if (!uniqueStudentIds.length) return debtByStudent;
 
-  const [monthlyPayments, enrollmentPayments] = await Promise.all([
-    prisma.monthlyPayment.findMany({
-      where: {
-        clientId,
-        deletedAt: null,
-        estudianteId: { in: uniqueStudentIds },
-        estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] }
-      },
-      select: {
-        id: true,
-        estudianteId: true,
-        monto: true,
-        montoAbonado: true,
-        saldoPendiente: true
-      }
-    }),
-    prisma.enrollmentPayment.findMany({
-      where: {
-        clientId,
-        deletedAt: null,
-        estudianteId: { in: uniqueStudentIds },
-        estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] }
-      },
-      select: {
-        id: true,
-        estudianteId: true,
-        monto: true,
-        montoAbonado: true,
-        saldoPendiente: true
-      }
-    })
-  ]);
+  const monthlyPayments = await prisma.monthlyPayment.findMany({
+    where: {
+      clientId,
+      deletedAt: null,
+      estudianteId: { in: uniqueStudentIds },
+      estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] }
+    },
+    select: {
+      id: true,
+      estudianteId: true,
+      monto: true,
+      montoAbonado: true,
+      saldoPendiente: true
+    }
+  });
+  const enrollmentPayments = await prisma.enrollmentPayment.findMany({
+    where: {
+      clientId,
+      deletedAt: null,
+      estudianteId: { in: uniqueStudentIds },
+      estado: { in: ["PENDIENTE", "ABONADO", "VENCIDO"] }
+    },
+    select: {
+      id: true,
+      estudianteId: true,
+      monto: true,
+      montoAbonado: true,
+      saldoPendiente: true
+    }
+  });
 
   for (const studentId of uniqueStudentIds) {
     debtByStudent.set(studentId, {

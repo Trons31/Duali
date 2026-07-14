@@ -1,48 +1,11 @@
 import { requireClient } from "@/lib/auth";
-import { startOfLocalDay, startOfNextLocalDay } from "@/lib/dates";
+import { getDashboardPendingPayments } from "@/lib/dashboard-data";
 import { handleError, ok } from "@/lib/http";
-import { ensureCurrentMonthlyPayments } from "@/lib/monthly-payments";
-import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
   try {
     const { clientId } = await requireClient(request);
-    await ensureCurrentMonthlyPayments(clientId);
-    const todayStart = startOfLocalDay();
-    const tomorrowStart = startOfNextLocalDay();
-    const [payments, enrollments] = await Promise.all([
-      prisma.monthlyPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          OR: [
-            { estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart } },
-            { estado: "ABONADO", saldoPendiente: { gt: 0 } }
-          ],
-          student: { estado: "ACTIVO", deletedAt: null }
-        },
-        orderBy: { fechaVencimiento: "asc" },
-        include: { student: true, group: true, installments: { orderBy: { numero: "asc" } } }
-      }),
-      prisma.enrollmentPayment.findMany({
-        where: {
-          clientId,
-          deletedAt: null,
-          OR: [
-            { estado: "PENDIENTE", fechaVencimiento: { gte: todayStart, lt: tomorrowStart } },
-            { estado: "ABONADO", saldoPendiente: { gt: 0 } }
-          ],
-          student: { estado: "ACTIVO", deletedAt: null }
-        },
-        orderBy: { fechaVencimiento: "asc" },
-        include: { student: { include: { group: true } }, installments: { orderBy: { numero: "asc" } } }
-      })
-    ]);
-
-    return ok([
-      ...payments.map((payment) => ({ ...payment, kind: "MONTHLY_PAYMENT" })),
-      ...enrollments.map((payment) => ({ ...payment, kind: "ENROLLMENT_PAYMENT", group: payment.student.group }))
-    ].sort((a, b) => a.fechaVencimiento.getTime() - b.fechaVencimiento.getTime()));
+    return ok(await getDashboardPendingPayments(clientId));
   } catch (error) {
     return handleError(error);
   }

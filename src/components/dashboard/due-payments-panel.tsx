@@ -4,7 +4,16 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sileo } from "sileo";
-import { FiCheck, FiChevronDown, FiChevronUp, FiDollarSign, FiMessageCircle, FiSearch } from "react-icons/fi";
+import {
+  FiCheck,
+  FiChevronDown,
+  FiChevronUp,
+  FiDollarSign,
+  FiFilter,
+  FiMessageCircle,
+  FiSearch,
+  FiX
+} from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { NoAplicaMonthlyPaymentModal, type NoAplicaMonthlyPaymentTarget } from "@/components/ui/no-aplica-monthly-payment-modal";
 import {
@@ -91,13 +100,15 @@ export function DuePaymentsPanel({
   const [notifyingCardKey, setNotifyingCardKey] = useState<string | null>(null);
   const [resultsOpen, setResultsOpen] = useState(true);
   const [query, setQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [kindFilter, setKindFilter] = useState<"ALL" | DuePayment["kind"]>("ALL");
   const token = session?.user.apiToken ?? "";
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return items;
-
     return items.filter((item) => {
+      if (kindFilter !== "ALL" && item.kind !== kindFilter) return false;
+      if (!normalizedQuery) return true;
       const searchable = [
         item.student.nombre,
         item.student.apellido,
@@ -109,7 +120,7 @@ export function DuePaymentsPanel({
 
       return searchable.includes(normalizedQuery);
     });
-  }, [items, query]);
+  }, [items, kindFilter, query]);
 
   const paymentCards = useMemo(() => {
     const collectibleItems = filteredItems.filter((item) => !isAbonablePayment(item));
@@ -277,40 +288,32 @@ export function DuePaymentsPanel({
   }
 
   return (
-    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-white px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-4xl space-y-5">
-        <section className="rounded-[28px] border border-ink-100 bg-white px-5 py-5 shadow-soft sm:px-6 sm:py-6">
-          <div className="space-y-5">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-ink-400">Cobranza</p>
-              <h1 className="mt-2 text-[1.9rem] font-black tracking-tight text-ink-950 sm:text-[2.2rem]">
-                {titleAction === "pendiente" ? "Pendientes" : "Vencidos"}
-              </h1>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm font-black text-ink-950">Buscar alumno</p>
-                <p className="mt-1 text-sm text-ink-500">Busca por nombre, apellido o grupo.</p>
-              </div>
-
-              <div className="relative">
-                <FiSearch className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-300" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Nombre, apellido o grupo"
-                  className="field-base h-11 rounded-[18px] pl-11 text-[14px]"
-                />
-              </div>
-            </div>
+    <div className="-mx-4 -my-6 min-h-[calc(100vh-5rem)] bg-[#f8fafc] px-4 py-6 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl space-y-5">
+        <header className="flex min-w-0 items-start gap-3 px-1">
+          <div
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-xl",
+              titleAction === "pendiente" ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"
+            )}
+          >
+            <FiDollarSign className="size-5" />
           </div>
-        </section>
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-ink-500">Cobranza</p>
+            <h1 className="mt-1 text-[1.75rem] font-black leading-none text-ink-950 sm:text-[2rem]">
+              {titleAction === "pendiente" ? "Pendientes" : "Vencidos"}
+            </h1>
+            <p className="mt-2 text-sm leading-5 text-ink-500">
+              {titleAction === "pendiente" ? "Cobros programados y saldos por recibir." : "Cobros que superaron su fecha límite."}
+            </p>
+          </div>
+        </header>
 
-        <section className="rounded-[28px] border border-ink-100 bg-white shadow-soft">
+        <section className="rounded-[24px] border border-ink-100 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-5 py-4 sm:px-6">
             <div>
-              <h2 className="text-lg font-bold text-ink-950">
+              <h2 className="text-lg font-black text-ink-950">
                 Cobros {titleAction === "pendiente" ? "pendientes" : "vencidos"}
               </h2>
               <p className="mt-1 text-sm text-ink-500">
@@ -327,16 +330,91 @@ export function DuePaymentsPanel({
             <button
               type="button"
               onClick={() => setResultsOpen((current) => !current)}
-              className="rounded-full p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
+              className="rounded-xl p-2 text-ink-400 transition hover:bg-ink-50 hover:text-ink-700"
               aria-label={resultsOpen ? "Ocultar resultados" : "Mostrar resultados"}
             >
-              {resultsOpen ? <FiChevronUp className="size-6" /> : <FiChevronDown className="size-6" />}
+              {resultsOpen ? <FiChevronUp className="size-5" /> : <FiChevronDown className="size-5" />}
             </button>
+          </div>
+
+          <div className="border-b border-ink-100 p-4 sm:px-6 sm:py-5">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <label className="relative block min-w-0">
+                <span className="sr-only">Buscar alumno</span>
+                <FiSearch className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Nombre, apellido o grupo"
+                  className="field-base h-11 rounded-xl py-2 pl-10 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((open) => !open)}
+                className={cn(
+                  "inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold transition focus:outline-none focus:ring-4 focus:ring-brand-100",
+                  filtersOpen || kindFilter !== "ALL"
+                    ? "border-brand-200 bg-brand-50 text-brand-700"
+                    : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+                )}
+                aria-expanded={filtersOpen}
+                aria-controls="payment-filters"
+              >
+                <FiFilter className="size-4" />
+                <span className="hidden min-[360px]:inline">Filtros</span>
+                {kindFilter !== "ALL" ? <span className="size-2 rounded-full bg-brand-600" /> : null}
+                <FiChevronDown className={cn("size-3.5 transition", filtersOpen && "rotate-180")} />
+              </button>
+            </div>
+
+            {filtersOpen ? (
+              <div id="payment-filters" className="mt-4 border-t border-ink-100 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-ink-800">Tipo de cobro</p>
+                  {kindFilter !== "ALL" ? (
+                    <button
+                      type="button"
+                      onClick={() => setKindFilter("ALL")}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-500 transition hover:text-brand-700"
+                    >
+                      <FiX className="size-4" />
+                      Limpiar
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {[
+                    { value: "ALL" as const, label: "Todos" },
+                    { value: "MONTHLY_PAYMENT" as const, label: "Mensualidades" },
+                    { value: "ENROLLMENT_PAYMENT" as const, label: "Inscripciones" }
+                  ].map((option) => {
+                    const active = kindFilter === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setKindFilter(option.value)}
+                        className={cn(
+                          "min-h-10 min-w-0 truncate rounded-xl border px-2 text-[11px] font-semibold transition sm:text-sm",
+                          active
+                            ? "border-brand-600 bg-brand-600 text-white"
+                            : "border-ink-200 bg-white text-ink-700 hover:border-brand-200 hover:bg-brand-50"
+                        )}
+                        aria-pressed={active}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {resultsOpen ? (
             paymentCards.length ? (
-              <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+              <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                 {paymentCards.map((card) => {
                   const item = card.primaryItem;
                   const displayStatus = card.displayStatus;
@@ -346,11 +424,11 @@ export function DuePaymentsPanel({
                   <article
                     key={card.key}
                     className={cn(
-                      "rounded-[28px] border px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]",
+                      "h-full rounded-2xl border p-4 shadow-sm",
                       isOverdue ? "border-rose-100 bg-rose-50/60" : "border-ink-100 bg-white"
                     )}
                   >
-                    <div className="space-y-5">
+                    <div className="flex h-full flex-col gap-4">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-[15px] font-semibold text-ink-950">
@@ -360,7 +438,7 @@ export function DuePaymentsPanel({
                         </div>
                         <p className="mt-1 text-sm text-ink-500">{paymentCardSummary(card)}</p>
                         {isOverdue ? (
-                          <p className="mt-2 text-sm font-semibold text-rose-600">
+                          <p className="mt-2 text-xs font-semibold text-rose-600">
                             {card.isConsolidated
                               ? `Deuda mas antigua: ${overdueAgeText(card.oldestDueDate)}`
                               : overdueAgeText(item.fechaVencimiento)}
@@ -400,30 +478,30 @@ export function DuePaymentsPanel({
                             ))}
                           </div>
                         ) : null}
-                        <p className={cn("mt-4 text-[1.9rem] font-black tracking-tight", amountClassName(displayStatus))}>
+                        <p className={cn("mt-3 text-2xl font-black leading-none", amountClassName(displayStatus))}>
                           {currency(card.totalAmount)}
                         </p>
                       </div>
 
-                      <div className="grid gap-3">
+                      <div className="mt-auto grid gap-2">
                         <Button
                           type="button"
                           variant="secondary"
-                          className="min-h-14 rounded-[22px] border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                          className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
                           loading={notifyingCardKey === card.key}
                           onClick={() => notifyByWhatsapp(card)}
                         >
-                          <FiMessageCircle className="size-5" />
+                          <FiMessageCircle className="size-4" />
                           Notificar por WhatsApp
                         </Button>
                         {!card.isConsolidated ? (
                           <Button
                             type="button"
                             variant="secondary"
-                            className="min-h-14 rounded-[22px] border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            className="min-h-11 rounded-xl border-amber-200 bg-amber-50 py-2.5 text-[13px] text-amber-700 hover:bg-amber-100"
                             onClick={() => openInstallmentModal(item)}
                           >
-                            <FiDollarSign className="size-5" />
+                            <FiDollarSign className="size-4" />
                             Abonar
                           </Button>
                         ) : null}
@@ -431,14 +509,14 @@ export function DuePaymentsPanel({
                           <Button
                             type="button"
                             variant="secondary"
-                            className="min-h-14 rounded-[22px] border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            className="min-h-11 rounded-xl border-slate-200 bg-white py-2.5 text-[13px] text-slate-700 hover:bg-slate-50"
                             onClick={() => setNoAplicaTarget(item)}
                           >
                             No aplica
                           </Button>
                         ) : null}
-                        <Button type="button" className="min-h-14 rounded-[22px]" onClick={() => openPayModal(card)}>
-                          <FiCheck className="size-5" />
+                        <Button type="button" className="min-h-11 rounded-xl py-2.5 text-[13px]" onClick={() => openPayModal(card)}>
+                          <FiCheck className="size-4" />
                           Marcar pagado
                         </Button>
                       </div>
@@ -462,23 +540,23 @@ export function DuePaymentsPanel({
           ) : null}
         </section>
 
-        <section className="rounded-[28px] border border-sky-100 bg-white shadow-soft">
+        <section className="rounded-[24px] border border-sky-100 bg-white shadow-sm">
           <div className="border-b border-sky-100 px-5 py-4 sm:px-6">
-            <h2 className="text-lg font-bold text-ink-950">Abonables</h2>
+            <h2 className="text-lg font-black text-ink-950">Abonables</h2>
             <p className="mt-1 text-sm text-ink-500">
               {abonableItems.length} {abonableItems.length === 1 ? "pago con abonos activos" : "pagos con abonos activos"}
             </p>
           </div>
 
           {abonableItems.length ? (
-            <div className="grid gap-4 px-4 py-4 sm:px-6 sm:py-6">
+            <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
               {abonableItems.map((card) => {
                 const item = card.primaryItem;
 
                 return (
                   <article
                     key={`abonable-${card.key}`}
-                    className="rounded-[28px] border border-sky-100 bg-sky-50/50 px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+                    className="rounded-2xl border border-sky-100 bg-sky-50/50 p-4 shadow-sm"
                   >
                     <div className="space-y-5">
                       <div>
@@ -509,14 +587,14 @@ export function DuePaymentsPanel({
                         <Button
                           type="button"
                           variant="secondary"
-                          className="min-h-14 rounded-[22px] border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                          className="min-h-11 rounded-xl border-sky-200 bg-white py-2.5 text-[13px] text-sky-700 hover:bg-sky-50"
                           onClick={() => openInstallmentModal(item, "history")}
                         >
                           Ver historial
                         </Button>
                         <Button
                           type="button"
-                          className="min-h-14 rounded-[22px]"
+                          className="min-h-11 rounded-xl py-2.5 text-[13px]"
                           onClick={() => openPayBalanceModal(item)}
                         >
                           Pagar saldo

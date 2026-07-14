@@ -17,6 +17,7 @@ const defaultPlanFeatures = [
 ];
 
 export const planPeriodDays = 30;
+let defaultPlanPromise: ReturnType<typeof loadDefaultPlan> | null = null;
 
 export function addPlanPeriod(date: Date) {
   const next = new Date(date);
@@ -35,13 +36,39 @@ export function resolveSubscriptionStatus(nextBillingAt: Date, storedStatus: str
   return nextBillingAt < startOfLocalDay() ? "VENCIDA" : "ACTIVA";
 }
 
-export async function ensureDefaultPlan() {
+export function ensureDefaultPlan() {
+  if (!defaultPlanPromise) {
+    defaultPlanPromise = loadDefaultPlan().catch((error) => {
+      defaultPlanPromise = null;
+      throw error;
+    });
+  }
+
+  return defaultPlanPromise;
+}
+
+async function loadDefaultPlan() {
+  const existing = await prisma.plan.findUnique({ where: { slug: "duali-base" } });
+  const price = new Prisma.Decimal(defaultPlanPrice);
+  const featuresChanged = JSON.stringify(existing?.features ?? null) !== JSON.stringify(defaultPlanFeatures);
+
+  if (
+    existing &&
+    existing.name === defaultPlanName &&
+    existing.description === defaultPlanDescription &&
+    existing.price.equals(price) &&
+    existing.isActive &&
+    !featuresChanged
+  ) {
+    return existing;
+  }
+
   return prisma.plan.upsert({
     where: { slug: "duali-base" },
     update: {
       name: defaultPlanName,
       description: defaultPlanDescription,
-      price: new Prisma.Decimal(defaultPlanPrice),
+      price,
       features: defaultPlanFeatures,
       isActive: true
     },
@@ -49,7 +76,7 @@ export async function ensureDefaultPlan() {
       name: defaultPlanName,
       slug: "duali-base",
       description: defaultPlanDescription,
-      price: new Prisma.Decimal(defaultPlanPrice),
+      price,
       features: defaultPlanFeatures,
       isActive: true
     }

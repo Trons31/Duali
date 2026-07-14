@@ -11,29 +11,27 @@ export async function POST(request: Request) {
     const monthlyPaymentIds = uniqueIds([body.monthlyPaymentId, ...(body.monthlyPaymentIds ?? [])]);
     const enrollmentPaymentIds = uniqueIds([body.enrollmentPaymentId, ...(body.enrollmentPaymentIds ?? [])]);
 
-    const [clientConfig, monthlyPayments, enrollmentPayments] = await Promise.all([
-      prisma.client.findFirst({
-        where: { id: clientId, deletedAt: null },
-        select: {
-          businessName: true,
-          paymentMethods: true,
-          paymentMethodItems: true,
-          whatsappMessageTemplate: true
-        }
-      }),
-      monthlyPaymentIds.length
-        ? prisma.monthlyPayment.findMany({
-            where: { id: { in: monthlyPaymentIds }, clientId, deletedAt: null },
-            include: { student: true }
-          })
-        : [],
-      enrollmentPaymentIds.length
-        ? prisma.enrollmentPayment.findMany({
-            where: { id: { in: enrollmentPaymentIds }, clientId, deletedAt: null },
-            include: { student: true }
-          })
-        : []
-    ]);
+    const clientConfig = await prisma.client.findFirst({
+      where: { id: clientId, deletedAt: null },
+      select: {
+        businessName: true,
+        paymentMethods: true,
+        paymentMethodItems: true,
+        whatsappMessageTemplate: true
+      }
+    });
+    const monthlyPayments = monthlyPaymentIds.length
+      ? await prisma.monthlyPayment.findMany({
+          where: { id: { in: monthlyPaymentIds }, clientId, deletedAt: null },
+          include: { student: true }
+        })
+      : [];
+    const enrollmentPayments = enrollmentPaymentIds.length
+      ? await prisma.enrollmentPayment.findMany({
+          where: { id: { in: enrollmentPaymentIds }, clientId, deletedAt: null },
+          include: { student: true }
+        })
+      : [];
 
     if (!clientConfig) throw new ApiError(401, "Cliente no encontrado");
     if (monthlyPayments.length !== monthlyPaymentIds.length) throw new ApiError(404, "Mensualidad no encontrada");

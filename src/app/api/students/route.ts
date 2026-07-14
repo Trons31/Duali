@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { requireClient } from "@/lib/auth";
 import { currentMonthlyPeriod, localDateAtNoon, monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, created, handleError, ok, readBody } from "@/lib/http";
@@ -62,24 +62,22 @@ export async function GET(request: Request) {
         : {})
     };
 
-    const [total, students] = await Promise.all([
-      prisma.student.count({ where }),
-      prisma.student.findMany({
-        where,
-        orderBy: [{ estado: "asc" }, { createdAt: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          enrollmentPayment: true,
-          group: true,
-          monthlyPayments: {
-            where: { deletedAt: null },
-            orderBy: [{ anio: "desc" }, { mes: "desc" }],
-            take: 6
-          }
+    const total = await prisma.student.count({ where });
+    const students = await prisma.student.findMany({
+      where,
+      orderBy: [{ estado: "asc" }, { createdAt: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        enrollmentPayment: true,
+        group: true,
+        monthlyPayments: {
+          where: { deletedAt: null },
+          orderBy: [{ anio: "desc" }, { mes: "desc" }],
+          take: 6
         }
-      })
-    ]);
+      }
+    });
 
     return ok({
       items: students,

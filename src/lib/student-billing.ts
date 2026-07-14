@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "@/lib/dates";
 
 type BillingStudent = {
@@ -6,6 +6,8 @@ type BillingStudent = {
   diaCobro: number | null;
   modalidadMensualidad?: "ANTICIPADA" | "VENCIDA";
 };
+
+type StudentStateClient = Pick<Prisma.TransactionClient, "student">;
 
 export async function syncOpenMonthlyPaymentDueDates(
   tx: Prisma.TransactionClient,
@@ -46,8 +48,8 @@ export async function syncOpenMonthlyPaymentDueDates(
   }
 }
 
-export async function reactivateExpiredStudentPauses(tx: Prisma.TransactionClient, clientId: string) {
-  await tx.student.updateMany({
+export async function reactivateExpiredStudentPauses(db: StudentStateClient, clientId: string) {
+  await db.student.updateMany({
     where: {
       clientId,
       deletedAt: null,

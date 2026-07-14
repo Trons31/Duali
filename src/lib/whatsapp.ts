@@ -1,4 +1,4 @@
-import { Client, EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
+import type { Client, EnrollmentPayment, MonthlyPayment, Student } from "@prisma/client";
 import { OVERDUE_PAYMENT_MESSAGE_TEMPLATES } from "@/lib/whatsapp-template";
 
 type ReminderClient = Pick<Client, "businessName"> &
