@@ -12,6 +12,7 @@ export default async function AdminPage() {
     orderBy: { createdAt: "desc" }
   });
 
+  
   const clientsWithSubscriptions = [];
 
   for (const client of clients) {
