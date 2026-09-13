@@ -220,9 +220,13 @@ export function NotificationBootstrap() {
 
     void syncNotifications();
 
+    // Solo se usa cuando el service worker no pudo registrarse (modo fallback).
+    // A 90s eran ~960 peticiones al servidor por cada pestana abierta todo el dia;
+    // ademas se sincroniza al volver a la pestana y al recuperar conexion.
     const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void syncNotifications();
-    }, 90_000);
+    }, 300_000);
 
     const visibilityHandler = () => {
       if (typeof window !== "undefined" && "Notification" in window) {

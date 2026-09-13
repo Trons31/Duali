@@ -4,7 +4,9 @@ import { reactivateExpiredStudentPauses } from "./student-billing";
 
 const pendingEnsures = new Map<string, Promise<void>>();
 const lastSuccessfulEnsure = new Map<string, number>();
-const ENSURE_CACHE_MS = 30_000;
+// Las mensualidades se generan una vez al mes por estudiante: revisar cada 30s
+// era un findMany por cada navegacion del dashboard. 5 minutos es de sobra.
+const ENSURE_CACHE_MS = Number(process.env.ENSURE_MONTHLY_CACHE_MS ?? "300000");
 
 export function ensureCurrentMonthlyPayments(clientId: string) {
   const lastEnsure = lastSuccessfulEnsure.get(clientId) ?? 0;

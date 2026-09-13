@@ -4,8 +4,22 @@ import { prisma } from "./prisma";
 import { sendWebPushNotifications } from "./web-push";
 
 const MAX_PROCESSING_ATTEMPTS = 5;
-const STALE_PROCESSING_MINUTES = 5;
-const DEFAULT_BATCH_LIMIT = 100;
+// Debe ser MAYOR que el maxDuration del cron, si no una funcion que expira
+// deja sus filas "obsoletas" justo al morir y la reparacion las resucita al instante.
+const STALE_PROCESSING_MINUTES = 15;
+const DEFAULT_BATCH_LIMIT = 25;
+// Presupuesto de tiempo por invocacion. La funcion devuelve resultados parciales
+// antes de agotarlo en vez de morir con 504 a los 300s (y facturar esos 300s).
+// Lo que quede pendiente lo toma la siguiente corrida del cron.
+const DEFAULT_TIME_BUDGET_MS = Number(process.env.CRON_TIME_BUDGET_MS ?? "40000");
+
+export function newDeadline(budgetMs = DEFAULT_TIME_BUDGET_MS) {
+  return Date.now() + Math.max(1_000, budgetMs);
+}
+
+function outOfTime(deadline: number) {
+  return Date.now() >= deadline;
+}
 
 export type QueueNotificationInput = {
   clientId: string;
@@ -31,6 +45,7 @@ export type NotificationQueueSummary = {
   retried: number;
   failed: number;
   skippedNoTokens: number;
+  timedOut: boolean;
 };
 
 type DispatchSummary = {
@@ -57,7 +72,7 @@ function retryDate(attemptCount: number) {
 
 function parseLimit(value: string | null, fallback = DEFAULT_BATCH_LIMIT) {
   const parsed = Number(value ?? fallback);
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 300) : fallback;
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 50) : fallback;
 }
 
 function staleProcessingDate() {
@@ -69,18 +84,37 @@ export function getNotificationBatchLimit(request: Request) {
   return parseLimit(searchParams.get("limit"));
 }
 
-async function tryAcquireClientLock(clientId: string) {
-  const result = await prisma.$queryRaw<Array<{ locked: boolean }>>`
-    SELECT pg_try_advisory_lock(hashtext(${clientId})) AS locked
-  `;
+// pg_try_advisory_lock es un lock de SESION. Con pgBouncer en modo transaccion
+// (pgbouncer=true en DATABASE_URL) cada consulta puede ir a un backend distinto:
+// el lock se toma en una conexion y el unlock puede ejecutarse en otra, dejando
+// locks huerfanos que bloquean la cola de ese cliente para siempre.
+// La exclusion real ya la garantiza el claim atomico de processSingleOutboxEntry
+// (updateMany con guarda de status), asi que aqui el lock es solo best-effort.
+const USE_ADVISORY_LOCK = process.env.NOTIFICATION_ADVISORY_LOCK === "true";
 
-  return Boolean(result[0]?.locked);
+async function tryAcquireClientLock(clientId: string) {
+  if (!USE_ADVISORY_LOCK) return true;
+
+  try {
+    const result = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_lock(hashtext(${clientId})) AS locked
+    `;
+    return Boolean(result[0]?.locked);
+  } catch {
+    return true;
+  }
 }
 
 async function releaseClientLock(clientId: string) {
-  await prisma.$executeRaw`
-    SELECT pg_advisory_unlock(hashtext(${clientId}))
-  `;
+  if (!USE_ADVISORY_LOCK) return;
+
+  try {
+    await prisma.$executeRaw`
+      SELECT pg_advisory_unlock(hashtext(${clientId}))
+    `;
+  } catch {
+    // no-op
+  }
 }
 
 async function upsertDeliveryResult(input: {
@@ -715,32 +749,37 @@ async function processSingleOutboxEntry(outboxId: string) {
   };
 }
 
-async function processClientQueue(clientId: string, limit: number) {
-  const summary = { processed: 0, sent: 0, retried: 0, failed: 0, skippedNoTokens: 0 };
+async function processClientQueue(clientId: string, limit: number, deadline: number) {
+  const summary = { processed: 0, sent: 0, retried: 0, failed: 0, skippedNoTokens: 0, timedOut: false };
 
-  while (summary.processed < limit) {
-    const candidates = await prisma.notificationOutbox.findMany({
-      where: {
-        clientId,
-        status: { in: ["ENCOLADA", "REINTENTANDO"] },
-        nextAttemptAt: { lte: new Date() }
-      },
-      select: {
-        id: true,
-        notification: {
-          select: { sequence: true }
-        }
-      },
-      take: limit
-    });
+  // El lote se consulta UNA sola vez. Antes el findMany estaba dentro del while y
+  // traia `limit` filas para procesar una sola: con limit=100 eran 100 consultas
+  // de 100 filas (10.000 filas leidas) por corrida del cron.
+  const candidates = await prisma.notificationOutbox.findMany({
+    where: {
+      clientId,
+      status: { in: ["ENCOLADA", "REINTENTANDO"] },
+      nextAttemptAt: { lte: new Date() }
+    },
+    select: {
+      id: true,
+      notification: {
+        select: { sequence: true }
+      }
+    },
+    orderBy: { notification: { sequence: "asc" } },
+    take: limit
+  });
 
-    if (!candidates.length) break;
+  for (const entry of candidates) {
+    if (summary.processed >= limit) break;
+    if (outOfTime(deadline)) {
+      summary.timedOut = true;
+      break;
+    }
 
-    candidates.sort((left, right) => left.notification.sequence - right.notification.sequence);
-    const nextEntry = candidates[0];
-    const result = await processSingleOutboxEntry(nextEntry.id);
-
-    if (!result.processed) break;
+    const result = await processSingleOutboxEntry(entry.id);
+    if (!result.processed) continue;
 
     summary.processed += 1;
     if (result.sent) summary.sent += 1;
@@ -843,7 +882,11 @@ async function repairSentWithoutSuccessfulPush(limit = 100) {
   return outboxes.length;
 }
 
-export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Promise<NotificationQueueSummary> {
+export async function processNotificationQueue(
+  limit = DEFAULT_BATCH_LIMIT,
+  options?: { deadline?: number }
+): Promise<NotificationQueueSummary> {
+  const deadline = options?.deadline ?? newDeadline();
   const repaired = await repairStuckNotificationOutbox();
   const repairedSentWithoutDelivery = await repairSentWithoutSuccessfulPush();
   const dueEntries = await prisma.notificationOutbox.findMany({
@@ -880,11 +923,16 @@ export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Pro
     sent: 0,
     retried: 0,
     failed: 0,
-    skippedNoTokens: 0
+    skippedNoTokens: 0,
+    timedOut: false
   };
 
   for (const clientId of clientsByPriority) {
     if (summary.processed >= limit) break;
+    if (outOfTime(deadline)) {
+      summary.timedOut = true;
+      break;
+    }
 
     const locked = await tryAcquireClientLock(clientId);
     if (!locked) continue;
@@ -892,12 +940,13 @@ export async function processNotificationQueue(limit = DEFAULT_BATCH_LIMIT): Pro
     summary.clientsLocked += 1;
 
     try {
-      const result = await processClientQueue(clientId, limit - summary.processed);
+      const result = await processClientQueue(clientId, limit - summary.processed, deadline);
       summary.processed += result.processed;
       summary.sent += result.sent;
       summary.retried += result.retried;
       summary.failed += result.failed;
       summary.skippedNoTokens += result.skippedNoTokens;
+      if (result.timedOut) summary.timedOut = true;
     } finally {
       await releaseClientLock(clientId);
     }
