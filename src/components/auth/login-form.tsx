@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
-import { FiEye, FiEyeOff } from "react-icons/fi";
+import { FiArrowRight, FiDollarSign, FiEye, FiEyeOff, FiLock, FiMail, FiShield, FiUsers } from "react-icons/fi";
 import { sileo } from "sileo";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -48,25 +48,38 @@ export function LoginForm() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="relative hidden overflow-hidden bg-ink-950 px-12 py-14 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(57,212,157,.34),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(20,184,126,.18),transparent_30%)]" />
-        <div className="relative">
-          <div className="flex items-center gap-4">
-            <BrandLogo size={62} priority className="shadow-none" />
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-300">Duali web</p>
-              <h1 className="text-3xl font-black">Controla tu operación desde cualquier pantalla.</h1>
-            </div>
-          </div>
-        </div>
+      <section className="relative hidden overflow-hidden bg-ink-950 px-14 py-14 text-white lg:flex lg:flex-col lg:justify-center">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(57,212,157,.28),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(20,184,126,.16),transparent_38%)]" />
+
         <div className="relative max-w-xl">
-          <p className="text-4xl font-black leading-tight">
-            Cobros, estudiantes, gastos y recordatorios del administrador en una sola experiencia.
+          <div className="flex items-center gap-3">
+            <BrandLogo size={38} priority className="rounded-xl shadow-none" />
+            <span className="text-2xl font-black tracking-tight">Duali</span>
+          </div>
+
+          <h1 className="mt-10 text-5xl font-black leading-[1.08] tracking-tight">
+            Gestiona tus cobros con una experiencia mas{" "}
+            <span className="text-brand-400">simple</span>
+          </h1>
+
+          <p className="mt-6 max-w-md text-base leading-7 text-white/70">
+            Entra a tu panel, revisa cobros, estudiantes, gastos y recordatorios desde un inicio de sesion limpio y
+            seguro.
           </p>
-          <p className="mt-5 text-base leading-7 text-white/76">
-            Pensado mobile-first para iPhone, Android y escritorio. Instalable, rápido y con seguimiento de
-            notificaciones desde el navegador.
-          </p>
+
+          <div className="mt-10 grid grid-cols-3 gap-4">
+            {[
+              { icon: FiDollarSign, title: "Cobros", caption: "Pagos al dia" },
+              { icon: FiUsers, title: "Estudiantes", caption: "Grupos y fichas" },
+              { icon: FiShield, title: "Seguro", caption: "Acceso protegido" }
+            ].map((feature) => (
+              <div key={feature.title} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <feature.icon className="size-5 text-brand-400" />
+                <p className="mt-3 text-sm font-bold">{feature.title}</p>
+                <p className="mt-1 text-xs text-white/55">{feature.caption}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -77,32 +90,34 @@ export function LoginForm() {
               <BrandLogo size={68} priority />
             </div>
             <h1 className="text-3xl font-black text-ink-950">Duali</h1>
-            <p className="mt-2 text-sm text-ink-500">Tu negocio educativo ahora también vive completo en web.</p>
           </div>
 
-          <div className="shell-card p-6 sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-700">Acceso seguro</p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-ink-950">Inicia sesión</h2>
-            <p className="mt-2 text-sm text-ink-500">Entra a tu panel para revisar cobros, notificaciones y métricas.</p>
+          <div className="rounded-2xl border border-ink-100 bg-white p-7 shadow-card sm:p-8">
+            <h2 className="text-2xl font-black tracking-tight text-ink-950">Inicia sesión</h2>
+            <p className="mt-1.5 text-sm text-ink-500">Entra con tu correo y contraseña de Duali.</p>
 
-            <form className="mt-8 space-y-4" onSubmit={handleSubmit(onSubmit)}>
+            <form className="mt-7 space-y-4" onSubmit={handleSubmit(onSubmit)}>
               <div>
-                <label className="mb-2 block text-sm font-semibold text-ink-700">Correo</label>
-                <input
-                  type="email"
-                  className="field-base"
-                  placeholder="tu@correo.com"
-                  {...register("email", { required: "Ingresa tu correo" })}
-                />
+                <label className="mb-2 block text-sm font-semibold text-ink-800">Correo</label>
+                <div className="relative">
+                  <FiMail className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
+                  <input
+                    type="email"
+                    className="field-base pl-11"
+                    placeholder="tu@correo.com"
+                    {...register("email", { required: "Ingresa tu correo" })}
+                  />
+                </div>
                 {errors.email ? <p className="mt-2 text-sm text-rose-600">{errors.email.message}</p> : null}
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-ink-700">Contraseña</label>
+                <label className="mb-2 block text-sm font-semibold text-ink-800">Contraseña</label>
                 <div className="relative">
+                  <FiLock className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
                   <input
                     type={showPassword ? "text" : "password"}
-                    className="field-base pr-12"
+                    className="field-base pl-11 pr-12"
                     placeholder="••••••••"
                     {...register("password", { required: "Ingresa tu contraseña" })}
                   />
@@ -118,14 +133,15 @@ export function LoginForm() {
               </div>
 
               <Button type="submit" className="mt-2 w-full" loading={isSubmitting}>
-                Entrar al dashboard
+                Continuar
+                <FiArrowRight className="size-4" />
               </Button>
             </form>
 
             <p className="mt-6 text-center text-sm text-ink-500">
-              ¿Aún no tienes cuenta?{" "}
+              ¿No tienes cuenta?{" "}
               <Link href="/auth/register" className="font-semibold text-brand-700 hover:text-brand-800">
-                Crea tu cuenta
+                Crear cuenta
               </Link>
             </p>
           </div>
