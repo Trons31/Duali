@@ -4,7 +4,7 @@ import { getToken } from "next-auth/jwt";
 
 const publicRoutes = new Set(["/", "/auth/login", "/auth/register"]);
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const secret = process.env.NEXTAUTH_SECRET ?? process.env.JWT_SECRET ?? "dev-secret-change-me";
   const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
   const secureCookie = authUrl
