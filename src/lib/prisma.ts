@@ -21,15 +21,16 @@ export const prisma =
     : new PrismaClient({
         ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
         transactionOptions: {
-          maxWait: 15_000,
-          timeout: 30_000
+          maxWait: 5_000,
+          timeout: 10_000
         }
       });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-  globalForPrisma.databaseUrl = databaseKey;
-}
+// Se cachea SIEMPRE (tambien en produccion). En Vercel/Fluid las instancias
+// quedan calientes y atienden varias rutas: sin este cache cada bundle crea su
+// propio PrismaClient (motor + pool propios) dentro del mismo proceso.
+globalForPrisma.prisma = prisma;
+globalForPrisma.databaseUrl = databaseKey;
 
 function buildDatabaseUrl() {
   const value = process.env.DATABASE_URL;
@@ -41,14 +42,16 @@ function buildDatabaseUrl() {
 
     const minimumConnectionLimit = positiveInteger(
       process.env.PRISMA_CONNECTION_LIMIT,
-      process.env.NODE_ENV === "production" ? 5 : 10
+      process.env.NODE_ENV === "production" ? 1 : 10
     );
     const requestedConnectionLimit = positiveInteger(url.searchParams.get("connection_limit"), 0);
     const requestedPoolTimeout = positiveInteger(url.searchParams.get("pool_timeout"), 0);
 
     url.searchParams.set("connection_limit", String(Math.max(requestedConnectionLimit, minimumConnectionLimit)));
-    url.searchParams.set("pool_timeout", String(Math.max(requestedPoolTimeout, 60)));
-    if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "15");
+    // Fallar rapido: en serverless esperar 60s por una conexion significa 60s de
+    // memoria provisionada facturada por cada request que no consigue pool.
+    url.searchParams.set("pool_timeout", String(requestedPoolTimeout || 10));
+    if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "5");
 
     return url.toString();
   } catch {

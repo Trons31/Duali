@@ -63,8 +63,10 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+// El service worker (/sw.js) pide su archivo constantemente: sin excluirlo,
+// cada una de esas peticiones ejecutaba el middleware.
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf)).*)"
+    "/((?!api|_next/static|_next/image|_next/data|favicon.ico|manifest.webmanifest|sw.js|robots.txt|sitemap.xml|opengraph-image|twitter-image|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf|js|map|txt|xml)).*)"
   ]
 };
