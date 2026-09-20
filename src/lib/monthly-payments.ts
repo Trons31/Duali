@@ -1,4 +1,5 @@
 import { currentMonthlyPeriod, endOfCurrentMonth, monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "./dates";
+import { isDatabaseConnectionError } from "./db-errors";
 import { prisma } from "./prisma";
 import { reactivateExpiredStudentPauses } from "./student-billing";
 
@@ -18,6 +19,14 @@ export function ensureCurrentMonthlyPayments(clientId: string) {
   const ensure = runEnsureCurrentMonthlyPayments(clientId)
     .then(() => {
       lastSuccessfulEnsure.set(clientId, Date.now());
+    })
+    .catch((error: unknown) => {
+      // Generar mensualidades es mantenimiento en segundo plano: si la base de
+      // datos no responde no tiene sentido tumbar el render de la pagina. Se
+      // reintenta solo en la siguiente navegacion porque no marcamos el ensure
+      // como exitoso. Cualquier otro error si se propaga.
+      if (!isDatabaseConnectionError(error)) throw error;
+      console.warn(`[monthly-payments] sin conexion a la base de datos para el cliente ${clientId}; se reintentara luego.`);
     })
     .finally(() => {
       if (pendingEnsures.get(clientId) === ensure) pendingEnsures.delete(clientId);

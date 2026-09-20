@@ -1,10 +1,13 @@
 import "./prisma-debug";
 import { PrismaClient } from "@prisma/client";
+import { markAsOfflineIfConnectionError } from "./db-errors";
 
 type PrismaGlobal = {
-  prisma?: PrismaClient;
+  prisma?: ExtendedPrismaClient;
   databaseUrl?: string;
 };
+
+type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
 const globalForPrisma = globalThis as unknown as PrismaGlobal;
 const databaseUrl = buildDatabaseUrl();
@@ -15,16 +18,31 @@ if (mustCreateClient && globalForPrisma.prisma) {
   void globalForPrisma.prisma.$disconnect();
 }
 
-export const prisma =
-  !mustCreateClient && globalForPrisma.prisma
-    ? globalForPrisma.prisma
-    : new PrismaClient({
-        ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
-        transactionOptions: {
-          maxWait: 5_000,
-          timeout: 10_000
+function createPrismaClient() {
+  return new PrismaClient({
+    ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
+    transactionOptions: {
+      maxWait: 5_000,
+      timeout: 10_000
+    }
+  }).$extends({
+    query: {
+      // Un unico punto para TODAS las consultas: si la base de datos no responde
+      // el error sale ya marcado como "sin conexion", sin tener que envolver
+      // cada llamada a mano (son mas de 150 en el proyecto).
+      async $allOperations({ args, query }) {
+        try {
+          return await query(args);
+        } catch (error) {
+          throw markAsOfflineIfConnectionError(error);
         }
-      });
+      }
+    }
+  });
+}
+
+export const prisma: ExtendedPrismaClient =
+  !mustCreateClient && globalForPrisma.prisma ? globalForPrisma.prisma : createPrismaClient();
 
 // Se cachea SIEMPRE (tambien en produccion). En Vercel/Fluid las instancias
 // quedan calientes y atienden varias rutas: sin este cache cada bundle crea su

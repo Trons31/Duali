@@ -2,6 +2,7 @@ import { Prisma, type NotificationChannel, type NotificationDeliveryStatus, type
 import { getPushFailureDetails, sendExpoPushNotifications } from "./push";
 import { prisma } from "./prisma";
 import { sendWebPushNotifications } from "./web-push";
+import type { DbClient } from "./prisma-types";
 
 const MAX_PROCESSING_ATTEMPTS = 5;
 // Debe ser MAYOR que el maxDuration del cron, si no una funcion que expira
@@ -161,7 +162,7 @@ async function upsertDeliveryResult(input: {
 }
 
 async function reviveNotificationTx(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   notificationId: string,
   clientId: string
 ) {

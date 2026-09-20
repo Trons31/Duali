@@ -32,6 +32,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const plan = serializeSubscription(subscription);
 
+  // Una suscripcion cancelada bloquea el acceso al sistema. Se comprueba aqui,
+  // en el layout, para que cubra todas las paginas del dashboard de una vez.
+  if (plan.status === "CANCELADA") {
+    redirect("/suscripcion-cancelada");
+  }
+
   const alerts = [
     overdueMonthlyCount > 0
       ? {

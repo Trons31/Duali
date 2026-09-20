@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { isDatabaseConnectionError } from "./db-errors";
 
 export class ApiError extends Error {
   status: number;
@@ -34,6 +35,16 @@ export function handleError(error: unknown) {
     );
   }
 
+  // 503 + Retry-After: el cliente puede distinguir "no hay conexion" de un bug
+  // real y mostrar la vista sin conexion en lugar de un error generico.
+  if (isDatabaseConnectionError(error)) {
+    return NextResponse.json(
+      { ok: false, error: "Sin conexión con la base de datos. Intenta de nuevo en unos segundos.", code: "DB_OFFLINE" },
+      { status: 503, headers: { "Retry-After": "10" } }
+    );
+  }
+
+  console.error(error);
   return NextResponse.json({ ok: false, error: "Error interno del servidor" }, { status: 500 });
 }
 

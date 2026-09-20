@@ -58,6 +58,7 @@ type StudentFormValues = {
   pagoMesActual: "SI" | "NO";
   mensualidadMetodoPagoActual: string;
   mensualidadFechaPagoActual: string;
+  cobraInscripcion: boolean;
   inscripcionPagada: "SI" | "NO";
   inscripcionMonto: string;
   inscripcionFechaPago: string;
@@ -141,6 +142,7 @@ export function StudentsPanelCards({
   const currentMonthPaymentMethod = watch("mensualidadMetodoPagoActual");
   const enrollmentPaid = watch("inscripcionPagada");
   const enrollmentMethod = watch("inscripcionMetodoPago");
+  const chargesEnrollment = watch("cobraInscripcion");
   const billingMode = watch("modalidadMensualidad");
   const startDay = watch("inicioClasesDia");
   const historyStartMonth = watch("inicioClasesMes");
@@ -311,7 +313,8 @@ export function StudentsPanelCards({
   }
 
   function goNextFromEnrollment() {
-    if (!Number(watch("inscripcionMonto"))) {
+    // Sin cobro de inscripcion no hay nada que validar: se sigue de largo.
+    if (watch("cobraInscripcion") && !Number(watch("inscripcionMonto"))) {
       sileo.error({
         title: "Inscripción requerida",
         description: "Ingresa el valor de la inscripción para continuar."
@@ -464,6 +467,8 @@ export function StudentsPanelCards({
 
     const parsedAge = Number(values.edad);
     const isNewStudent = values.tipoRegistro === "NUEVO";
+    // Solo los alumnos nuevos con el cobro activado generan inscripcion.
+    const chargesEnrollment = isNewStudent && values.cobraInscripcion;
     const payload = {
       nombre: values.nombre.trim(),
       apellido: values.apellido.trim(),
@@ -491,11 +496,13 @@ export function StudentsPanelCards({
       inicioClasesMes: Number(values.inicioClasesMes),
       inicioClasesAnio: Number(values.inicioClasesAnio),
       mesesPagados: isNewStudent ? undefined : values.mesesPagados.map(parsePeriodKey).filter(isMonthlyPeriod),
-      inscripcionMonto: isNewStudent ? Number(values.inscripcionMonto) : undefined,
-      inscripcionPagada: isNewStudent ? values.inscripcionPagada === "SI" : false,
-      inscripcionFechaPago: isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionFechaPago : undefined,
+      cobraInscripcion: chargesEnrollment,
+      inscripcionMonto: chargesEnrollment ? Number(values.inscripcionMonto) : undefined,
+      inscripcionPagada: chargesEnrollment ? values.inscripcionPagada === "SI" : false,
+      inscripcionFechaPago:
+        chargesEnrollment && values.inscripcionPagada === "SI" ? values.inscripcionFechaPago : undefined,
       inscripcionMetodoPago:
-        isNewStudent && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
+        chargesEnrollment && values.inscripcionPagada === "SI" ? values.inscripcionMetodoPago : undefined
     };
 
     const isEditing = Boolean(editTarget);
@@ -864,13 +871,25 @@ export function StudentsPanelCards({
           {step === "ENROLLMENT" ? (
             <div className="space-y-4">
               <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
-                <div>
-                  <p className="text-sm font-black text-ink-950">Inscripción del alumno</p>
-                  <p className="mt-1 text-sm text-ink-500">
-                    Define el valor de la inscripción y si ya entró a caja o quedará pendiente por cobrar.
-                  </p>
-                </div>
+                <Controller
+                  control={control}
+                  name="cobraInscripcion"
+                  render={({ field }) => (
+                    <SwitchRow
+                      title="Cobra inscripción"
+                      subtitle={
+                        field.value
+                          ? "Define el valor y si ya entró a caja o quedará pendiente."
+                          : "El alumno se registrará sin cobro de inscripción."
+                      }
+                      checked={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
+                />
 
+                {chargesEnrollment ? (
+                  <>
                 <Field label="Valor de inscripción" error={errors.inscripcionMonto?.message}>
                   <Controller
                     control={control}
@@ -945,6 +964,8 @@ export function StudentsPanelCards({
                       ))}
                     </div>
                   </div>
+                ) : null}
+                  </>
                 ) : null}
               </div>
 
@@ -2020,6 +2041,49 @@ function Field({
   );
 }
 
+function SwitchRow({
+  title,
+  subtitle,
+  checked,
+  onChange
+}: {
+  title: string;
+  subtitle: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "flex w-full items-start gap-4 rounded-[24px] border px-4 py-4 text-left transition",
+        checked ? "border-brand-200 bg-brand-50" : "border-ink-200 bg-white"
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-black text-ink-950">{title}</span>
+        <span className="mt-1 block text-sm text-ink-500">{subtitle}</span>
+      </span>
+      <span
+        className={cn(
+          "mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition",
+          checked ? "bg-brand-600" : "bg-ink-300"
+        )}
+      >
+        <span
+          className={cn(
+            "size-5 rounded-full bg-white shadow-sm transition-transform",
+            checked ? "translate-x-5" : "translate-x-0"
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
 function DecisionCard({
   title,
   subtitle,
@@ -2089,6 +2153,7 @@ function createDefaultValues(groupId: string): StudentFormValues {
     pagoMesActual: "NO",
     mensualidadMetodoPagoActual: "EFECTIVO",
     mensualidadFechaPagoActual: defaultDateValue(),
+    cobraInscripcion: true,
     inscripcionPagada: "NO",
     inscripcionMonto: "",
     inscripcionFechaPago: defaultDateValue(),
@@ -2125,6 +2190,7 @@ function createEditValues(student: StudentListItem): StudentFormValues {
     mensualidadFechaPagoActual: currentPayment(student)?.fechaPago
       ? currentPayment(student)!.fechaPago!.slice(0, 10)
       : defaultDateValue(),
+    cobraInscripcion: Boolean(student.enrollmentPayment),
     inscripcionPagada: student.enrollmentPayment?.estado === "PAGADO" ? "SI" : "NO",
     inscripcionMonto: student.enrollmentPayment?.monto ? String(student.enrollmentPayment.monto) : "",
     inscripcionFechaPago: student.enrollmentPayment?.fechaPago

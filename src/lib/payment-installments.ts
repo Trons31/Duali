@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import type { DbClient } from "@/lib/prisma-types";
 import {
   buildPaymentInstallmentMessage,
   createWhatsappUrl,
@@ -130,7 +131,7 @@ export async function deleteMonthlyPaymentInstallment(clientId: string, paymentI
 }
 
 async function getMonthlyPaymentForInstallmentMutation(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   clientId: string,
   paymentId: string
 ) {
@@ -149,7 +150,7 @@ async function getMonthlyPaymentForInstallmentMutation(
 }
 
 async function rebuildMonthlyPaymentInstallments(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   payment: Awaited<ReturnType<typeof getMonthlyPaymentForInstallmentMutation>>,
   installments: typeof payment.installments
 ) {
@@ -227,7 +228,7 @@ async function rebuildMonthlyPaymentInstallments(
 }
 
 async function registerMonthlyInstallment(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   input: RegisterInstallmentInput,
   amountCents: number,
   method: string,
@@ -308,7 +309,7 @@ async function registerMonthlyInstallment(
 }
 
 async function registerEnrollmentInstallment(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   input: RegisterInstallmentInput,
   amountCents: number,
   method: string,
@@ -382,7 +383,7 @@ async function registerEnrollmentInstallment(
 }
 
 async function createInstallment(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   params: {
     input: RegisterInstallmentInput;
     paymentIdField: "monthlyPaymentId" | "enrollmentPaymentId";
@@ -425,7 +426,7 @@ async function createInstallment(
 }
 
 async function createNextMonthlyPaymentIfNeeded(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   payment: Prisma.MonthlyPaymentGetPayload<{ include: { student: true } }>,
   clientId: string
 ) {

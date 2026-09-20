@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { monthlyDueDateForPeriod, paymentStatusForDueDate, startOfLocalDay } from "@/lib/dates";
+import type { DbClient, DbClientFor } from "@/lib/prisma-types";
 
 type BillingStudent = {
   id: string;
@@ -7,10 +8,10 @@ type BillingStudent = {
   modalidadMensualidad?: "ANTICIPADA" | "VENCIDA";
 };
 
-type StudentStateClient = Pick<Prisma.TransactionClient, "student">;
+type StudentStateClient = DbClientFor<"student">;
 
 export async function syncOpenMonthlyPaymentDueDates(
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   student: BillingStudent,
   clientId: string
 ) {

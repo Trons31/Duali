@@ -9,11 +9,14 @@ const defaultPlanDescription =
   "Acceso completo al panel web, gestión de estudiantes, grupos, cobros, egresos, contabilidad y recordatorios.";
 
 const defaultPlanFeatures = [
-  "Gestión de estudiantes y grupos",
-  "Cobros pendientes, vencidos e inscripciones",
-  "Recordatorios al administrador por web push",
-  "Contabilidad mensual y egresos",
-  "Acceso mobile-first desde navegador"
+  "Estudiantes y grupos ilimitados",
+  "Mensualidades generadas automáticamente",
+  "Control de pendientes y vencidos",
+  "Abonos parciales y saldos por cobrar",
+  "Cobros de inscripción y útiles",
+  "Recordatorios de pago por WhatsApp",
+  "Egresos y contabilidad mensual",
+  "Historial de pagos por estudiante"
 ];
 
 export const planPeriodDays = 30;

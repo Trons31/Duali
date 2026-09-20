@@ -124,6 +124,9 @@ const studentCreateSchema = studentBaseSchema.extend({
   pagoMesActual: z.coerce.boolean().default(false),
   mensualidadMetodoPagoActual: z.string().optional().nullable(),
   mensualidadFechaPagoActual: localDateInputSchema.optional().nullable(),
+  // Por defecto true: las peticiones antiguas (app movil, integraciones) que no
+  // envian el campo siguen comportandose como antes.
+  cobraInscripcion: z.coerce.boolean().default(true),
   inscripcionMonto: z.coerce.number().positive().optional().nullable(),
   inscripcionPagada: z.coerce.boolean().default(false),
   inscripcionFechaPago: localDateInputSchema.optional().nullable(),
@@ -142,11 +145,13 @@ export const studentSchema = studentCreateSchema.superRefine((data, ctx) => {
       message: "Un menor debe tener teléfono del acudiente o celular registrado"
     });
   }
-  if (data.tipoRegistro === "NUEVO" && !data.inscripcionMonto) {
+  // La inscripcion es opcional: hay negocios que no la cobran. Solo se exige
+  // el valor cuando el cliente activa el cobro de inscripcion.
+  if (data.tipoRegistro === "NUEVO" && data.cobraInscripcion && !data.inscripcionMonto) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["inscripcionMonto"],
-      message: "La inscripcion es obligatoria para estudiantes nuevos"
+      message: "Ingresa el valor de la inscripcion"
     });
   }
   if (!data.inicioClasesDia) {

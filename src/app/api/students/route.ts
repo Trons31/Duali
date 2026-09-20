@@ -111,6 +111,9 @@ export async function POST(request: Request) {
         pagoMesActual,
         mensualidadMetodoPagoActual,
         mensualidadFechaPagoActual,
+        // Se desestructura aunque no sea columna del estudiante: si cayera en
+        // `studentData` Prisma fallaria al recibir un campo desconocido.
+        cobraInscripcion,
         inscripcionMonto,
         inscripcionPagada,
         inscripcionFechaPago,
@@ -128,7 +131,9 @@ export async function POST(request: Request) {
       const createdStudent = await tx.student.create({ data: { ...studentData, fechaInicioClases, clientId } as never });
       const fechaRegistro = new Date();
 
-      if (tipoRegistro === "NUEVO" && inscripcionMonto) {
+      // Sin cobro de inscripcion no se crea la fila: el alumno queda sin
+      // inscripcion, que es un estado valido (la relacion es opcional).
+      if (tipoRegistro === "NUEVO" && cobraInscripcion && inscripcionMonto) {
         const fechaVencimiento = new Date();
         await tx.enrollmentPayment.create({
           data: {

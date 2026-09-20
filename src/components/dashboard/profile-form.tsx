@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { sileo } from "sileo";
-import { FiPlus, FiSave, FiTrash2 } from "react-icons/fi";
+import { FiCreditCard, FiMessageSquare, FiPlus, FiSave, FiTrash2, FiUser } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { clientApiFetch } from "@/lib/client-api";
 import { OVERDUE_PAYMENT_MESSAGE_TEMPLATE, OVERDUE_PAYMENT_MESSAGE_VARIABLES } from "@/lib/whatsapp-template";
@@ -65,11 +65,12 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
-      <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
-        <div>
-          <h2 className="text-lg font-black text-ink-950">Datos del negocio</h2>
-          <p className="mt-1 text-sm text-ink-500">Información principal de la cuenta.</p>
+      <section className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex items-center gap-2">
+          <FiUser className="size-4 shrink-0 text-brand-600" />
+          <h2 className="font-semibold text-ink-800">Datos del negocio</h2>
         </div>
+        <p className="mt-1 text-sm text-ink-500">Información principal de la cuenta.</p>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="block">
@@ -87,11 +88,16 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
         </div>
       </section>
 
-      <section className="rounded-[24px] border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-black text-ink-950">Cobros y mensajes</h2>
-            <p className="mt-1 text-sm text-ink-500">Cuentas y plantilla para notificaciones.</p>
+      <section className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <FiCreditCard className="size-4 shrink-0 text-brand-600" />
+              <h2 className="font-semibold text-ink-800">Métodos de pago</h2>
+            </div>
+            <p className="mt-1 text-sm text-ink-500">
+              Las cuentas que tus estudiantes ven al recibir un cobro.
+            </p>
           </div>
           <Button
             type="button"
@@ -105,7 +111,6 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
         </div>
 
         <div className="mt-5 space-y-3">
-          <p className="text-[13px] font-semibold text-ink-700">Métodos de pago</p>
           {fields.map((field, index) => (
             <div
               key={field.id}
@@ -139,33 +144,54 @@ export function ProfileForm({ profile }: { profile: SafeClient }) {
             </div>
           ) : null}
         </div>
+      </section>
 
-        <div className="mt-5 border-t border-ink-100 pt-5">
-          <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Mensaje para WhatsApp</span>
-            <textarea
-              className="field-base min-h-32 resize-y rounded-xl text-sm"
-              placeholder={OVERDUE_PAYMENT_MESSAGE_TEMPLATE}
-              {...register("whatsappMessageTemplate")}
-            />
-          </label>
-          <p className="mt-3 text-xs font-semibold text-ink-500">Variables disponibles</p>
-          <div className="mt-2 flex flex-wrap gap-2">
+      <section className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex items-center gap-2">
+          <FiMessageSquare className="size-4 shrink-0 text-brand-600" />
+          <h2 className="font-semibold text-ink-800">Mensaje de cobro</h2>
+        </div>
+        <p className="mt-1 text-sm text-ink-500">
+          La plantilla que se envía por WhatsApp al recordar un pago.
+        </p>
+
+        <label className="mt-5 block">
+          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Plantilla</span>
+          <textarea
+            className="field-base min-h-32 resize-y rounded-xl text-sm"
+            placeholder={OVERDUE_PAYMENT_MESSAGE_TEMPLATE}
+            {...register("whatsappMessageTemplate")}
+          />
+        </label>
+
+        <div className="mt-4 rounded-xl bg-ink-50/60 p-3">
+          <p className="text-xs font-semibold text-ink-600">Variables disponibles</p>
+          <p className="mt-1 text-xs leading-4 text-ink-500">
+            Se reemplazan por los datos reales de cada estudiante al enviar el mensaje.
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
             {WHATSAPP_VARIABLES.map((variable) => (
-              <span key={variable} className="rounded-full bg-ink-50 px-3 py-1 text-xs font-bold text-ink-600">
+              <span
+                key={variable}
+                className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-ink-600 ring-1 ring-ink-200"
+              >
                 {variable}
               </span>
             ))}
           </div>
         </div>
+      </section>
 
-        <div className="mt-5 flex justify-end border-t border-ink-100 pt-5">
+      {/* Barra de guardado pegada al borde inferior: el formulario es largo y
+          obligaba a bajar hasta el final para guardar. */}
+      <div className="sticky bottom-0 -mx-4 border-t border-ink-100 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="mx-auto flex max-w-6xl justify-end">
           <Button className="min-h-11 w-full rounded-xl px-5 text-sm sm:w-auto" type="submit" loading={isSubmitting}>
             <FiSave className="size-4" />
             Guardar cambios
           </Button>
         </div>
-      </section>
+      </div>
     </form>
   );
 }
