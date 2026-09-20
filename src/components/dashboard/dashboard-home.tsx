@@ -9,6 +9,7 @@ import {
 } from "react-icons/fi";
 import { cn, currency } from "@/lib/web-utils";
 import type { AccountingSummary, GroupSummary } from "@/lib/web-types";
+import { StatCard } from "@/components/ui/stat-card";
 
 type DueItem = {
   id: string;
@@ -84,31 +85,31 @@ export function DashboardHome({
         </section>
 
         <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-          <HomeStatCard
+          <StatCard
             title="Cobrado este mes"
             value={currency(summary.pagosRecibidosEsteMes + summary.ingresosInscripciones)}
-            helper="mensualidades e inscripciones"
+            caption="mensualidades e inscripciones"
             tone="success"
             icon={<FiDollarSign className="size-5" />}
           />
-          <HomeStatCard
+          <StatCard
             title="Vence hoy"
             value={currency(dueTodayAmount)}
-            helper={`${dueTodayCount} cobros pendientes`}
+            caption={`${dueTodayCount} cobros pendientes`}
             tone="warning"
             icon={<FiClock className="size-5" />}
           />
-          <HomeStatCard
+          <StatCard
             title="Alumnos activos"
             value={String(summary.estudiantesActivos)}
-            helper="en tus grupos"
+            caption="en tus grupos"
             tone="blue"
             icon={<FiUsers className="size-5" />}
           />
-          <HomeStatCard
+          <StatCard
             title="Balance"
             value={currency(summary.balance)}
-            helper="ingresos - egresos"
+            caption="ingresos - egresos"
             tone="purple"
             icon={<FiDollarSign className="size-5" />}
           />
@@ -197,58 +198,6 @@ export function DashboardHome({
         </section>
       </div>
     </div>
-  );
-}
-
-function HomeStatCard({
-  title,
-  value,
-  helper,
-  tone,
-  icon
-}: {
-  title: string;
-  value: string;
-  helper: string;
-  tone: "success" | "warning" | "blue" | "purple";
-  icon: React.ReactNode;
-}) {
-  const styles = {
-    success: { icon: "bg-emerald-50 text-emerald-600", value: "text-emerald-700" },
-    warning: { icon: "bg-amber-50 text-amber-500", value: "text-amber-500" },
-    blue: { icon: "bg-blue-50 text-blue-600", value: "text-blue-600" },
-    purple: { icon: "bg-violet-50 text-violet-600", value: "text-violet-600" }
-  }[tone];
-
-  return (
-    <article className="flex h-[152px] min-w-0 flex-col rounded-2xl border border-ink-100 bg-white p-3 shadow-sm transition hover:shadow-md sm:h-auto sm:min-h-0 sm:rounded-[24px] sm:p-6">
-      <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-start gap-2 sm:flex sm:gap-4">
-        <div
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-12 sm:rounded-2xl",
-            styles.icon
-          )}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="min-h-8 text-[11px] font-bold leading-4 text-ink-500 sm:min-h-0 sm:text-sm">{title}</p>
-          <p
-            className={cn(
-              "mt-1.5 break-words text-lg font-black leading-none sm:mt-3 sm:text-2xl",
-              styles.value
-            )}
-          >
-            {value}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-auto flex min-w-0 items-end justify-between gap-1.5 pt-3 sm:items-center sm:gap-3 sm:pt-8">
-        <p className="min-w-0 text-[11px] font-medium leading-4 text-ink-500 sm:truncate sm:text-sm">{helper}</p>
-        <FiChevronRight className="size-3.5 shrink-0 text-ink-300 sm:size-4" />
-      </div>
-    </article>
   );
 }
 

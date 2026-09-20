@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import {
   FiAlertTriangle,
@@ -19,11 +19,13 @@ import {
   FiUsers
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency } from "@/lib/web-utils";
 import type { GroupDetailResponse, GroupDetailStudent, PaymentStatus } from "@/lib/web-types";
+import { StatCard } from "@/components/ui/stat-card";
 
 type StudentPaymentFilter = "todos" | "pendientes" | "pagados" | "vencidos";
 
@@ -97,6 +99,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
     handleSubmit,
     watch,
     reset,
+    control,
     formState: { isSubmitting, errors }
   } = useForm<StudentFormValues>({
     defaultValues: createStudentDefaults()
@@ -262,31 +265,31 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              <MiniStatCard
+              <StatCard
                 title="Ingreso estimado"
                 value={currency(group.summary.estimatedIncome)}
-                helper={`${group.summary.activeStudents} alumnos activos`}
+                caption={`${group.summary.activeStudents} alumnos activos`}
                 tone="success"
                 icon={<FiDollarSign className="size-4" />}
               />
-              <MiniStatCard
+              <StatCard
                 title="Con mensualidad"
                 value={String(group.summary.studentsWithMonthlyFee)}
-                helper="alumnos con valor"
+                caption="alumnos con valor"
                 tone="blue"
                 icon={<FiUsers className="size-4" />}
               />
-              <MiniStatCard
+              <StatCard
                 title="Pendientes"
                 value={String(group.summary.pendingCount)}
-                helper="mensualidades"
+                caption="mensualidades"
                 tone="warning"
                 icon={<FiClock className="size-4" />}
               />
-              <MiniStatCard
+              <StatCard
                 title="Vencidos"
                 value={String(group.summary.overdueCount)}
-                helper="mensualidades"
+                caption="mensualidades"
                 tone="danger"
                 icon={<FiAlertTriangle className="size-4" />}
               />
@@ -410,35 +413,33 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
 
             {group.pagination.totalPages > 1 ? (
               <div className="flex flex-col gap-3 border-t border-ink-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs font-medium text-ink-500 sm:text-sm">
+                <p className="text-center text-xs font-medium text-ink-500 sm:text-left sm:text-sm">
                   Mostrando {group.students.length} de {group.pagination.total} alumnos del filtro actual
                 </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <div className="flex items-center justify-center rounded-[12px] border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 sm:text-sm">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="min-h-10 min-w-0 flex-1 rounded-[14px] px-2 text-xs font-semibold sm:flex-none sm:px-3 sm:text-[13px]"
+                    disabled={group.pagination.page <= 1}
+                    onClick={() => updateList({ page: group.pagination.page - 1 })}
+                  >
+                    <FiChevronLeft className="size-4" />
+                    <span className="truncate">Anterior</span>
+                  </Button>
+                  <span className="flex shrink-0 items-center justify-center px-1 text-xs font-bold tabular-nums text-ink-700">
                     {group.pagination.page} / {group.pagination.totalPages}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
-                      disabled={group.pagination.page <= 1}
-                      onClick={() => updateList({ page: group.pagination.page - 1 })}
-                    >
-                      <FiChevronLeft className="size-4" />
-                      <span className="truncate">Anterior</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
-                      disabled={group.pagination.page >= group.pagination.totalPages}
-                      onClick={() => updateList({ page: group.pagination.page + 1 })}
-                    >
-                      <span className="truncate">Siguiente</span>
-                      <FiChevronRight className="size-4" />
-                    </Button>
-                  </div>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="min-h-10 min-w-0 flex-1 rounded-[14px] px-2 text-xs font-semibold sm:flex-none sm:px-3 sm:text-[13px]"
+                    disabled={group.pagination.page >= group.pagination.totalPages}
+                    onClick={() => updateList({ page: group.pagination.page + 1 })}
+                  >
+                    <span className="truncate">Siguiente</span>
+                    <FiChevronRight className="size-4" />
+                  </Button>
                 </div>
               </div>
             ) : null}
@@ -493,7 +494,20 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Mensualidad" error={errors.precioMensualidad?.message}>
-                <input type="number" className="field-base" {...register("precioMensualidad", { required: "Ingresa la mensualidad" })} />
+                <Controller
+                  control={control}
+                  name="precioMensualidad"
+                  rules={{ required: "Ingresa la mensualidad" }}
+                  render={({ field }) => (
+                    <MoneyInput
+                      name={field.name}
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  )}
+                />
               </Field>
               <Field label="Día de cobro" error={errors.diaCobro?.message}>
                 <input type="number" min={1} max={28} className="field-base" {...register("diaCobro", { required: "Ingresa el día de cobro" })} />
@@ -620,7 +634,19 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Valor de inscripcion">
-                    <input type="number" className="field-base" {...register("inscripcionMonto")} />
+                    <Controller
+                      control={control}
+                      name="inscripcionMonto"
+                      render={({ field }) => (
+                        <MoneyInput
+                          name={field.name}
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      )}
+                    />
                   </Field>
                   <Field label="Inscripcion pagada">
                     <div className="grid grid-cols-2 gap-2">
@@ -653,7 +679,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             )}
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-3">
             <Button className="min-h-11 flex-1 rounded-[18px]" type="button" variant="secondary" onClick={closeAddStudentModal}>
               Cancelar
             </Button>
@@ -679,7 +705,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
             <textarea className="field-base min-h-28 resize-none" {...registerGroup("descripcion")} />
           </Field>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-3">
             <Button className="min-h-11 flex-1 rounded-[18px]" type="button" variant="secondary" onClick={closeEditGroupModal}>
               Cancelar
             </Button>
@@ -690,40 +716,6 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
         </form>
       </Modal>
     </div>
-  );
-}
-
-function MiniStatCard({
-  title,
-  value,
-  helper,
-  tone,
-  icon
-}: {
-  title: string;
-  value: string;
-  helper: string;
-  tone: "success" | "blue" | "warning" | "danger";
-  icon: ReactNode;
-}) {
-  const styles = {
-    success: "bg-emerald-50 text-brand-600",
-    blue: "bg-sky-50 text-sky-600",
-    warning: "bg-amber-50 text-amber-600",
-    danger: "bg-rose-50 text-rose-600"
-  }[tone];
-
-  return (
-    <article className="rounded-[24px] border border-ink-100 bg-white px-4 py-4 shadow-soft">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[11px] font-bold leading-snug text-ink-500">{title}</p>
-        <div className={cn("flex size-8 items-center justify-center rounded-[14px]", styles)}>{icon}</div>
-      </div>
-      <p className={cn("mt-3 text-[1.35rem] font-black tracking-tight leading-none sm:text-[1.45rem]", styles.split(" ")[1])}>
-        {value}
-      </p>
-      <p className="mt-2 text-[11px] font-semibold leading-snug text-ink-500">{helper}</p>
-    </article>
   );
 }
 

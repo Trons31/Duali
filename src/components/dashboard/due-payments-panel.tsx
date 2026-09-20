@@ -7,6 +7,7 @@ import { sileo } from "sileo";
 import {
   FiCheck,
   FiChevronDown,
+  FiChevronRight,
   FiChevronUp,
   FiDollarSign,
   FiFilter,
@@ -15,6 +16,7 @@ import {
   FiX
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { NoAplicaMonthlyPaymentModal, type NoAplicaMonthlyPaymentTarget } from "@/components/ui/no-aplica-monthly-payment-modal";
 import {
   PaymentInstallmentModal,
@@ -102,6 +104,7 @@ export function DuePaymentsPanel({
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<"ALL" | DuePayment["kind"]>("ALL");
+  const [detailCard, setDetailCard] = useState<PaymentCard | null>(null);
   const token = session?.user.apiToken ?? "";
 
   const filteredItems = useMemo(() => {
@@ -424,103 +427,42 @@ export function DuePaymentsPanel({
                   <article
                     key={card.key}
                     className={cn(
-                      "h-full rounded-2xl border p-4 shadow-sm",
+                      "overflow-hidden rounded-2xl border shadow-sm transition hover:shadow-md",
                       isOverdue ? "border-rose-100 bg-rose-50/60" : "border-ink-100 bg-white"
                     )}
                   >
-                    <div className="flex h-full flex-col gap-4">
-                      <div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailCard(card)}
+                      className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset"
+                      aria-label={`Ver detalle de ${item.student.nombre} ${item.student.apellido}`}
+                    >
+                      <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-[15px] font-semibold text-ink-950">
+                          <p className="truncate text-[15px] font-semibold text-ink-950">
                             {item.student.nombre} {item.student.apellido}
                           </p>
                           <span className={statusBadgeClassName(displayStatus)}>{paymentStatusLabel(displayStatus)}</span>
                         </div>
-                        <p className="mt-1 text-sm text-ink-500">{paymentCardSummary(card)}</p>
-                        {isOverdue ? (
-                          <p className="mt-2 text-xs font-semibold text-rose-600">
-                            {card.isConsolidated
-                              ? `Deuda mas antigua: ${overdueAgeText(card.oldestDueDate)}`
-                              : overdueAgeText(item.fechaVencimiento)}
-                          </p>
-                        ) : null}
-                        {card.isConsolidated ? (
-                          <div className="mt-4 overflow-hidden rounded-[18px] border border-rose-100 bg-white">
-                            {card.items.map((payment) => (
-                              <div
-                                key={`${payment.kind}-${payment.id}`}
-                                className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-rose-50 px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_140px_96px]"
-                              >
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-black text-ink-900">{paymentConceptCopy(payment)}</p>
-                                  <p className="mt-1 text-xs font-semibold text-ink-400">Vence {formatDate(payment.fechaVencimiento)}</p>
-                                </div>
-                                <span className="text-right text-sm font-black text-ink-950">{currency(paymentRemainingAmount(payment))}</span>
-                                <div className="col-span-2 grid gap-2 sm:col-span-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openInstallmentModal(payment)}
-                                    className="h-10 rounded-[14px] border border-brand-200 bg-brand-50 px-4 text-sm font-black text-brand-700 transition hover:bg-brand-100"
-                                  >
-                                    Abonar
-                                  </button>
-                                  {canMarkNoAplica(payment) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setNoAplicaTarget(payment)}
-                                      className="h-10 rounded-[14px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50"
-                                    >
-                                      No aplica
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <p className={cn("mt-3 text-2xl font-black leading-none", amountClassName(displayStatus))}>
-                          {currency(card.totalAmount)}
+                        <p className="mt-1 truncate text-xs font-medium text-ink-500">
+                          {card.isConsolidated
+                            ? `${card.items.length} cobros`
+                            : paymentConceptCopy(item)}
+                          {" · "}
+                          {isOverdue
+                            ? card.isConsolidated
+                              ? overdueAgeText(card.oldestDueDate)
+                              : overdueAgeText(item.fechaVencimiento)
+                            : `Vence ${formatDate(item.fechaVencimiento)}`}
                         </p>
                       </div>
-
-                      <div className="mt-auto grid gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
-                          loading={notifyingCardKey === card.key}
-                          onClick={() => notifyByWhatsapp(card)}
-                        >
-                          <FiMessageCircle className="size-4" />
-                          Notificar por WhatsApp
-                        </Button>
-                        {!card.isConsolidated ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="min-h-11 rounded-xl border-amber-200 bg-amber-50 py-2.5 text-[13px] text-amber-700 hover:bg-amber-100"
-                            onClick={() => openInstallmentModal(item)}
-                          >
-                            <FiDollarSign className="size-4" />
-                            Abonar
-                          </Button>
-                        ) : null}
-                        {!card.isConsolidated && canMarkNoAplica(item) ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className="min-h-11 rounded-xl border-slate-200 bg-white py-2.5 text-[13px] text-slate-700 hover:bg-slate-50"
-                            onClick={() => setNoAplicaTarget(item)}
-                          >
-                            No aplica
-                          </Button>
-                        ) : null}
-                        <Button type="button" className="min-h-11 rounded-xl py-2.5 text-[13px]" onClick={() => openPayModal(card)}>
-                          <FiCheck className="size-4" />
-                          Marcar pagado
-                        </Button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className={cn("text-lg font-black leading-none", amountClassName(displayStatus))}>
+                          {currency(card.totalAmount)}
+                        </p>
+                        <FiChevronRight className="size-5 text-ink-300" />
                       </div>
-                    </div>
+                    </button>
                   </article>
                   );
                 })}
@@ -613,6 +555,109 @@ export function DuePaymentsPanel({
           )}
         </section>
       </div>
+
+      <Modal
+        open={Boolean(detailCard)}
+        title={
+          detailCard
+            ? `${detailCard.primaryItem.student.nombre} ${detailCard.primaryItem.student.apellido}`
+            : ""
+        }
+        description={detailCard ? paymentCardSummary(detailCard) : undefined}
+        onClose={() => setDetailCard(null)}
+      >
+        {detailCard ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={statusBadgeClassName(detailCard.displayStatus)}>
+                  {paymentStatusLabel(detailCard.displayStatus)}
+                </span>
+                {detailCard.displayStatus === "VENCIDO" ? (
+                  <span className="text-xs font-semibold text-rose-600">
+                    {detailCard.isConsolidated
+                      ? `Deuda mas antigua: ${overdueAgeText(detailCard.oldestDueDate)}`
+                      : overdueAgeText(detailCard.primaryItem.fechaVencimiento)}
+                  </span>
+                ) : null}
+              </div>
+              <p className={cn("text-2xl font-black leading-none", amountClassName(detailCard.displayStatus))}>
+                {currency(detailCard.totalAmount)}
+              </p>
+            </div>
+
+            <div className="overflow-hidden rounded-[18px] border border-ink-100">
+              {detailCard.items.map((payment) => (
+                <div
+                  key={`${payment.kind}-${payment.id}`}
+                  className="border-b border-ink-100 px-4 py-3 last:border-b-0"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-ink-900">{paymentConceptCopy(payment)}</p>
+                      <p className="mt-1 text-xs font-semibold text-ink-400">
+                        Vence {formatDate(payment.fechaVencimiento)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-black text-ink-950">
+                      {currency(paymentRemainingAmount(payment))}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailCard(null);
+                        openInstallmentModal(payment);
+                      }}
+                      className="h-10 rounded-[14px] border border-brand-200 bg-brand-50 px-4 text-sm font-black text-brand-700 transition hover:bg-brand-100"
+                    >
+                      Abonar
+                    </button>
+                    {canMarkNoAplica(payment) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailCard(null);
+                          setNoAplicaTarget(payment);
+                        }}
+                        className="h-10 rounded-[14px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:bg-slate-50"
+                      >
+                        No aplica
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
+                loading={notifyingCardKey === detailCard.key}
+                onClick={() => notifyByWhatsapp(detailCard)}
+              >
+                <FiMessageCircle className="size-4" />
+                Notificar por WhatsApp
+              </Button>
+              <Button
+                type="button"
+                className="min-h-11 rounded-xl py-2.5 text-[13px]"
+                onClick={() => {
+                  const target = detailCard;
+                  setDetailCard(null);
+                  openPayModal(target);
+                }}
+              >
+                <FiCheck className="size-4" />
+                Marcar pagado
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <PaymentMethodModal
         open={Boolean(payTarget)}

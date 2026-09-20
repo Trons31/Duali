@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FiChevronDown, FiChevronUp, FiDollarSign, FiFilter, FiX } from "react-icons/fi";
+import { FiChevronDown, FiChevronRight, FiChevronUp, FiDollarSign, FiFilter, FiX } from "react-icons/fi";
+import { Modal } from "@/components/ui/modal";
 import { cn, currency } from "@/lib/web-utils";
-import type { PaymentHistoryFilter, PaymentHistoryResponse } from "@/lib/web-types";
+import type { PaymentHistoryFilter, PaymentHistoryItem, PaymentHistoryResponse } from "@/lib/web-types";
 
 const MONTH_NAMES = [
   "enero",
@@ -26,6 +27,7 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
   const pathname = usePathname();
   const [closedDays, setClosedDays] = useState<Record<string, boolean>>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detailItem, setDetailItem] = useState<PaymentHistoryItem | null>(null);
 
   const groupedByDay = useMemo(() => {
     const map = new Map<
@@ -210,37 +212,35 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
                     {group.items.map((item) => (
                       <article
                         key={`${group.key}-${item.kind}-${item.id}`}
-                        className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm"
+                        className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition hover:shadow-md"
                       >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <p className="text-[15px] font-semibold text-ink-950">
+                        <button
+                          type="button"
+                          onClick={() => setDetailItem(item)}
+                          className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset"
+                          aria-label={`Ver detalle del pago de ${item.student.nombre} ${item.student.apellido}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[15px] font-semibold text-ink-950">
                               {item.student.nombre} {item.student.apellido}
                             </p>
-                            <p className="mt-1 text-sm text-ink-500">
+                            <p className="mt-1 truncate text-xs font-medium text-ink-500">
                               {item.label}
-                              {item.kind === "MONTHLY_PAYMENT" && item.mes && item.anio
-                                ? ` · ${formatMonthYear(item.mes, item.anio)}`
-                                : ""}
-                              {item.kind === "PAYMENT_INSTALLMENT" && item.concept ? ` · ${item.concept}` : ""}
-                              {item.kind === "PAYMENT_INSTALLMENT" && item.paymentMethod ? ` · ${formatMethod(item.paymentMethod)}` : ""}
                               {item.group?.nombre ? ` · ${item.group.nombre}` : ""}
                             </p>
-                            {item.kind === "PAYMENT_INSTALLMENT" ? (
-                              <p className="mt-2 text-sm font-bold text-sky-700">
-                                Abono: {currency(item.monto)} · Quedo debiendo: {currency(item.remainingBalance ?? 0)}
-                              </p>
-                            ) : null}
                           </div>
-                          <p
-                            className={cn(
-                              "shrink-0 text-2xl font-black leading-none",
-                              item.kind === "PAYMENT_INSTALLMENT" ? "text-sky-700" : "text-brand-600"
-                            )}
-                          >
-                            {currency(item.monto)}
-                          </p>
-                        </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <p
+                              className={cn(
+                                "text-lg font-black leading-none",
+                                item.kind === "PAYMENT_INSTALLMENT" ? "text-sky-700" : "text-brand-600"
+                              )}
+                            >
+                              {currency(item.monto)}
+                            </p>
+                            <FiChevronRight className="size-5 text-ink-300" />
+                          </div>
+                        </button>
                       </article>
                     ))}
                   </div>
@@ -250,8 +250,61 @@ export function PaymentsHistoryPanel({ data }: { data: PaymentHistoryResponse })
           })
         )}
       </div>
+
+      <Modal
+        open={Boolean(detailItem)}
+        title={detailItem ? `${detailItem.student.nombre} ${detailItem.student.apellido}` : ""}
+        description={detailItem ? `${detailItem.label} registrada` : undefined}
+        onClose={() => setDetailItem(null)}
+      >
+        {detailItem ? (
+          <div className="space-y-4">
+            <div className="rounded-[18px] border border-ink-100 bg-ink-50/60 px-4 py-4 text-center">
+              <p className="text-xs font-bold uppercase tracking-wide text-ink-400">Valor pagado</p>
+              <p
+                className={cn(
+                  "mt-1 text-3xl font-black leading-none",
+                  detailItem.kind === "PAYMENT_INSTALLMENT" ? "text-sky-700" : "text-brand-600"
+                )}
+              >
+                {currency(detailItem.monto)}
+              </p>
+            </div>
+
+            <dl className="overflow-hidden rounded-[18px] border border-ink-100">
+              <DetailRow label="Concepto" value={detailItem.label} />
+              {detailItem.kind === "MONTHLY_PAYMENT" && detailItem.mes && detailItem.anio ? (
+                <DetailRow label="Periodo" value={formatMonthYear(detailItem.mes, detailItem.anio)} />
+              ) : null}
+              {detailItem.concept ? <DetailRow label="Detalle" value={detailItem.concept} /> : null}
+              <DetailRow label="Grupo" value={detailItem.group?.nombre ?? "Sin grupo"} />
+              <DetailRow label="Fecha de pago" value={formatFullDate(detailItem.fechaPago)} />
+              {detailItem.paymentMethod ? (
+                <DetailRow label="Metodo" value={formatMethod(detailItem.paymentMethod)} />
+              ) : null}
+              {detailItem.kind === "PAYMENT_INSTALLMENT" ? (
+                <DetailRow label="Quedo debiendo" value={currency(detailItem.remainingBalance ?? 0)} />
+              ) : null}
+            </dl>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-ink-100 px-4 py-3 last:border-b-0">
+      <dt className="text-sm font-medium text-ink-500">{label}</dt>
+      <dd className="text-right text-sm font-bold text-ink-950">{value}</dd>
+    </div>
+  );
+}
+
+function formatFullDate(value: string) {
+  const date = new Date(value);
+  return `${date.getDate()} de ${MONTH_NAMES[date.getMonth()]} de ${date.getFullYear()}`;
 }
 
 function formatSectionDate(date: Date) {

@@ -17,6 +17,8 @@ import {
 } from "react-icons/fi";
 import { cn, currency } from "@/lib/web-utils";
 import type { AccountingMovement, AccountingOverview } from "@/lib/web-types";
+import { StatCard } from "@/components/ui/stat-card";
+import { Modal } from "@/components/ui/modal";
 
 const MONTH_NAMES = [
   "Enero",
@@ -38,6 +40,7 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
   const pathname = usePathname();
   const [closedDays, setClosedDays] = useState<Record<string, boolean>>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detailMovement, setDetailMovement] = useState<AccountingMovement | null>(null);
 
   const groupedMovements = useMemo(() => groupMovementsByDay(data.movements), [data.movements]);
 
@@ -119,28 +122,28 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
         </section>
 
         <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-          <SummaryCard
+          <StatCard
             title="Ingresos"
             value={currency(data.summary.ingresos)}
             caption={`${data.paymentMethods.reduce((sum, method) => sum + method.count, 0)} cobros del mes`}
             icon={<FiTrendingUp className="size-5" />}
             tone="success"
           />
-          <SummaryCard
+          <StatCard
             title="Egresos"
             value={currency(data.summary.egresos)}
             caption={`${data.movements.filter((movement) => movement.direction === "expense").length} gastos del mes`}
             icon={<FiTrendingDown className="size-5" />}
             tone="warning"
           />
-          <SummaryCard
+          <StatCard
             title="Balance"
             value={currency(data.summary.balance)}
             caption="ingresos - egresos"
             icon={<FiDollarSign className="size-5" />}
-            tone="violet"
+            tone="purple"
           />
-          <SummaryCard
+          <StatCard
             title="Movimientos"
             value={String(data.summary.movimientos)}
             caption="registros del periodo"
@@ -223,7 +226,11 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
                   {isClosed ? null : (
                     <div className="grid gap-3 border-t border-ink-100 p-4 sm:gap-4 sm:p-6 lg:grid-cols-2">
                       {group.items.map((movement) => (
-                        <MovementCard key={`${group.key}-${movement.type}-${movement.id}`} movement={movement} />
+                        <MovementCard
+                          key={`${group.key}-${movement.type}-${movement.id}`}
+                          movement={movement}
+                          onSelect={() => setDetailMovement(movement)}
+                        />
                       ))}
                     </div>
                   )}
@@ -241,69 +248,76 @@ export function AccountingOverviewPanel({ data }: { data: AccountingOverview }) 
           )}
         </section>
       </div>
+
+      <Modal
+        open={Boolean(detailMovement)}
+        title={detailMovement?.title ?? ""}
+        description={detailMovement ? movementTypeLabel(detailMovement.type) : undefined}
+        onClose={() => setDetailMovement(null)}
+      >
+        {detailMovement ? (
+          <div className="space-y-4">
+            <div className="rounded-[18px] border border-ink-100 bg-ink-50/60 px-4 py-4 text-center">
+              <p className="text-xs font-bold uppercase tracking-wide text-ink-400">
+                {detailMovement.direction === "income" ? "Ingreso" : "Egreso"}
+              </p>
+              <p
+                className={cn(
+                  "mt-1 text-3xl font-black leading-none",
+                  detailMovement.direction === "income" ? "text-brand-600" : "text-rose-600"
+                )}
+              >
+                {detailMovement.direction === "income"
+                  ? currency(detailMovement.amount)
+                  : `-${currency(detailMovement.amount)}`}
+              </p>
+            </div>
+
+            <dl className="overflow-hidden rounded-[18px] border border-ink-100">
+              <MovementDetailRow label="Tipo" value={movementTypeLabel(detailMovement.type)} />
+              <MovementDetailRow label="Detalle" value={detailMovement.subtitle} />
+              <MovementDetailRow label="Fecha" value={formatMovementDate(detailMovement.date)} />
+              {detailMovement.type === "ABONO" ? (
+                <MovementDetailRow
+                  label="Quedo debiendo"
+                  value={currency(detailMovement.remainingBalance ?? 0)}
+                />
+              ) : null}
+            </dl>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }
 
-function SummaryCard({
-  title,
-  value,
-  caption,
-  icon,
-  tone
-}: {
-  title: string;
-  value: string;
-  caption: string;
-  icon: React.ReactNode;
-  tone: "success" | "warning" | "violet" | "blue";
-}) {
-  const toneStyles = {
-    success: {
-      value: "text-emerald-700",
-      icon: "bg-emerald-50 text-emerald-600"
-    },
-    warning: {
-      value: "text-amber-500",
-      icon: "bg-amber-50 text-amber-500"
-    },
-    violet: {
-      value: "text-violet-600",
-      icon: "bg-violet-50 text-violet-600"
-    },
-    blue: {
-      value: "text-blue-600",
-      icon: "bg-blue-50 text-blue-600"
-    }
-  }[tone];
-
+function MovementDetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <article className="flex h-[152px] min-w-0 flex-col rounded-2xl border border-ink-100 bg-white p-3 shadow-sm transition hover:shadow-md sm:h-auto sm:rounded-[24px] sm:p-6">
-      <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-start gap-2 sm:flex sm:gap-4">
-        <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-12 sm:rounded-2xl", toneStyles.icon)}>
-          {icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="min-h-8 text-[11px] font-bold leading-4 text-ink-500 sm:min-h-0 sm:text-sm">{title}</p>
-          <p className={cn("mt-1.5 break-words text-lg font-black leading-none sm:mt-3 sm:text-2xl", toneStyles.value)}>
-            {value}
-          </p>
-        </div>
-      </div>
-
-      <p className="mt-auto min-w-0 pt-3 text-[11px] font-medium leading-4 text-ink-500 sm:truncate sm:pt-8 sm:text-sm">
-        {caption}
-      </p>
-    </article>
+    <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-4 py-3 last:border-b-0">
+      <dt className="shrink-0 text-sm font-medium text-ink-500">{label}</dt>
+      <dd className="text-right text-sm font-bold text-ink-950">{value}</dd>
+    </div>
   );
 }
 
-function MovementCard({ movement }: { movement: AccountingMovement }) {
+function movementTypeLabel(type: AccountingMovement["type"]) {
+  if (type === "MENSUALIDAD") return "Mensualidad";
+  if (type === "INSCRIPCION") return "Inscripcion";
+  if (type === "ABONO") return "Abono";
+  return "Egreso";
+}
+
+function MovementCard({ movement, onSelect }: { movement: AccountingMovement; onSelect: () => void }) {
   const isIncome = movement.direction === "income";
 
   return (
-    <article className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm">
-      <div className="flex items-start gap-3">
+    <article className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition hover:shadow-md">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`Ver detalle de ${movement.title}`}
+        className="flex w-full items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset"
+      >
         <div
           className={cn(
             "flex size-10 shrink-0 items-center justify-center rounded-xl",
@@ -345,7 +359,7 @@ function MovementCard({ movement }: { movement: AccountingMovement }) {
             </div>
           </div>
         </div>
-      </div>
+      </button>
     </article>
   );
 }

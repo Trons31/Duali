@@ -3,14 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { NoAplicaMonthlyPaymentModal, type NoAplicaMonthlyPaymentTarget } from "@/components/ui/no-aplica-monthly-payment-modal";
 import { PAYMENT_METHODS, PaymentMethodModal, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
+import { parseMoney } from "@/lib/money-input";
 import { currency, formatDate } from "@/lib/web-utils";
 import type { GroupSummary, MonthlyPaymentItem, StudentListItem } from "@/lib/web-types";
 
@@ -18,7 +20,7 @@ type ManualPaymentForm = {
   estudianteId: string;
   mes: number;
   anio: number;
-  monto: number;
+  monto: string;
   fechaVencimiento: string;
 };
 
@@ -27,7 +29,7 @@ type GenerateByGroupForm = {
   mes: number;
   anio: number;
   fechaVencimiento: string;
-  monto?: number;
+  monto: string;
 };
 
 export function MonthlyPaymentsPanel({
@@ -55,7 +57,7 @@ export function MonthlyPaymentsPanel({
       estudianteId: students[0]?.id ?? "",
       mes: new Date().getMonth() + 1,
       anio: new Date().getFullYear(),
-      monto: Number(students[0]?.precioMensualidad ?? groups[0]?.precioMensualidadDefault ?? 0),
+      monto: String(Number(students[0]?.precioMensualidad ?? groups[0]?.precioMensualidadDefault ?? 0) || ""),
       fechaVencimiento: new Date().toISOString().slice(0, 10)
     }
   });
@@ -66,14 +68,14 @@ export function MonthlyPaymentsPanel({
       mes: new Date().getMonth() + 1,
       anio: new Date().getFullYear(),
       fechaVencimiento: new Date().toISOString().slice(0, 10),
-      monto: undefined
+      monto: ""
     }
   });
 
   async function createManual(values: ManualPaymentForm) {
     await clientApiFetch("/api/monthly-payments", token, {
       method: "POST",
-      body: JSON.stringify(values)
+      body: JSON.stringify({ ...values, monto: parseMoney(values.monto) })
     })
       .then(() => {
         sileo.success({ title: "Mensualidad creada" });
@@ -86,7 +88,7 @@ export function MonthlyPaymentsPanel({
   async function createByGroup(values: GenerateByGroupForm) {
     await clientApiFetch<{ created: number }>("/api/monthly-payments/generate-group", token, {
       method: "POST",
-      body: JSON.stringify(values)
+      body: JSON.stringify({ ...values, monto: values.monto ? parseMoney(values.monto) : undefined })
     })
       .then((payload: { created: number }) => {
         sileo.success({ title: `${payload.created} mensualidades generadas` });
@@ -177,7 +179,19 @@ export function MonthlyPaymentsPanel({
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-ink-700">Monto</label>
-            <input type="number" className="field-base" {...manualForm.register("monto", { valueAsNumber: true })} />
+            <Controller
+              control={manualForm.control}
+              name="monto"
+              render={({ field }) => (
+                <MoneyInput
+                  name={field.name}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  ref={field.ref}
+                />
+              )}
+            />
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-ink-700">Fecha de vencimiento</label>
@@ -212,7 +226,19 @@ export function MonthlyPaymentsPanel({
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-ink-700">Monto opcional</label>
-            <input type="number" className="field-base" {...generateForm.register("monto", { valueAsNumber: true })} />
+            <Controller
+              control={generateForm.control}
+              name="monto"
+              render={({ field }) => (
+                <MoneyInput
+                  name={field.name}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  ref={field.ref}
+                />
+              )}
+            />
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-ink-700">Fecha de vencimiento</label>

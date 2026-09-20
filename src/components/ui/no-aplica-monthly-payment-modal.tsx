@@ -51,7 +51,7 @@ export function NoAplicaMonthlyPaymentModal({
       description={target ? `${target.studentName} - ${target.concept}` : "Este cobro no contara como deuda."}
       onClose={close}
       footer={
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-3">
           <Button type="button" variant="secondary" className="min-h-12 rounded-[18px]" onClick={close} disabled={loading}>
             Cancelar
           </Button>

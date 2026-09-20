@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import {
   FiBookOpen,
@@ -26,6 +26,7 @@ import {
   FiX
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -40,7 +41,16 @@ import type {
   StudentPaymentHistoryResponse
 } from "@/lib/web-types";
 
-type CreateStep = "TYPE" | "ENROLLMENT" | "CURRENT_PAYMENT" | "MONTHLY" | "HISTORY" | "FORM";
+type CreateStep =
+  | "TYPE"
+  | "ENROLLMENT"
+  | "CURRENT_PAYMENT"
+  | "MONTHLY"
+  | "HISTORY"
+  | "FORM"
+  | "EDIT_BILLING"
+  | "EDIT_STATUS"
+  | "EDIT_HISTORY";
 
 type StudentFormValues = {
   estado: "ACTIVO" | "PAUSADO" | "DESACTIVADO" | "INACTIVO";
@@ -114,11 +124,13 @@ export function StudentsPanelCards({
   const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"recent" | "name-asc" | "name-desc">("recent");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detailStudent, setDetailStudent] = useState<StudentListItem | null>(null);
   const {
     register,
     handleSubmit,
     reset,
     watch,
+    control,
     formState: { isSubmitting, errors }
   } = useForm<StudentFormValues>({
     defaultValues: createDefaultValues(groups[0]?.id ?? "")
@@ -437,6 +449,10 @@ export function StudentsPanelCards({
     setStep("FORM");
   }
 
+  // Cada paso de la edicion guarda con el mismo submit; esto define a donde ir
+  // despues, para que "Siguiente" no avance dejando los cambios sin enviar.
+  const [nextStepAfterSave, setNextStepAfterSave] = useState<CreateStep>("EDIT_BILLING");
+
   const submitStudent = handleSubmit(async (values) => {
     if (editTarget && values.estado === "PAUSADO" && values.pausaModo === "CON_FECHA" && !values.fechaFinPausa) {
       sileo.error({
@@ -513,7 +529,13 @@ export function StudentsPanelCards({
           title: isEditing ? "Alumno actualizado" : "Alumno creado",
           description: isEditing ? "Los cambios del alumno ya quedaron guardados." : "El alumno ya quedo registrado en Duali."
         });
-        closeCreateModal();
+        // Editando, guardar no cierra: los datos personales son el primer paso
+        // y todavia quedan mensualidad, estado e historial por revisar.
+        if (isEditing) {
+          setStep(nextStepAfterSave);
+        } else {
+          closeCreateModal();
+        }
         router.refresh();
       })
       .catch((error: Error) => {
@@ -710,113 +732,70 @@ export function StudentsPanelCards({
             <>
               <div className="grid gap-3 p-4 sm:gap-4 sm:p-6 xl:grid-cols-2">
                 {visibleStudents.map((student) => {
-                  const contact = resolveStudentContact(student);
                   return (
                     <article
                       key={student.id}
-                      className="h-full rounded-2xl border border-ink-100 bg-white p-4 shadow-sm transition hover:border-brand-100 hover:shadow-md"
+                      className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition hover:border-brand-100 hover:shadow-md"
                     >
-                      <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex items-start gap-3">
-                            <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-brand-50 text-sm font-bold text-brand-700">
-                              {getInitials(student.nombre, student.apellido)}
-                            </div>
-                            <button type="button" className="min-w-0 text-left" onClick={() => openEditModal(student)}>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-[15px] font-semibold text-ink-950">
-                                  {student.nombre} {student.apellido}
-                                </h3>
-                                <StatusBadge value={student.estado} />
-                              </div>
-                              <p className="mt-1 text-sm text-ink-500">
-                                {student.group?.nombre ?? "Sin grupo"} · {student.edad} años · {studentPaymentLabel(student)}
-                              </p>
-                            </button>
-                          </div>
-                          <div className="flex flex-wrap gap-2 sm:self-start">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              className="min-h-9 rounded-[14px] px-3.5 py-2 text-[13px] font-semibold"
-                              onClick={() => openEditModal(student)}
-                            >
-                              Editar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              className="min-h-9 rounded-[14px] px-3.5 py-2 text-[13px] font-semibold"
-                              onClick={() => setDeleteTarget(student)}
-                            >
-                              Desactivar
-                            </Button>
-                          </div>
+                      <button
+                        type="button"
+                        onClick={() => setDetailStudent(student)}
+                        className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset"
+                        aria-label={`Ver detalle de ${student.nombre} ${student.apellido}`}
+                      >
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-brand-50 text-sm font-bold text-brand-700">
+                          {getInitials(student.nombre, student.apellido)}
                         </div>
-
-                        <div className="grid grid-cols-2 gap-2.5">
-                          <InfoBlock
-                            label="Mensualidad"
-                            value={student.precioMensualidad ? currency(student.precioMensualidad) : "Usa valor del grupo"}
-                            helper={
-                              studentPaymentLabel(student) === "pendiente"
-                                ? "Tiene cobros pendientes o vencidos"
-                                : monthlyModeCopy(student.modalidadMensualidad)
-                            }
-                          />
-                          <InfoBlock
-                            label="Cobro"
-                            value={`Día ${student.diaCobro ?? 10}`}
-                            helper={monthlyModeCopy(student.modalidadMensualidad)}
-                          />
-                          <InfoBlock
-                            label="Inscripción"
-                            value={student.enrollmentPayment?.estado ?? "Sin inscripción"}
-                            helper={student.enrollmentPayment ? currency(student.enrollmentPayment.monto) : "No aplica"}
-                          />
-                          <InfoBlock
-                            label="Contacto"
-                            value={contact || "Sin contacto"}
-                            helper={student.esMenorDeEdad ? "Acudiente o alumno" : "Teléfono principal"}
-                            icon={<FiPhone className="size-3.5 text-brand-600" />}
-                          />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-[15px] font-semibold text-ink-950">
+                              {student.nombre} {student.apellido}
+                            </h3>
+                            <StatusBadge value={student.estado} />
+                          </div>
+                          <p className="mt-1 truncate text-xs font-medium text-ink-500">
+                            {student.group?.nombre ?? "Sin grupo"}
+                            {" · "}
+                            {student.precioMensualidad
+                              ? currency(student.precioMensualidad)
+                              : "Usa valor del grupo"}
+                          </p>
                         </div>
-                      </div>
+                        <FiChevronRight className="size-5 shrink-0 text-ink-300" />
+                      </button>
                     </article>
                   );
                 })}
               </div>
 
               <div className="flex flex-col gap-3 border-t border-ink-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <p className="text-xs font-medium text-ink-500 sm:text-sm">
+                <p className="text-center text-xs font-medium text-ink-500 sm:text-left sm:text-sm">
                   Mostrando {visibleStudents.length} de {students.pagination.total} alumnos
                 </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <div className="flex items-center justify-center rounded-[12px] border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 sm:text-sm">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="min-h-10 min-w-0 flex-1 rounded-[14px] px-2 text-xs font-semibold sm:flex-none sm:px-3 sm:text-[13px]"
+                    disabled={pagination.page <= 1}
+                    onClick={() => updateList({ page: pagination.page - 1 })}
+                  >
+                    <FiChevronLeft className="size-4" />
+                    <span className="truncate">Anterior</span>
+                  </Button>
+                  <span className="flex shrink-0 items-center justify-center px-1 text-xs font-bold tabular-nums text-ink-700">
                     {pagination.page} / {pagination.totalPages}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
-                      disabled={pagination.page <= 1}
-                      onClick={() => updateList({ page: pagination.page - 1 })}
-                    >
-                      <FiChevronLeft className="size-4" />
-                      <span className="truncate">Anterior</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="min-h-10 rounded-[14px] px-3 text-xs font-semibold sm:text-[13px]"
-                      disabled={pagination.page >= pagination.totalPages}
-                      onClick={() => updateList({ page: pagination.page + 1 })}
-                    >
-                      <span className="truncate">Siguiente</span>
-                      <FiChevronRight className="size-4" />
-                    </Button>
-                  </div>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="min-h-10 min-w-0 flex-1 rounded-[14px] px-2 text-xs font-semibold sm:flex-none sm:px-3 sm:text-[13px]"
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => updateList({ page: pagination.page + 1 })}
+                  >
+                    <span className="truncate">Siguiente</span>
+                    <FiChevronRight className="size-4" />
+                  </Button>
                 </div>
               </div>
             </>
@@ -828,27 +807,22 @@ export function StudentsPanelCards({
         open={createOpen}
         onClose={closeCreateModal}
         title={editTarget ? "Editar alumno" : "Nuevo alumno"}
-        description={
-          editTarget
-            ? "Actualiza los datos personales, el grupo y la configuración de cobro del alumno."
-            : stepProgressLabel(step, registrationType)
-        }
+        description={stepProgressLabel(step, registrationType, Boolean(editTarget))}
       >
         <div className="space-y-6">
-          {editTarget ? null : (
-            <>
-              <div>
-                <h3 className="text-xl font-black tracking-tight text-ink-950 sm:text-2xl">{stepTitle(step)}</h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-ink-500">{stepCopy(step)}</p>
-              </div>
+          <div>
+            <h3 className="text-xl font-black tracking-tight text-ink-950 sm:text-2xl">{stepTitle(step)}</h3>
+            <p className="mt-2 text-sm font-medium leading-6 text-ink-500">{stepCopy(step)}</p>
+          </div>
 
-              <div className="flex gap-2">
-                {Array.from({ length: stepTotal(registrationType) }, (_, index) => (
-                  <div key={index} className={progressDotClass(index < stepIndex(step, registrationType))} />
-                ))}
-              </div>
-            </>
-          )}
+          <div className="flex gap-2">
+            {Array.from({ length: stepTotal(registrationType, Boolean(editTarget)) }, (_, index) => (
+              <div
+                key={index}
+                className={progressDotClass(index < stepIndex(step, registrationType, Boolean(editTarget)))}
+              />
+            ))}
+          </div>
 
           {step === "TYPE" ? (
             <div className="space-y-4">
@@ -898,12 +872,21 @@ export function StudentsPanelCards({
                 </div>
 
                 <Field label="Valor de inscripción" error={errors.inscripcionMonto?.message}>
-                  <input
-                    className="field-base"
-                    inputMode="numeric"
-                    {...register("inscripcionMonto", {
+                  <Controller
+                    control={control}
+                    name="inscripcionMonto"
+                    rules={{
                       required: registrationType === "NUEVO" ? "Ingresa el valor de la inscripción" : false
-                    })}
+                    }}
+                    render={({ field }) => (
+                      <MoneyInput
+                        name={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    )}
                   />
                 </Field>
 
@@ -965,7 +948,7 @@ export function StudentsPanelCards({
                 ) : null}
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
                   Atrás
                 </Button>
@@ -1048,7 +1031,7 @@ export function StudentsPanelCards({
                 ) : null}
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
                   Atrás
                 </Button>
@@ -1145,10 +1128,19 @@ export function StudentsPanelCards({
                 </div>
 
                 <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
-                  <input
-                    className="field-base"
-                    inputMode="numeric"
-                    {...register("precioMensualidad", { required: "Ingresa la mensualidad" })}
+                  <Controller
+                    control={control}
+                    name="precioMensualidad"
+                    rules={{ required: "Ingresa la mensualidad" }}
+                    render={({ field }) => (
+                      <MoneyInput
+                        name={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    )}
                   />
                 </Field>
 
@@ -1325,7 +1317,7 @@ export function StudentsPanelCards({
                 ) : null}
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
                   Atrás
                 </Button>
@@ -1401,10 +1393,19 @@ export function StudentsPanelCards({
                 </div>
 
                 <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
-                  <input
-                    className="field-base"
-                    inputMode="numeric"
-                    {...register("precioMensualidad", { required: "Ingresa la mensualidad" })}
+                  <Controller
+                    control={control}
+                    name="precioMensualidad"
+                    rules={{ required: "Ingresa la mensualidad" }}
+                    render={({ field }) => (
+                      <MoneyInput
+                        name={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    )}
                   />
                 </Field>
 
@@ -1467,12 +1468,227 @@ export function StudentsPanelCards({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
                   Atrás
                 </Button>
                 <Button className="min-h-12 flex-1" type="button" onClick={goNextFromMonthly}>
                   Siguiente
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === "EDIT_BILLING" ? (
+            <div className="space-y-5">
+              <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
+                <div>
+                  <p className="text-sm font-black text-ink-950">Configuración de mensualidad</p>
+                  <p className="mt-1 text-sm font-medium text-ink-500">
+                    Ajusta el valor, la modalidad y el día de cobro del alumno.
+                  </p>
+                </div>
+
+                <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
+                  <Controller
+                    control={control}
+                    name="precioMensualidad"
+                    rules={{ required: "Ingresa la mensualidad" }}
+                    render={({ field }) => (
+                      <MoneyInput
+                        name={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    )}
+                  />
+                </Field>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DecisionCard
+                    title="Anticipada"
+                    subtitle="Se cobra al inicio del período."
+                    selected={billingMode === "ANTICIPADA"}
+                    onClick={() => {
+                      reset(
+                        {
+                          ...watch(),
+                          modalidadMensualidad: "ANTICIPADA"
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                  />
+                  <DecisionCard
+                    title="Vencida"
+                    subtitle="Se cobra al final del período."
+                    selected={billingMode === "VENCIDA"}
+                    onClick={() => {
+                      reset(
+                        {
+                          ...watch(),
+                          modalidadMensualidad: "VENCIDA"
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-black text-ink-900">Día de cobro mensual</p>
+                  <select
+                    value={selectedBillingDay}
+                    onChange={(event) => {
+                      reset(
+                        {
+                          ...watch(),
+                          diaCobro: event.target.value
+                        },
+                        { keepDirty: true, keepTouched: true }
+                      );
+                    }}
+                    className="field-base h-11 rounded-[18px] text-[14px]"
+                  >
+                    {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
+                      <option key={day} value={day}>
+                        Día {day}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            
+
+              <div className="flex gap-3">
+                <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={() => setStep("FORM")}>
+                  Atrás
+                </Button>
+                <Button
+                  className="min-h-12 flex-1"
+                  type="button"
+                  loading={isSubmitting}
+                  onClick={() => {
+                    setNextStepAfterSave("EDIT_STATUS");
+                    void submitStudent();
+                  }}
+                >
+                  Guardar y seguir
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === "EDIT_STATUS" ? (
+            <div className="space-y-5">
+              <div className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
+                <div>
+                  <p className="text-sm font-black text-ink-950">Estado del alumno</p>
+                  <p className="mt-1 text-sm font-medium text-ink-500">
+                    Pausado conserva el registro sin generar cobros. Desactivado lo saca de cobros nuevos.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <DecisionCard
+                    title="Activo"
+                    subtitle="Genera cobros normalmente."
+                    selected={watch("estado") === "ACTIVO"}
+                    onClick={() => reset({ ...watch(), estado: "ACTIVO", motivoEstado: "" }, { keepDirty: true, keepTouched: true })}
+                  />
+                  <DecisionCard
+                    title="Pausado"
+                    subtitle="Suspende cobros temporalmente."
+                    selected={watch("estado") === "PAUSADO"}
+                    onClick={() =>
+                      reset(
+                        { ...watch(), estado: "PAUSADO", fechaInicioPausa: watch("fechaInicioPausa") || defaultDateValue() },
+                        { keepDirty: true, keepTouched: true }
+                      )
+                    }
+                  />
+                  <DecisionCard
+                    title="Desactivado"
+                    subtitle="No genera cobros nuevos."
+                    selected={watch("estado") === "DESACTIVADO" || watch("estado") === "INACTIVO"}
+                    onClick={() => reset({ ...watch(), estado: "DESACTIVADO" }, { keepDirty: true, keepTouched: true })}
+                  />
+                </div>
+                {watch("estado") === "PAUSADO" ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <DecisionCard
+                        title="Hasta reactivar"
+                        subtitle="Sale de pausa solo cuando la actives manualmente."
+                        selected={watch("pausaModo") === "HASTA_REACTIVAR"}
+                        onClick={() => reset({ ...watch(), pausaModo: "HASTA_REACTIVAR", fechaFinPausa: "" }, { keepDirty: true, keepTouched: true })}
+                      />
+                      <DecisionCard
+                        title="Con fecha fin"
+                        subtitle="La pausa termina en una fecha definida."
+                        selected={watch("pausaModo") === "CON_FECHA"}
+                        onClick={() => reset({ ...watch(), pausaModo: "CON_FECHA" }, { keepDirty: true, keepTouched: true })}
+                      />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Inicio pausa">
+                        <input type="date" className="field-base" {...register("fechaInicioPausa")} />
+                      </Field>
+                      {watch("pausaModo") === "CON_FECHA" ? (
+                        <Field label="Fin pausa">
+                          <input type="date" className="field-base" {...register("fechaFinPausa")} />
+                        </Field>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {watch("estado") !== "ACTIVO" ? (
+                  <Field label="Motivo">
+                    <input className="field-base" {...register("motivoEstado")} />
+                  </Field>
+                ) : null}
+              </div>
+            
+
+              <div className="flex gap-3">
+                <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={() => setStep("EDIT_BILLING")}>
+                  Atrás
+                </Button>
+                <Button
+                  className="min-h-12 flex-1"
+                  type="button"
+                  loading={isSubmitting}
+                  onClick={() => {
+                    setNextStepAfterSave("EDIT_HISTORY");
+                    void submitStudent();
+                  }}
+                >
+                  Guardar y seguir
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === "EDIT_HISTORY" && editTarget ? (
+            <div className="space-y-5">
+              <StudentPaymentHistorySection
+                history={paymentHistory}
+                loading={paymentHistoryLoading}
+                error={paymentHistoryError}
+                success={paymentHistorySuccess}
+                updatingPaymentId={updatingPaymentId}
+                onRetry={() => loadPaymentHistory(editTarget.id)}
+                onToggle={updatePaymentHistoryMonth}
+              />
+            
+
+              <div className="flex gap-3">
+                <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={() => setStep("EDIT_STATUS")}>
+                  Atrás
+                </Button>
+                <Button className="min-h-12 flex-1" type="button" onClick={closeCreateModal}>
+                  Listo
                 </Button>
               </div>
             </div>
@@ -1517,160 +1733,6 @@ export function StudentsPanelCards({
                 </div>
               ) : null}
 
-              {editTarget ? (
-                <StudentPaymentHistorySection
-                  history={paymentHistory}
-                  loading={paymentHistoryLoading}
-                  error={paymentHistoryError}
-                  success={paymentHistorySuccess}
-                  updatingPaymentId={updatingPaymentId}
-                  onRetry={() => loadPaymentHistory(editTarget.id)}
-                  onToggle={updatePaymentHistoryMonth}
-                />
-              ) : null}
-
-              {editTarget ? (
-                <div className="space-y-4 rounded-[24px] border border-ink-100 bg-ink-50/60 px-4 py-4">
-                  <div>
-                    <p className="text-sm font-black text-ink-950">Configuración de mensualidad</p>
-                    <p className="mt-1 text-sm font-medium text-ink-500">
-                      Ajusta el valor, la modalidad y el día de cobro del alumno.
-                    </p>
-                  </div>
-
-                  <Field label="Valor de la mensualidad" error={errors.precioMensualidad?.message}>
-                    <input
-                      className="field-base"
-                      inputMode="numeric"
-                      {...register("precioMensualidad", { required: "Ingresa la mensualidad" })}
-                    />
-                  </Field>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <DecisionCard
-                      title="Anticipada"
-                      subtitle="Se cobra al inicio del período."
-                      selected={billingMode === "ANTICIPADA"}
-                      onClick={() => {
-                        reset(
-                          {
-                            ...watch(),
-                            modalidadMensualidad: "ANTICIPADA"
-                          },
-                          { keepDirty: true, keepTouched: true }
-                        );
-                      }}
-                    />
-                    <DecisionCard
-                      title="Vencida"
-                      subtitle="Se cobra al final del período."
-                      selected={billingMode === "VENCIDA"}
-                      onClick={() => {
-                        reset(
-                          {
-                            ...watch(),
-                            modalidadMensualidad: "VENCIDA"
-                          },
-                          { keepDirty: true, keepTouched: true }
-                        );
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    <p className="text-sm font-black text-ink-900">Día de cobro mensual</p>
-                    <select
-                      value={selectedBillingDay}
-                      onChange={(event) => {
-                        reset(
-                          {
-                            ...watch(),
-                            diaCobro: event.target.value
-                          },
-                          { keepDirty: true, keepTouched: true }
-                        );
-                      }}
-                      className="field-base h-11 rounded-[18px] text-[14px]"
-                    >
-                      {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
-                        <option key={day} value={day}>
-                          Día {day}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              ) : null}
-
-              {editTarget ? (
-                <div className="space-y-4 rounded-[24px] border border-ink-100 bg-white px-4 py-4">
-                  <div>
-                    <p className="text-sm font-black text-ink-950">Estado del alumno</p>
-                    <p className="mt-1 text-sm font-medium text-ink-500">
-                      Pausado conserva el registro sin generar cobros. Desactivado lo saca de cobros nuevos.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <DecisionCard
-                      title="Activo"
-                      subtitle="Genera cobros normalmente."
-                      selected={watch("estado") === "ACTIVO"}
-                      onClick={() => reset({ ...watch(), estado: "ACTIVO", motivoEstado: "" }, { keepDirty: true, keepTouched: true })}
-                    />
-                    <DecisionCard
-                      title="Pausado"
-                      subtitle="Suspende cobros temporalmente."
-                      selected={watch("estado") === "PAUSADO"}
-                      onClick={() =>
-                        reset(
-                          { ...watch(), estado: "PAUSADO", fechaInicioPausa: watch("fechaInicioPausa") || defaultDateValue() },
-                          { keepDirty: true, keepTouched: true }
-                        )
-                      }
-                    />
-                    <DecisionCard
-                      title="Desactivado"
-                      subtitle="No genera cobros nuevos."
-                      selected={watch("estado") === "DESACTIVADO" || watch("estado") === "INACTIVO"}
-                      onClick={() => reset({ ...watch(), estado: "DESACTIVADO" }, { keepDirty: true, keepTouched: true })}
-                    />
-                  </div>
-                  {watch("estado") === "PAUSADO" ? (
-                    <div className="space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <DecisionCard
-                          title="Hasta reactivar"
-                          subtitle="Sale de pausa solo cuando la actives manualmente."
-                          selected={watch("pausaModo") === "HASTA_REACTIVAR"}
-                          onClick={() => reset({ ...watch(), pausaModo: "HASTA_REACTIVAR", fechaFinPausa: "" }, { keepDirty: true, keepTouched: true })}
-                        />
-                        <DecisionCard
-                          title="Con fecha fin"
-                          subtitle="La pausa termina en una fecha definida."
-                          selected={watch("pausaModo") === "CON_FECHA"}
-                          onClick={() => reset({ ...watch(), pausaModo: "CON_FECHA" }, { keepDirty: true, keepTouched: true })}
-                        />
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Inicio pausa">
-                          <input type="date" className="field-base" {...register("fechaInicioPausa")} />
-                        </Field>
-                        {watch("pausaModo") === "CON_FECHA" ? (
-                          <Field label="Fin pausa">
-                            <input type="date" className="field-base" {...register("fechaFinPausa")} />
-                          </Field>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {watch("estado") !== "ACTIVO" ? (
-                    <Field label="Motivo">
-                      <input className="field-base" {...register("motivoEstado")} />
-                    </Field>
-                  ) : null}
-                </div>
-              ) : null}
-
               <div className="space-y-3">
                 <p className="text-sm font-black text-ink-900">Grupo</p>
                 <select
@@ -1694,17 +1756,106 @@ export function StudentsPanelCards({
                 </select>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <Button className="min-h-12 flex-1" type="button" variant="secondary" onClick={goBackStep}>
                   {editTarget ? "Cancelar" : "Atrás"}
                 </Button>
-                <Button className="min-h-12 flex-1" type="submit" loading={isSubmitting}>
-                  {editTarget ? "Guardar cambios" : "Guardar alumno"}
+                <Button
+                  className="min-h-12 flex-1"
+                  type="submit"
+                  loading={isSubmitting}
+                  onClick={() => setNextStepAfterSave("EDIT_BILLING")}
+                >
+                  {editTarget ? "Guardar y seguir" : "Guardar alumno"}
                 </Button>
               </div>
             </form>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(detailStudent)}
+        title={detailStudent ? `${detailStudent.nombre} ${detailStudent.apellido}` : ""}
+        description={
+          detailStudent
+            ? `${detailStudent.group?.nombre ?? "Sin grupo"} · ${detailStudent.edad} años`
+            : undefined
+        }
+        onClose={() => setDetailStudent(null)}
+      >
+        {detailStudent ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-[16px] bg-brand-50 text-base font-bold text-brand-700">
+                {getInitials(detailStudent.nombre, detailStudent.apellido)}
+              </div>
+              <StatusBadge value={detailStudent.estado} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <InfoBlock
+                label="Mensualidad"
+                value={
+                  detailStudent.precioMensualidad
+                    ? currency(detailStudent.precioMensualidad)
+                    : "Usa valor del grupo"
+                }
+                helper={
+                  studentPaymentLabel(detailStudent) === "pendiente"
+                    ? "Tiene cobros pendientes o vencidos"
+                    : monthlyModeCopy(detailStudent.modalidadMensualidad)
+                }
+              />
+              <InfoBlock
+                label="Cobro"
+                value={`Día ${detailStudent.diaCobro ?? 10}`}
+                helper={monthlyModeCopy(detailStudent.modalidadMensualidad)}
+              />
+              <InfoBlock
+                label="Inscripción"
+                value={detailStudent.enrollmentPayment?.estado ?? "Sin inscripción"}
+                helper={
+                  detailStudent.enrollmentPayment
+                    ? currency(detailStudent.enrollmentPayment.monto)
+                    : "No aplica"
+                }
+              />
+              <InfoBlock
+                label="Contacto"
+                value={resolveStudentContact(detailStudent) || "Sin contacto"}
+                helper={detailStudent.esMenorDeEdad ? "Acudiente o alumno" : "Teléfono principal"}
+                icon={<FiPhone className="size-3.5 text-brand-600" />}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-11 flex-1 rounded-xl"
+                onClick={() => {
+                  const target = detailStudent;
+                  setDetailStudent(null);
+                  setDeleteTarget(target);
+                }}
+              >
+                Desactivar
+              </Button>
+              <Button
+                type="button"
+                className="min-h-11 flex-1 rounded-xl"
+                onClick={() => {
+                  const target = detailStudent;
+                  setDetailStudent(null);
+                  openEditModal(target);
+                }}
+              >
+                Editar
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       <ConfirmDialog
@@ -2113,7 +2264,14 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
-function stepSequence(registrationType: StudentFormValues["tipoRegistro"]): CreateStep[] {
+const EDIT_STEPS: CreateStep[] = ["FORM", "EDIT_BILLING", "EDIT_STATUS", "EDIT_HISTORY"];
+
+function stepSequence(
+  registrationType: StudentFormValues["tipoRegistro"],
+  isEditing = false
+): CreateStep[] {
+  if (isEditing) return EDIT_STEPS;
+
   if (registrationType === "NUEVO") {
     return ["TYPE", "ENROLLMENT", "MONTHLY", "CURRENT_PAYMENT", "FORM"];
   }
@@ -2121,17 +2279,21 @@ function stepSequence(registrationType: StudentFormValues["tipoRegistro"]): Crea
   return ["TYPE", "HISTORY", "FORM"];
 }
 
-function stepIndex(step: CreateStep, registrationType: StudentFormValues["tipoRegistro"]) {
-  const index = stepSequence(registrationType).indexOf(step);
+function stepIndex(step: CreateStep, registrationType: StudentFormValues["tipoRegistro"], isEditing = false) {
+  const index = stepSequence(registrationType, isEditing).indexOf(step);
   return index >= 0 ? index + 1 : 1;
 }
 
-function stepTotal(registrationType: StudentFormValues["tipoRegistro"]) {
-  return stepSequence(registrationType).length;
+function stepTotal(registrationType: StudentFormValues["tipoRegistro"], isEditing = false) {
+  return stepSequence(registrationType, isEditing).length;
 }
 
-function stepProgressLabel(step: CreateStep, registrationType: StudentFormValues["tipoRegistro"]) {
-  return `Paso ${stepIndex(step, registrationType)} de ${stepTotal(registrationType)}`;
+function stepProgressLabel(
+  step: CreateStep,
+  registrationType: StudentFormValues["tipoRegistro"],
+  isEditing = false
+) {
+  return `Paso ${stepIndex(step, registrationType, isEditing)} de ${stepTotal(registrationType, isEditing)}`;
 }
 
 function stepTitle(step: CreateStep) {
@@ -2140,6 +2302,9 @@ function stepTitle(step: CreateStep) {
   if (step === "CURRENT_PAYMENT") return "Pago inicial";
   if (step === "MONTHLY") return "Mensualidad";
   if (step === "HISTORY") return "Historial de mensualidades";
+  if (step === "EDIT_BILLING") return "Configuración de mensualidad";
+  if (step === "EDIT_STATUS") return "Estado del alumno";
+  if (step === "EDIT_HISTORY") return "Historial de mensualidades";
   return "Datos personales";
 }
 
@@ -2155,6 +2320,11 @@ function stepCopy(step: CreateStep) {
   if (step === "HISTORY") {
     return "Genera los meses desde que empezó clases y marca los que ya están al día.";
   }
+  if (step === "EDIT_BILLING") return "Ajusta el valor, la modalidad y el día de cobro del alumno.";
+  if (step === "EDIT_STATUS") {
+    return "Pausado conserva el registro sin generar cobros. Desactivado lo saca de cobros nuevos.";
+  }
+  if (step === "EDIT_HISTORY") return "Consulta y actualiza los meses pagados del alumno.";
   return "Completa los datos del alumno, el contacto y el grupo al que pertenece.";
 }
 

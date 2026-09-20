@@ -3,19 +3,21 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clientApiFetch } from "@/lib/client-api";
 import { currency, formatDate } from "@/lib/web-utils";
+import { parseMoney } from "@/lib/money-input";
 import type { GroupSummary, StudentListItem, SuppliesPaymentItem } from "@/lib/web-types";
 
 type SuppliesFormValues = {
   nombreConcepto: string;
   descripcion?: string;
-  monto: number;
+  monto: string;
   grupoId?: string;
   estudianteId?: string;
   fechaVencimiento: string;
@@ -39,12 +41,13 @@ export function SuppliesPaymentsPanel({
     register,
     handleSubmit,
     reset,
+    control,
     formState: { isSubmitting }
   } = useForm<SuppliesFormValues>({
     defaultValues: {
       nombreConcepto: "",
       descripcion: "",
-      monto: 0,
+      monto: "",
       grupoId: "",
       estudianteId: "",
       fechaVencimiento: new Date().toISOString().slice(0, 10)
@@ -54,6 +57,7 @@ export function SuppliesPaymentsPanel({
   async function onSubmit(values: SuppliesFormValues) {
     const payload = {
       ...values,
+      monto: parseMoney(values.monto),
       grupoId: values.grupoId || null,
       estudianteId: values.estudianteId || null
     };
@@ -104,7 +108,19 @@ export function SuppliesPaymentsPanel({
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-ink-700">Monto</label>
-          <input type="number" className="field-base" {...register("monto", { valueAsNumber: true })} />
+          <Controller
+            control={control}
+            name="monto"
+            render={({ field }) => (
+              <MoneyInput
+                name={field.name}
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={field.ref}
+              />
+            )}
+          />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-ink-700">Fecha de vencimiento</label>

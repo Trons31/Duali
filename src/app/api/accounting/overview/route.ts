@@ -2,6 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { handleError, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { calculateTotalDebtAfterInstallment, getOpenDebtByStudent } from "@/lib/student-debt";
+import { expenseCategoryLabel } from "@/lib/expense-categories";
 
 const MONTH_NAMES = [
   "Enero",
@@ -220,7 +221,7 @@ export async function GET(request: Request) {
         date: expense.fecha.toISOString(),
         type: "EGRESO" as const,
         title: expense.concepto,
-        subtitle: `${expense.categoria || "Egreso"}${expense.descripcion ? ` · ${expense.descripcion}` : ""}`,
+        subtitle: `${expense.categoria ? expenseCategoryLabel(expense.categoria) : "Egreso"}${expense.descripcion ? ` · ${expense.descripcion}` : ""}`,
         amount: Number(expense.monto),
         direction: "expense" as const
       }))

@@ -4,20 +4,23 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { FiCalendar, FiChevronDown, FiChevronUp, FiFilter, FiPlus, FiTrendingDown } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
+import { EXPENSE_CATEGORIES, expenseCategoryLabel, findExpenseCategory } from "@/lib/expense-categories";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn, currency, formatDate } from "@/lib/web-utils";
+import { parseMoney } from "@/lib/money-input";
 import type { ExpenseItem } from "@/lib/web-types";
 
 type ExpenseFormValues = {
   concepto: string;
   descripcion?: string;
-  monto: number;
+  monto: string;
   fecha: string;
   categoria?: string;
 };
@@ -55,10 +58,18 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
     register,
     handleSubmit,
     reset,
+    control,
+    setValue,
+    watch,
     formState: { isSubmitting, errors }
   } = useForm<ExpenseFormValues>({
     defaultValues: createDefaultValues(buildSelectedDate(currentMonthValue(), new Date().getDate()))
   });
+
+  // El selector escribe con `setValue`, asi que el campo se registra aparte
+  // para que su regla de obligatorio siga corriendo al enviar.
+  register("categoria", { required: "Elige el tipo de egreso" });
+  const selectedCategory = watch("categoria");
 
   const monthDays = useMemo(() => buildMonthDays(selectedMonth), [selectedMonth]);
   const selectedDate = useMemo(() => buildSelectedDate(selectedMonth, selectedDay), [selectedMonth, selectedDay]);
@@ -128,7 +139,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
   async function onSubmit(values: ExpenseFormValues) {
     await clientApiFetch("/api/expenses", token, {
       method: "POST",
-      body: JSON.stringify(values)
+      body: JSON.stringify({ ...values, monto: parseMoney(values.monto) })
     })
       .then(() => {
         sileo.success({ title: "Egreso registrado" });
@@ -357,32 +368,66 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
       >
         <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Concepto" error={errors.concepto?.message}>
-              <input className="field-base" {...register("concepto", { required: "Ingresa el concepto" })} />
+            <Field label="Descripción" error={errors.concepto?.message}>
+              <input
+                className="field-base"
+                placeholder="En que se gasto"
+                {...register("concepto", { required: "Ingresa la descripción" })}
+              />
             </Field>
 
             <Field label="Monto" error={errors.monto?.message}>
-              <input
-                type="number"
-                className="field-base"
-                {...register("monto", { valueAsNumber: true, required: "Ingresa el monto" })}
+              <Controller
+                control={control}
+                name="monto"
+                rules={{
+                  required: "Ingresa el monto",
+                  validate: (value) => parseMoney(value) > 0 || "Ingresa el monto"
+                }}
+                render={({ field }) => (
+                  <MoneyInput
+                    name={field.name}
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                  />
+                )}
               />
             </Field>
 
             <Field label="Fecha" error={errors.fecha?.message}>
               <input type="date" className="field-base" {...register("fecha", { required: "Selecciona la fecha" })} />
             </Field>
-
-            <Field label="Categoria">
-              <input className="field-base" {...register("categoria")} />
-            </Field>
           </div>
 
-          <Field label="Descripcion">
-            <textarea className="field-base min-h-28 resize-none" {...register("descripcion")} />
+          <Field label="Tipo de egreso" error={errors.categoria?.message}>
+            <div className="grid grid-cols-3 gap-2">
+              {EXPENSE_CATEGORIES.map((category) => {
+                const active = selectedCategory === category.id;
+                const Icon = category.icon;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => setValue("categoria", category.id, { shouldValidate: true })}
+                    aria-pressed={active}
+                    className={cn(
+                      "flex flex-col items-center gap-1 rounded-xl border-2 p-2.5 transition",
+                      active
+                        ? cn("border-transparent shadow-sm", category.tone)
+                        : "border-ink-200 text-ink-500 hover:border-ink-300 hover:bg-ink-50"
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    <span className="text-center text-[10px] font-bold leading-tight">{category.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </Field>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-3">
             <Button className="min-h-11 flex-1 rounded-xl" type="button" variant="secondary" onClick={closeCreateModal}>
               Cancelar
             </Button>
@@ -406,13 +451,24 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
 }
 
 function ExpenseCard({ expense, onDelete }: { expense: ExpenseItem; onDelete: () => void }) {
+  const category = findExpenseCategory(expense.categoria);
+  const CategoryIcon = category?.icon;
+
   return (
     <article className="rounded-2xl border border-ink-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-400">{expense.categoria || "General"}</p>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold",
+              category?.tone ?? "bg-ink-50 text-ink-500"
+            )}
+          >
+            {CategoryIcon ? <CategoryIcon className="size-3" /> : null}
+            {expenseCategoryLabel(expense.categoria)}
+          </span>
           <h3 className="mt-2 text-[15px] font-semibold text-ink-950">{expense.concepto}</h3>
-          <p className="mt-2 text-sm text-ink-500">{expense.descripcion || "Sin descripción."}</p>
+          {expense.descripcion ? <p className="mt-2 text-sm text-ink-500">{expense.descripcion}</p> : null}
         </div>
         <Button className="min-h-9 shrink-0 rounded-xl px-3 text-xs" type="button" variant="danger" onClick={onDelete}>
           Eliminar
@@ -487,8 +543,7 @@ function normalizeDateKey(date: string) {
 function createDefaultValues(date: string): ExpenseFormValues {
   return {
     concepto: "",
-    descripcion: "",
-    monto: 0,
+    monto: "",
     fecha: date,
     categoria: ""
   };

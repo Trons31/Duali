@@ -5,6 +5,7 @@ import { FiCheckCircle, FiClock, FiDollarSign, FiEdit2, FiTrash2 } from "react-i
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PAYMENT_METHODS, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
+import { MoneyInput } from "@/components/ui/money-input";
 import { cn, currency, formatDate } from "@/lib/web-utils";
 import type { PaymentInstallmentItem } from "@/lib/web-types";
 
@@ -157,14 +158,12 @@ export function PaymentInstallmentModal({
             <div className="grid gap-4 border-t border-ink-100 pt-5 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-2 block text-sm font-black text-ink-950">Valor abonado</span>
-                <input
-                  type="number"
-                  min="1"
-                  max={editingInstallment ? activePayment.remainingAmount + Number(editingInstallment.monto) : activePayment.remainingAmount}
+                <MoneyInput
                   value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  className="field-base h-12 rounded-[18px]"
+                  onChange={setAmount}
+                  className="h-12 rounded-[18px]"
                   placeholder="0"
+                  aria-label="Valor abonado"
                 />
               </label>
 

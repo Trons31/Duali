@@ -7,6 +7,7 @@ import { sileo } from "sileo";
 import {
   FiCheck,
   FiChevronDown,
+  FiChevronRight,
   FiChevronUp,
   FiDollarSign,
   FiFilter,
@@ -15,6 +16,7 @@ import {
   FiX
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import {
   PaymentInstallmentModal,
   type InstallmentModalPayment,
@@ -59,6 +61,7 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
   const [submittingInstallment, setSubmittingInstallment] = useState(false);
   const [notifyingPaymentId, setNotifyingPaymentId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detailPayment, setDetailPayment] = useState<EnrollmentPaymentItem | null>(null);
 
   const pendingPayments = useMemo(
     () => payments.filter((payment) => payment.estado === "PENDIENTE" || payment.estado === "VENCIDO"),
@@ -348,49 +351,32 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
                 {filteredPending.map((payment) => (
                   <article
                     key={payment.id}
-                    className="h-full rounded-2xl border border-ink-100 bg-white p-4 shadow-sm"
+                    className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-sm transition hover:shadow-md"
                   >
-                    <div className="flex h-full flex-col gap-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-[15px] font-semibold text-ink-950">
-                              {payment.student.nombre} {payment.student.apellido}
-                            </p>
-                            <StatusBadge value={payment.estado} />
-                          </div>
-                          <p className="mt-1 text-sm text-ink-500">{payment.student.group?.nombre ?? "Sin grupo"} · vence {formatDate(payment.fechaVencimiento)}</p>
-                          <p className="mt-2 text-sm font-semibold text-rose-600">{enrollmentDelayCopy(payment)}</p>
+                    <button
+                      type="button"
+                      onClick={() => setDetailPayment(payment)}
+                      className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset"
+                      aria-label={`Ver detalle de ${payment.student.nombre} ${payment.student.apellido}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[15px] font-semibold text-ink-950">
+                            {payment.student.nombre} {payment.student.apellido}
+                          </p>
+                          <StatusBadge value={payment.estado} />
                         </div>
-                        <p className="shrink-0 text-2xl font-black leading-none text-rose-700">{currency(payment.monto)}</p>
+                        <p className="mt-1 truncate text-xs font-medium text-ink-500">
+                          {payment.student.group?.nombre ?? "Sin grupo"}
+                          {" · "}
+                          {enrollmentDelayCopy(payment)}
+                        </p>
                       </div>
-
-                      <div className="mt-auto grid gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
-                          loading={notifyingPaymentId === payment.id}
-                          onClick={() => notifyByWhatsapp(payment)}
-                        >
-                          <FiMessageCircle className="size-4" />
-                          Notificar por WhatsApp
-                        </Button>
-                        <Button type="button" className="min-h-11 rounded-xl py-2.5 text-[13px]" onClick={() => openPayModal(payment)}>
-                          <FiCheck className="size-4" />
-                          Marcar pagada
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="min-h-11 rounded-xl border-amber-200 bg-amber-50 py-2.5 text-[13px] text-amber-700 hover:bg-amber-100"
-                          onClick={() => openInstallmentModal(payment)}
-                        >
-                          <FiDollarSign className="size-4" />
-                          Abonar
-                        </Button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className="text-lg font-black leading-none text-rose-700">{currency(payment.monto)}</p>
+                        <FiChevronRight className="size-5 text-ink-300" />
                       </div>
-                    </div>
+                    </button>
                   </article>
                 ))}
               </div>
@@ -534,6 +520,71 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
           </section>
         )}
       </div>
+
+      <Modal
+        open={Boolean(detailPayment)}
+        title={
+          detailPayment
+            ? `${detailPayment.student.nombre} ${detailPayment.student.apellido}`
+            : ""
+        }
+        description={
+          detailPayment
+            ? `${detailPayment.student.group?.nombre ?? "Sin grupo"} · vence ${formatDate(detailPayment.fechaVencimiento)}`
+            : undefined
+        }
+        onClose={() => setDetailPayment(null)}
+      >
+        {detailPayment ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge value={detailPayment.estado} />
+                <span className="text-xs font-semibold text-rose-600">{enrollmentDelayCopy(detailPayment)}</span>
+              </div>
+              <p className="text-2xl font-black leading-none text-rose-700">{currency(detailPayment.monto)}</p>
+            </div>
+
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-11 rounded-xl border-brand-200 bg-brand-50 py-2.5 text-[13px] text-brand-700 hover:bg-brand-100"
+                loading={notifyingPaymentId === detailPayment.id}
+                onClick={() => notifyByWhatsapp(detailPayment)}
+              >
+                <FiMessageCircle className="size-4" />
+                Notificar por WhatsApp
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-11 rounded-xl border-amber-200 bg-amber-50 py-2.5 text-[13px] text-amber-700 hover:bg-amber-100"
+                onClick={() => {
+                  const target = detailPayment;
+                  setDetailPayment(null);
+                  openInstallmentModal(target);
+                }}
+              >
+                <FiDollarSign className="size-4" />
+                Abonar
+              </Button>
+              <Button
+                type="button"
+                className="min-h-11 rounded-xl py-2.5 text-[13px]"
+                onClick={() => {
+                  const target = detailPayment;
+                  setDetailPayment(null);
+                  openPayModal(target);
+                }}
+              >
+                <FiCheck className="size-4" />
+                Marcar pagada
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <PaymentMethodModal
         open={Boolean(payTarget)}
