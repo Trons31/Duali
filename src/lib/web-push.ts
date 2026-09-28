@@ -61,6 +61,13 @@ async function getStoredWebPushConfig() {
   };
 }
 
+// Tiempo maximo por envio. Sin esto, un endpoint que no responde (visto con
+// web.push.apple.com) deja la funcion esperando hasta que Vercel la corta:
+// cada corrida del cron facturaba minutos de memoria sin enviar nada y la
+// notificacion quedaba en PROCESANDO bloqueando la cola de ese cliente.
+// Al vencer, web-push rechaza sin statusCode y el envio se reintenta.
+const WEB_PUSH_TIMEOUT_MS = Number(process.env.WEB_PUSH_TIMEOUT_MS ?? "10000");
+
 function isRetryableStatus(statusCode?: number) {
   if (!statusCode) return true;
   return statusCode >= 500 || statusCode === 429;
@@ -124,7 +131,8 @@ export async function sendWebPushNotifications(
           message,
           {
             TTL: 3600,
-            urgency: "high"
+            urgency: "high",
+            timeout: WEB_PUSH_TIMEOUT_MS
           }
         );
 
