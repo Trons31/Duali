@@ -97,7 +97,15 @@ type BookingInput = {
   accessToken?: string;
   /** Spec 019 R7: llego sin reservar; la reserva nace con asistencia. */
   llegoSinReservar?: boolean;
-  venta?: { packageId: string; precio?: number; pago?: { monto: number; metodoPago: string } };
+  venta?: {
+    packageId: string;
+    precio?: number;
+    pago?: { monto: number; metodoPago: string };
+    /** Spec 021: venta desde la pagina publica, con su enlace Mi plan y su comprobante. */
+    origen?: "PANEL" | "PUBLICO";
+    accessToken?: string;
+    receipt?: { media: { url: string; publicId: string }; metodo: string };
+  };
 };
 
 /** Spec 007 R1. */
@@ -143,6 +151,8 @@ export async function createBooking(input: BookingInput) {
         packageId: input.venta.packageId,
         precio: input.venta.precio,
         pago: input.venta.pago,
+        origen: input.venta.origen,
+        accessToken: input.venta.accessToken,
         // Una llegada registrada despues: la venta vale desde el dia de esa clase.
         inicio: input.llegoSinReservar && input.fecha < today ? input.fecha : today
       });
@@ -182,6 +192,19 @@ export async function createBooking(input: BookingInput) {
     const booking = existing
       ? await tx.booking.update({ where: { id: existing.id }, data })
       : await tx.booking.create({ data: { ...data, clientId: input.clientId, sessionId: current.id, memberId: member.id } });
+
+    if (input.venta?.receipt) {
+      await tx.paymentReceipt.create({
+        data: {
+          clientId: input.clientId,
+          memberPackageId: chosen.id,
+          bookingId: booking.id,
+          url: input.venta.receipt.media.url,
+          publicId: input.venta.receipt.media.publicId,
+          metodoPago: input.venta.receipt.metodo
+        }
+      });
+    }
 
     // Spec 015: si estaba en la lista de espera de esta clase, ya tiene cupo.
     await tx.waitlistEntry.updateMany({

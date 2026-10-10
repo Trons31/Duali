@@ -103,9 +103,13 @@ export async function listReceipts(clientId: string, estado?: PaymentReceiptStat
       estado: true,
       motivoRechazo: true,
       createdAt: true,
+      // Spec 021 R11: compra en linea y el metodo que eligio la clienta.
+      metodoPago: true,
+      bookingId: true,
       memberPackage: {
         select: {
           id: true,
+          origen: true,
           nombre: true,
           precio: true,
           pagado: true,
@@ -121,6 +125,7 @@ export async function listReceipts(clientId: string, estado?: PaymentReceiptStat
     member: memberPackage.member,
     sale: {
       id: memberPackage.id,
+      origen: memberPackage.origen,
       nombre: memberPackage.nombre,
       discipline: memberPackage.discipline,
       saldo: Math.max(Number(memberPackage.precio) - Number(memberPackage.pagado), 0)

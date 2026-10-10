@@ -4,16 +4,18 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { FiSearch, FiShoppingBag } from "react-icons/fi";
 import { ColorDot, EmptyCard } from "@/components/dashboard/studio-ui";
-import { ClassesBar, PackageStatusBadge, PaymentStatusBadge, memberName } from "@/components/dashboard/studio-sales-ui";
+import { ClassesBar, OnlineBadge, PackageStatusBadge, PaymentStatusBadge, memberName } from "@/components/dashboard/studio-sales-ui";
 import { cn, currency } from "@/lib/web-utils";
 import type { MemberPackageSaleItem } from "@/lib/web-types";
 
-type Filter = "vigentes" | "por-vencer" | "saldo" | "terminados" | "anulados";
+type Filter = "vigentes" | "por-vencer" | "saldo" | "revision" | "terminados" | "anulados";
 
 const FILTERS: Array<{ value: Filter; label: string; match: (item: MemberPackageSaleItem) => boolean }> = [
   { value: "vigentes", label: "Vigentes", match: (item) => item.estado === "ACTIVO" },
   { value: "por-vencer", label: "Por vencer", match: (item) => item.porVencer || item.pocasClases },
   { value: "saldo", label: "Con saldo", match: (item) => item.saldo > 0 },
+  // Spec 021 R12.
+  { value: "revision", label: "Pago en revisión", match: (item) => item.situacionPago === "EN_REVISION" },
   { value: "terminados", label: "Terminados", match: (item) => item.estado === "VENCIDO" || item.estado === "AGOTADO" },
   { value: "anulados", label: "Anulados", match: (item) => item.estado === "ANULADO" }
 ];
@@ -103,6 +105,7 @@ export function MemberSalesPanel({ sales: allSales, today }: { sales: MemberPack
                       <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-ink-500">
                         <ColorDot color={item.discipline.color} className="size-2" />
                         {item.nombre} · {item.discipline.nombre}
+                        <OnlineBadge item={item} />
                       </p>
                     </div>
                     <PackageStatusBadge item={item} />

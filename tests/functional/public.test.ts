@@ -27,13 +27,16 @@ async function publishedStudio() {
   expectOk(
     await call(publicPageRoute.PUT, { token: business.token, method: "PUT", body: { slug, paginaPublicaActiva: true } })
   );
+  // Spec 021 D2: como antes, se vende por la web sin pagar.
+  await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
   const scheduleFor = (fecha: string) => schedules.find((item) => item.diaSemana === isoWeekday(fecha))!.id;
   return { ...business, catalog, slug, scheduleId: schedule.id, fecha: nextDate(1), scheduleFor };
 }
 
 // Las rutas publicas no llevan token: se llaman sin sesion.
 function publicBook(slug: string, body: Record<string, unknown>) {
-  return call(publicBookingsRoute.POST, { token: "", method: "POST", params: { slug }, body });
+  const withPayment = body.packageId && !body.pago ? { ...body, pago: { tipo: "EN_ESTUDIO" } } : body;
+  return call(publicBookingsRoute.POST, { token: "", method: "POST", params: { slug }, body: withPayment });
 }
 
 describe("spec 008 · dirección y publicación", () => {
@@ -290,7 +293,8 @@ describe("spec 009 · reserva web", () => {
           fecha: today,
           celular: "3001110006",
           nombre: "Ana",
-          packageId: studio.catalog.packages.individualBodyCombat
+          packageId: studio.catalog.packages.individualBodyCombat,
+          pago: { tipo: "EN_ESTUDIO" }
         },
         lateTonight
       ),
@@ -305,7 +309,8 @@ describe("spec 009 · reserva web", () => {
         fecha: today,
         celular: "3001110007",
         nombre: "Ana",
-        packageId: studio.catalog.packages.individualBodyCombat
+        packageId: studio.catalog.packages.individualBodyCombat,
+        pago: { tipo: "EN_ESTUDIO" }
       },
       earlyMorning
     );

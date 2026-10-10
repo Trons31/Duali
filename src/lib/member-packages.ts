@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/http";
+import { paymentState } from "@/lib/online-payments";
 import type { ExtendedTransactionClient } from "@/lib/prisma-types";
 import { addDaysToKey, dateKeyToDate, dateToDateKey, daysBetweenKeys } from "@/lib/studio-time";
 
@@ -25,7 +26,9 @@ export const memberPackageInclude = {
       session: { select: { fecha: true, horaInicio: true, schedule: { select: { discipline: { select: { nombre: true } } } } } }
     },
     orderBy: [{ session: { fecha: "asc" } }, { session: { horaInicio: "asc" } }]
-  }
+  },
+  // Spec 021: estado del pago (en revision, rechazado).
+  receipts: { select: { estado: true, createdAt: true } }
 } satisfies Prisma.MemberPackageInclude;
 
 type MemberPackageRow = Prisma.MemberPackageGetPayload<{ include: typeof memberPackageInclude }>;
@@ -105,6 +108,9 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
     anuladoAt: row.anuladoAt?.toISOString() ?? null,
     motivoAnulacion: row.motivoAnulacion,
     notas: row.notas,
+    // Spec 021 R12.
+    origen: row.origen,
+    situacionPago: row.anuladoAt ? ("PAGADO" as const) : paymentState({ saldo, origen: row.origen, receipts: row.receipts }),
     createdAt: row.createdAt.toISOString(),
     payments: row.payments.map((payment) => ({
       id: payment.id,
@@ -176,6 +182,9 @@ type SaleInput = {
   precio?: number;
   notas?: string | null;
   pago?: { monto: number; metodoPago: string };
+  /** Spec 021: compra desde la pagina publica, con su enlace "Mi plan". */
+  origen?: "PANEL" | "PUBLICO";
+  accessToken?: string;
 };
 
 /**
@@ -205,7 +214,9 @@ export async function sellMemberPackage(tx: ExtendedTransactionClient, input: Sa
       pagado: input.pago?.monto ?? 0,
       inicio: dateKeyToDate(input.inicio),
       vence: dateKeyToDate(addDaysToKey(input.inicio, item.vigenciaDias - 1)),
-      notas: input.notas ?? null
+      notas: input.notas ?? null,
+      origen: input.origen ?? "PANEL",
+      accessToken: input.accessToken ?? null
     }
   });
 

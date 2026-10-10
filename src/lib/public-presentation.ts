@@ -24,15 +24,29 @@ export function joinNames(names: string[]) {
   return `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
 }
 
-export function reserveHref(slug: string, session?: { scheduleId: string; fecha: string } | null, planId?: string | null) {
+export function reserveHref(slug: string, session?: { scheduleId: string; fecha: string } | null) {
   const params = new URLSearchParams();
   if (session) {
     params.set("h", session.scheduleId);
     params.set("f", session.fecha);
   }
-  if (planId) params.set("plan", planId);
   const query = params.toString();
   return `/s/${slug}/reservar${query ? `?${query}` : ""}`;
+}
+
+/** Spec 021 D1: "Elegir este plan" compra el plan, sin pedir clase. */
+export function purchaseHref(slug: string, planId: string) {
+  return `/s/${slug}/comprar?p=${encodeURIComponent(planId)}`;
+}
+
+/** Spec 021 D4: el enlace privado Mi plan. */
+export function myPlanHref(slug: string, token: string) {
+  return `/s/${slug}/plan/${token}`;
+}
+
+/** Spec 021 R9: reservar con el plan, sin volver a pedir los datos. */
+export function bookWithPlanHref(slug: string, token: string) {
+  return `/s/${slug}/reservar?mp=${encodeURIComponent(token)}`;
 }
 
 export function formatCop(value: number) {

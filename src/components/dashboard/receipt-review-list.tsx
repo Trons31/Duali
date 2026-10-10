@@ -9,6 +9,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
 import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import { memberName } from "@/components/dashboard/studio-sales-ui";
+import { paymentMethodFromName } from "@/lib/online-payments";
 import type { ReceiptView } from "@/lib/receipts";
 import { cn, currency, formatDateTime } from "@/lib/web-utils";
 
@@ -33,11 +34,19 @@ export function ReceiptReviewList({ receipts, showMember = true }: { receipts: R
                   {memberName(receipt.member)}
                 </Link>
               ) : null}
+              {receipt.sale.origen === "PUBLICO" ? (
+                <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                  {receipt.bookingId ? "Compró en línea al reservar" : "Compró en línea"}
+                </span>
+              ) : null}
               <p className="flex items-center gap-1.5 text-xs text-ink-500">
                 <ColorDot color={receipt.sale.discipline.color} className="size-2" />
                 {receipt.sale.nombre} {receipt.sale.discipline.nombre} · saldo {currency(receipt.sale.saldo)}
               </p>
-              <p className="text-[11px] text-ink-400">{formatDateTime(receipt.createdAt)}</p>
+              <p className="text-[11px] text-ink-400">
+                {formatDateTime(receipt.createdAt)}
+                {receipt.metodoPago ? ` · pagó por ${receipt.metodoPago}` : ""}
+              </p>
               <div className="flex gap-2">
                 <Button className="flex-1 rounded-xl px-3 py-1.5 text-xs shadow-none" onClick={() => setReviewing({ receipt, action: "approve" })}>
                   <FiCheck className="size-3.5" />
@@ -64,7 +73,8 @@ export function ReceiptReviewList({ receipts, showMember = true }: { receipts: R
 function ReviewModal({ receipt, action, onClose }: { receipt: ReceiptView; action: "approve" | "reject"; onClose: () => void }) {
   const request = useStudioRequest();
   const [monto, setMonto] = useState(String(receipt.sale.saldo));
-  const [metodoPago, setMetodoPago] = useState("TRANSFERENCIA");
+  // Spec 021 R11: el metodo que eligio la clienta, ya seleccionado.
+  const [metodoPago, setMetodoPago] = useState<string>(paymentMethodFromName(receipt.metodoPago));
   const [motivo, setMotivo] = useState("");
   const [saving, setSaving] = useState(false);
   const amount = Number(monto || 0);
@@ -120,7 +130,7 @@ function ReviewModal({ receipt, action, onClose }: { receipt: ReceiptView; actio
         ) : (
           <div>
             <label className={labelClass} htmlFor="reject-motivo">
-              Motivo <span className="text-ink-400">(la clienta lo verá)</span>
+              Motivo <span className="text-ink-400">(la clienta lo verá en Mi plan)</span>
             </label>
             <input id="reject-motivo" value={motivo} onChange={(event) => setMotivo(event.target.value)} placeholder="Ej: no se ve el monto" className={inputClass} />
           </div>
@@ -134,7 +144,7 @@ function ReviewModal({ receipt, action, onClose }: { receipt: ReceiptView; actio
             variant={action === "approve" ? "primary" : "danger"}
             className="flex-1 rounded-xl py-2.5 shadow-none"
             loading={saving}
-            disabled={action === "approve" && (amount <= 0 || amount > receipt.sale.saldo)}
+            disabled={action === "approve" ? amount <= 0 || amount > receipt.sale.saldo : motivo.trim().length < 3}
             onClick={submit}
           >
             {action === "approve" ? `Registrar ${currency(amount)}` : "Rechazar"}

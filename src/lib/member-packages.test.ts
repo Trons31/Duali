@@ -25,8 +25,11 @@ function sale(overrides: Partial<Row> = {}): Row {
     createdAt: new Date("2026-10-01T15:00:00Z"),
     updatedAt: new Date("2026-10-01T15:00:00Z"),
     discipline: { id: "disciplina", nombre: "Body Combat", color: "#f43f5e", tipo: "CLASE" },
+    origen: "PANEL",
+    accessToken: null,
     payments: [],
     bookings: [],
+    receipts: [],
     ...overrides
   };
 }

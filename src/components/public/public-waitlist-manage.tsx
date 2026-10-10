@@ -61,9 +61,9 @@ export function PublicWaitlistManage({ token, entry: initial }: { token: string;
 
       <div className="space-y-3 rounded-3xl border-l-4 bg-white p-6 ring-1 ring-black/[0.06]" style={{ borderLeftColor: clase.discipline.color }}>
         <p className="font-display text-3xl italic leading-none">{clase.discipline.nombre}</p>
-        <p className="flex items-center gap-2 text-sm capitalize text-ink-600">
+        <p className="flex items-center gap-2 text-sm text-ink-600">
           <FiCalendar className="size-4 text-ink-400" />
-          {when}
+          <span className="inline-block first-letter:uppercase">{when}</span>
         </p>
         <p className="flex items-center gap-2 text-sm text-ink-600">
           <FiClock className="size-4 text-ink-400" />

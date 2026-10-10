@@ -2,118 +2,187 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FiArrowLeft, FiCheck, FiClock, FiCopy, FiExternalLink, FiMessageCircle } from "react-icons/fi";
+import { FiCheck, FiClock, FiCopy, FiExternalLink, FiMessageCircle } from "react-icons/fi";
+import { ErrorBox, PersonFields, PrimaryButton, SaveLink, StepHeader, isValidPerson, type PersonData } from "@/components/public/public-form";
+import { PaymentStep } from "@/components/public/public-payment";
 import { focusRing } from "@/components/public/public-shell";
 import { ReceiptUploader } from "@/components/public/receipt-uploader";
 import { ScrollHint } from "@/components/shared/scroll-hint";
+import type { OnlinePayment, PaymentState } from "@/lib/online-payments";
 import type { PublicSession } from "@/lib/public-studio";
-import { formatCop, pricePerClass } from "@/lib/public-presentation";
+import { formatCop, myPlanHref, pricePerClass, purchaseHref } from "@/lib/public-presentation";
 import { WEEKDAYS, dateKeyToDate, formatTimeKey, isoWeekday } from "@/lib/studio-time";
 import { cn } from "@/lib/web-utils";
 
-type Step = "clase" | "datos" | "paquete" | "listo";
+type Step = "clase" | "datos" | "confirmar" | "paquete" | "pago" | "listo";
 
 type Option = { id: string; nombre: string; clases: number; precio: number; discipline: { nombre: string; color: string } };
 
-type Booked = {
-  accessToken: string;
-  paquete: { nombre: string; discipline: string; clasesRestantes: number; saldo: number };
+/** Lo que la clienta ve de su plan (spec 021 R5). */
+type PlanSummary = {
+  nombre: string;
+  discipline: string;
+  clases: number;
+  clasesRestantes: number;
+  vence: string;
+  saldo: number;
+  situacionPago: PaymentState;
+  miPlan: string | null;
 };
+
+type Booked = { accessToken: string; paquete: PlanSummary };
 
 type Waiting = { accessToken: string; posicion: number };
 
-const STEP_LABELS: Record<Step, string> = { clase: "Clase", datos: "Tus datos", paquete: "Tu plan", listo: "Listo" };
+const STEP_LABELS: Record<Step, string> = {
+  clase: "Clase",
+  datos: "Tus datos",
+  confirmar: "Confirmar",
+  paquete: "Tu plan",
+  pago: "Pago",
+  listo: "Listo"
+};
+
+type Studio = {
+  slug: string;
+  businessName: string;
+  telefono: string | null;
+  horasCancelacion: number;
+  paymentMethods: Array<{ name: string; account: string }>;
+  permitirPagoEnEstudio: boolean;
+  exigirPagoValidado: boolean;
+};
 
 function formatDay(key: string, options: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat("es-CO", { ...options, timeZone: "UTC" }).format(dateKeyToDate(key));
 }
 
-const fieldClass =
-  "w-full min-h-12 rounded-2xl border border-black/10 bg-white px-4 text-base text-ink-950 placeholder:text-ink-300 transition focus:border-ink-950 focus:outline-none focus:ring-4 focus:ring-black/5";
-
 /**
- * Reserva publica (specs 009 y 012). Desde una clase de la pagina entra directo
- * a "Tus datos" (?h&f); desde un plan lo deja preseleccionado (?plan). Si la
- * clase esta llena, el mismo camino anota en la lista de espera (spec 015 R6).
+ * Reserva publica (specs 009, 012 y 021). Desde una clase de la pagina entra
+ * directo a "Tus datos" (?h&f); desde Mi plan (?mp) no pide datos y reserva con
+ * ese plan. Antes de reservar muestra el plan que se usara; sin plan, se elige
+ * uno y se paga en el mismo camino. Si la clase esta llena, anota en la lista de
+ * espera (spec 015 R6).
  */
 export function PublicBookingWizard({
   studio,
   sessions,
   today,
-  initial
+  initial,
+  planToken
 }: {
-  studio: {
-    slug: string;
-    businessName: string;
-    telefono: string | null;
-    horasCancelacion: number;
-    paymentMethods: Array<{ name: string; account: string }>;
-  };
+  studio: Studio;
   sessions: PublicSession[];
   today: string;
-  initial?: { scheduleId?: string; fecha?: string; planId?: string };
+  initial?: { scheduleId?: string; fecha?: string };
+  /** Spec 021 R9: reservar desde Mi plan. */
+  planToken?: string;
 }) {
-  const preselected = sessions.find(
-    (session) => session.scheduleId === initial?.scheduleId && session.fecha === initial?.fecha
-  );
+  const preselected = sessions.find((session) => session.scheduleId === initial?.scheduleId && session.fecha === initial?.fecha);
   const days = useMemo(() => [...new Set(sessions.map((session) => session.fecha))], [sessions]);
-  const [step, setStep] = useState<Step>(preselected ? "datos" : "clase");
+  const [step, setStep] = useState<Step>(preselected && !planToken ? "datos" : "clase");
   const [day, setDay] = useState(preselected?.fecha ?? days[0] ?? today);
   const [session, setSession] = useState<PublicSession | null>(preselected ?? null);
-  const [celular, setCelular] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [apellido, setApellido] = useState("");
+  const [person, setPerson] = useState<PersonData>({ celular: "", nombre: "", apellido: "" });
+  const [preview, setPreview] = useState<PlanSummary | null>(null);
   const [options, setOptions] = useState<Option[]>([]);
+  const [mustBuyFirst, setMustBuyFirst] = useState(false);
   const [packageId, setPackageId] = useState("");
+  const [payment, setPayment] = useState<OnlinePayment | null>(null);
   const [booked, setBooked] = useState<Booked | null>(null);
   const [waiting, setWaiting] = useState<Waiting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  const steps: Step[] = options.length ? ["clase", "datos", "paquete", "listo"] : ["clase", "datos", "listo"];
-  const stepIndex = steps.indexOf(step);
-  const validData = celular.replace(/\D/g, "").length >= 7 && nombre.trim().length >= 2;
   const waitlist = Boolean(session && session.cuposLibres <= 0);
+  const steps: Step[] = planToken
+    ? ["clase", "confirmar"]
+    : waitlist
+      ? options.length
+        ? ["clase", "datos", "paquete"]
+        : ["clase", "datos"]
+      : preview
+        ? ["clase", "datos", "confirmar"]
+        : options.length
+          ? mustBuyFirst
+            ? ["clase", "datos", "paquete"]
+            : ["clase", "datos", "paquete", "pago"]
+          : ["clase", "datos"];
+  const stepIndex = Math.max(steps.indexOf(step), 0);
+  const chosen = options.find((item) => item.id === packageId) ?? null;
 
-  async function submit(withPackage?: string) {
+  function identity() {
+    return planToken
+      ? { planToken }
+      : { celular: person.celular, nombre: person.nombre, apellido: person.apellido || null };
+  }
+
+  async function post(target: PublicSession, body: Record<string, unknown>, asWaitlist = false) {
+    const response = await fetch(`/api/public/studios/${studio.slug}/${asWaitlist ? "waitlist" : "bookings"}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scheduleId: target.scheduleId, fecha: target.fecha, ...identity(), ...body })
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? (asWaitlist ? "No pudimos anotarte. Intenta de nuevo." : "No pudimos apartar tu cupo. Intenta de nuevo."));
+    }
+    return payload.data;
+  }
+
+  function needsPackage(data: { opciones: Option[]; exigePagoValidado: boolean }) {
+    if (!data.opciones.length) throw new Error("Esta clase no tiene planes a la venta en línea. Escríbele al estudio.");
+    setOptions(data.opciones);
+    setMustBuyFirst(!waitlist && data.exigePagoValidado);
+    // Por defecto la clase suelta: es lo que se compra para una sola clase.
+    setPackageId((data.opciones.find((item) => item.clases === 1) ?? data.opciones[0]).id);
+    setStep("paquete");
+  }
+
+  function finish(data: Booked | Waiting, kind: "booked" | "waiting") {
+    if (kind === "waiting") setWaiting(data as Waiting);
+    else setBooked(data as Booked);
+    setStep("listo");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /** Despues de los datos (o al elegir clase desde Mi plan): que plan se usaria. */
+  async function check(target: PublicSession | null = session) {
+    if (!target) return;
+    setSending(true);
+    setError(null);
+    try {
+      const targetIsFull = target.cuposLibres <= 0;
+      if (targetIsFull && !planToken) {
+        const data = await post(target, {}, true);
+        if (data.estado === "NECESITA_PAQUETE") needsPackage(data);
+        else finish(data, "waiting");
+        return;
+      }
+      const data = await post(target, { vistaPrevia: true }, targetIsFull);
+      if (data.estado === "NECESITA_PAQUETE") needsPackage(data);
+      else if (data.estado === "EN_ESPERA") finish(data, "waiting");
+      else if (data.plan) {
+        setPreview(data.plan);
+        setStep("confirmar");
+      } else throw new Error("No encontramos un plan para esta clase. Escríbele al estudio.");
+    } catch (checkError) {
+      setError((checkError as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function book(body: Record<string, unknown> = {}) {
     if (!session) return;
     setSending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/public/studios/${studio.slug}/${waitlist ? "waitlist" : "bookings"}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scheduleId: session.scheduleId,
-          fecha: session.fecha,
-          celular,
-          nombre,
-          apellido: apellido || null,
-          ...(withPackage ? { packageId: withPackage } : {})
-        })
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error ?? (waitlist ? "No pudimos anotarte. Intenta de nuevo." : "No pudimos apartar tu cupo. Intenta de nuevo."));
-      }
-
-      if (payload.data.estado === "NECESITA_PAQUETE") {
-        const choices: Option[] = payload.data.opciones;
-        if (!choices.length) throw new Error("Esta clase no tiene planes a la venta en línea. Escríbele al estudio.");
-        setOptions(choices);
-        // El plan elegido en la pagina, si sirve para esta clase; si no, la clase suelta.
-        const fromPage = choices.find((item) => item.id === initial?.planId);
-        setPackageId((fromPage ?? choices.find((item) => item.clases === 1) ?? choices[0]).id);
-        setStep("paquete");
-        return;
-      }
-
-      if (payload.data.estado === "EN_ESPERA") setWaiting(payload.data);
-      else setBooked(payload.data);
-      setStep("listo");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (submitError) {
-      setError((submitError as Error).message);
+      const data = await post(session, body, waitlist);
+      if (data.estado === "NECESITA_PAQUETE") needsPackage(data);
+      else finish(data, data.estado === "EN_ESPERA" ? "waiting" : "booked");
+    } catch (bookError) {
+      setError((bookError as Error).message);
     } finally {
       setSending(false);
     }
@@ -124,11 +193,22 @@ export function PublicBookingWizard({
     setStep(steps[Math.max(stepIndex - 1, 0)]);
   }
 
+  function choose(item: PublicSession) {
+    setSession(item);
+    setPreview(null);
+    setOptions([]);
+    setPayment(null);
+    if (planToken) void check(item);
+    else setStep("datos");
+  }
+
   if (!sessions.length) {
     return (
       <div className="rounded-3xl border border-black/[0.06] bg-white p-8 text-center">
         <p className="font-display text-3xl italic">Sin clases por ahora</p>
-        <p className="mt-2 text-sm text-ink-500">Vuelve pronto o escríbele al estudio.</p>
+        <p className="mt-2 text-sm text-ink-500">
+          {planToken ? "No hay clases próximas donde sirva tu plan." : "Vuelve pronto o escríbele al estudio."}
+        </p>
       </div>
     );
   }
@@ -136,29 +216,13 @@ export function PublicBookingWizard({
   return (
     <div className="space-y-6">
       {step !== "listo" ? (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            {stepIndex > 0 ? (
-              <button type="button" onClick={goBack} className={`inline-flex min-h-11 items-center gap-1.5 rounded-full pr-3 text-sm font-medium text-ink-500 hover:text-ink-950 ${focusRing}`}>
-                <FiArrowLeft className="size-4" />
-                Atrás
-              </button>
-            ) : (
-              <Link href={`/s/${studio.slug}`} className={`inline-flex min-h-11 items-center gap-1.5 rounded-full pr-3 text-sm font-medium text-ink-500 hover:text-ink-950 ${focusRing}`}>
-                <FiArrowLeft className="size-4" />
-                Volver
-              </Link>
-            )}
-            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-ink-400">
-              Paso {stepIndex + 1} de {steps.length - 1} · {STEP_LABELS[step]}
-            </span>
-          </div>
-          <div className="flex gap-1.5" aria-hidden>
-            {steps.slice(0, -1).map((item, index) => (
-              <span key={item} className={cn("h-1 flex-1 rounded-full transition-colors", index <= stepIndex ? "bg-ink-950" : "bg-black/10")} />
-            ))}
-          </div>
-        </div>
+        <StepHeader
+          index={stepIndex}
+          total={steps.length}
+          label={STEP_LABELS[step]}
+          backHref={planToken ? myPlanHref(studio.slug, planToken) : `/s/${studio.slug}`}
+          onBack={stepIndex > 0 ? goBack : undefined}
+        />
       ) : null}
 
       {step === "clase" ? (
@@ -192,11 +256,9 @@ export function PublicBookingWizard({
                   <li key={`${item.scheduleId}-${item.fecha}`}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSession(item);
-                        setStep("datos");
-                      }}
-                      className={`flex w-full items-center gap-4 rounded-3xl border border-black/[0.06] bg-white p-4 text-left transition hover:border-black/20 ${focusRing}`}
+                      disabled={sending}
+                      onClick={() => choose(item)}
+                      className={`flex w-full items-center gap-4 rounded-3xl border border-black/[0.06] bg-white p-4 text-left transition hover:border-black/20 disabled:opacity-60 ${focusRing}`}
                     >
                       <span className="w-16 shrink-0 text-center">
                         <span className="block font-display text-3xl leading-none">{formatTimeKey(item.horaInicio).split(" ")[0]}</span>
@@ -226,6 +288,7 @@ export function PublicBookingWizard({
                 );
               })}
           </ul>
+          <ErrorBox message={error} />
         </section>
       ) : null}
 
@@ -233,27 +296,39 @@ export function PublicBookingWizard({
         <section className="space-y-5">
           <SessionSummary session={session} onChange={() => setStep("clase")} />
           <h1 className="font-display text-5xl italic leading-none">Tus datos</h1>
-          <div className="space-y-3">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-ink-600">Celular</span>
-              <input type="tel" inputMode="tel" autoComplete="tel" value={celular} onChange={(event) => setCelular(event.target.value)} placeholder="300 000 0000" className={fieldClass} />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-ink-600">Nombre</span>
-                <input autoComplete="given-name" value={nombre} onChange={(event) => setNombre(event.target.value)} className={fieldClass} />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-ink-600">Apellido</span>
-                <input autoComplete="family-name" value={apellido} onChange={(event) => setApellido(event.target.value)} className={fieldClass} />
-              </label>
-            </div>
-            <p className="text-xs text-ink-500">Si ya tienes un plan con nosotros, usa el mismo celular y nombre.</p>
-          </div>
+          <PersonFields value={person} onChange={setPerson} />
           {waitlist ? <WaitlistNotice horasCancelacion={studio.horasCancelacion} /> : null}
           <ErrorBox message={error} />
-          <PrimaryButton disabled={!validData} loading={sending} onClick={() => submit()}>
-            {waitlist ? "Unirme a la lista de espera" : "Apartar mi cupo"}
+          <PrimaryButton disabled={!isValidPerson(person)} loading={sending} onClick={() => check()}>
+            {waitlist ? "Unirme a la lista de espera" : "Continuar"}
+          </PrimaryButton>
+        </section>
+      ) : null}
+
+      {step === "confirmar" && session && preview ? (
+        <section className="space-y-5">
+          <SessionSummary session={session} onChange={() => setStep("clase")} />
+          <h1 className="font-display text-5xl italic leading-none">Confirma tu reserva</h1>
+          <div className="rounded-3xl bg-white p-5 ring-1 ring-black/[0.06]">
+            <p className="text-sm text-ink-500">Tu plan</p>
+            <p className="font-display text-2xl italic">
+              {preview.nombre} · {preview.discipline}
+            </p>
+            <p className="mt-1 text-sm text-ink-700">
+              {preview.clases === 1
+                ? "Clase suelta"
+                : `Te quedan ${preview.clasesRestantes} de ${preview.clases} · vence el ${formatDay(preview.vence, { day: "numeric", month: "long" })}`}
+            </p>
+            {preview.clases > 1 ? (
+              <p className="mt-3 rounded-2xl bg-sand px-4 py-3 text-sm font-medium">
+                Después de esta reserva te {preview.clasesRestantes - 1 === 1 ? "quedará 1 clase" : `quedarán ${preview.clasesRestantes - 1} clases`}.
+              </p>
+            ) : null}
+            {preview.situacionPago === "EN_REVISION" ? <p className="mt-3 text-xs text-ink-500">Tu pago está en revisión; igual puedes reservar.</p> : null}
+          </div>
+          <ErrorBox message={error} />
+          <PrimaryButton loading={sending} onClick={() => book()}>
+            Reservar con mi plan
           </PrimaryButton>
         </section>
       ) : null}
@@ -266,7 +341,9 @@ export function PublicBookingWizard({
             <p className="mt-2 text-sm text-ink-500">
               {waitlist
                 ? "Aún no tienes un plan para esta clase. Si te llega el cupo, se reserva con este plan y lo pagas después."
-                : "Aún no tienes un plan para esta clase. Pagas en el estudio o por transferencia."}
+                : mustBuyFirst
+                  ? "Aún no tienes un plan para esta clase. Este estudio valida el pago antes de reservar: compra tu plan y reserva cuando lo aprueben."
+                  : "Aún no tienes un plan para esta clase. Elige uno y págalo en el siguiente paso."}
             </p>
           </div>
           <ul className="space-y-3">
@@ -299,13 +376,41 @@ export function PublicBookingWizard({
             ))}
           </ul>
           <ErrorBox message={error} />
-          <PrimaryButton disabled={!packageId} loading={sending} onClick={() => submit(packageId)}>
-            {waitlist ? "Unirme a la lista de espera" : "Apartar mi cupo"}
+          {waitlist ? (
+            <PrimaryButton disabled={!packageId} loading={sending} onClick={() => book({ packageId })}>
+              Unirme a la lista de espera
+            </PrimaryButton>
+          ) : mustBuyFirst ? (
+            <Link
+              href={purchaseHref(studio.slug, packageId)}
+              className={`inline-flex min-h-14 w-full items-center justify-center rounded-full bg-ink-950 px-6 text-base font-semibold text-white hover:bg-ink-800 ${focusRing}`}
+            >
+              Comprar este plan
+            </Link>
+          ) : (
+            <PrimaryButton disabled={!packageId} onClick={() => setStep("pago")}>
+              Continuar al pago
+            </PrimaryButton>
+          )}
+        </section>
+      ) : null}
+
+      {step === "pago" && session && chosen ? (
+        <section className="space-y-5">
+          <SessionSummary session={session} />
+          <h1 className="font-display text-5xl italic leading-none">Paga y reserva</h1>
+          <p className="text-sm text-ink-500">
+            {chosen.nombre} · {chosen.discipline.nombre}. Transfiere el valor y sube el comprobante; el estudio lo valida.
+          </p>
+          <PaymentStep total={chosen.precio} methods={studio.paymentMethods} allowInStudio={studio.permitirPagoEnEstudio} onChange={setPayment} />
+          <ErrorBox message={error} />
+          <PrimaryButton disabled={!payment} loading={sending} onClick={() => book({ packageId, pago: payment })}>
+            {payment?.tipo === "EN_ESTUDIO" ? "Apartar y pagar en el estudio" : "Enviar comprobante y reservar"}
           </PrimaryButton>
         </section>
       ) : null}
 
-      {step === "listo" && session && booked ? <Confirmation studio={studio} session={session} booked={booked} nombre={nombre} /> : null}
+      {step === "listo" && session && booked ? <Confirmation studio={studio} session={session} booked={booked} nombre={person.nombre} /> : null}
       {step === "listo" && session && waiting ? <WaitlistConfirmation studio={studio} session={session} waiting={waiting} /> : null}
     </div>
   );
@@ -317,7 +422,7 @@ function SessionSummary({ session, onChange }: { session: PublicSession; onChang
       <span className="h-12 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: session.discipline.color }} />
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold">{session.discipline.nombre}</span>
-        <span className="block text-sm capitalize text-ink-500">
+        <span className="block text-sm first-letter:uppercase text-ink-500">
           {formatDay(session.fecha, { weekday: "long", day: "numeric", month: "long" })} · {formatTimeKey(session.horaInicio)}
         </span>
       </span>
@@ -364,7 +469,7 @@ function WaitlistConfirmation({ studio, session, waiting }: { studio: { slug: st
         <h1 className="mt-4 font-display text-5xl italic leading-none">Estás en la lista</h1>
         <p className="mt-3 text-sm text-white/75">
           Puesto {waiting.posicion} en espera para {session.discipline.nombre} ·{" "}
-          <span className="capitalize">{formatDay(session.fecha, { weekday: "long", day: "numeric", month: "long" })}</span> a las{" "}
+          <span>{formatDay(session.fecha, { weekday: "long", day: "numeric", month: "long" })}</span> a las{" "}
           {formatTimeKey(session.horaInicio)}
         </p>
       </div>
@@ -386,54 +491,25 @@ function WaitlistConfirmation({ studio, session, waiting }: { studio: { slug: st
   );
 }
 
-function ErrorBox({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-      {message}
-    </p>
-  );
-}
-
-function PrimaryButton({ children, disabled, loading, onClick }: { children: React.ReactNode; disabled?: boolean; loading?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled || loading}
-      onClick={onClick}
-      className={`inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-ink-950 px-6 text-base font-semibold text-white transition hover:bg-ink-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
-    >
-      {loading ? <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" /> : null}
-      {children}
-    </button>
-  );
-}
-
-function Confirmation({
-  studio,
-  session,
-  booked,
-  nombre
-}: {
-  studio: { slug: string; businessName: string; telefono: string | null; horasCancelacion: number; paymentMethods: Array<{ name: string; account: string }> };
-  session: PublicSession;
-  booked: Booked;
-  nombre: string;
-}) {
+function Confirmation({ studio, session, booked, nombre }: { studio: Studio; session: PublicSession; booked: Booked; nombre: string }) {
   const [copied, setCopied] = useState(false);
+  const plan = booked.paquete;
   const manageUrl =
     typeof window === "undefined" ? `/s/${studio.slug}/reserva/${booked.accessToken}` : `${window.location.origin}/s/${studio.slug}/reserva/${booked.accessToken}`;
   const when = `${formatDay(session.fecha, { weekday: "long", day: "numeric", month: "long" })} a las ${formatTimeKey(session.horaInicio)}`;
+  const greeting = nombre.trim() ? `Hola ${studio.businessName}, soy ${nombre.trim()}.` : `Hola ${studio.businessName}.`;
   const message = [
-    `Hola ${studio.businessName}, soy ${nombre.trim()}.`,
+    greeting,
     `Aparté cupo en ${session.discipline.nombre} el ${when}.`,
-    booked.paquete.saldo > 0 ? `Plan: ${booked.paquete.nombre} (${formatCop(booked.paquete.saldo)}). Te envío el comprobante.` : null,
+    plan.situacionPago === "PAGO_EN_ESTUDIO" ? `Plan: ${plan.nombre} (${formatCop(plan.saldo)}), lo pago en el estudio.` : null,
     `Mi reserva: ${manageUrl}`
   ]
     .filter(Boolean)
     .join("\n");
   const digits = studio.telefono?.replace(/\D/g, "") ?? "";
   const whatsapp = digits ? `https://wa.me/${digits.length === 10 ? `57${digits}` : digits}?text=${encodeURIComponent(message)}` : null;
+  // Con pago en el estudio aun puede adjuntar el comprobante si transfiere (spec 014).
+  const canAttach = plan.situacionPago === "PAGO_EN_ESTUDIO" || plan.situacionPago === "DEBE";
 
   async function copyLink() {
     try {
@@ -451,7 +527,7 @@ function Confirmation({
           <FiCheck className="size-7" />
         </span>
         <h1 className="mt-4 font-display text-5xl italic leading-none">¡Cupo apartado!</h1>
-        <p className="mt-3 text-sm capitalize text-white/75">
+        <p className="mt-3 text-sm first-letter:uppercase text-white/75">
           {session.discipline.nombre} · {when}
         </p>
       </div>
@@ -459,16 +535,19 @@ function Confirmation({
       <div className="rounded-3xl bg-white p-5 ring-1 ring-black/[0.06]">
         <p className="text-sm text-ink-500">Tu plan</p>
         <p className="font-display text-2xl italic">
-          {booked.paquete.nombre} · {booked.paquete.discipline}
+          {plan.nombre} · {plan.discipline}
         </p>
-        {booked.paquete.saldo > 0 ? (
-          <p className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">Por pagar: {formatCop(booked.paquete.saldo)}</p>
-        ) : (
-          <p className="mt-1 text-sm text-ink-600">
-            {booked.paquete.clasesRestantes === 1 ? "Te queda 1 clase" : `Te quedan ${booked.paquete.clasesRestantes} clases`} en tu plan.
-          </p>
-        )}
-        {booked.paquete.saldo > 0 && studio.paymentMethods.length ? (
+        <p className="mt-1 text-sm text-ink-600">
+          {plan.clases === 1
+            ? "Clase suelta para esta clase."
+            : `${plan.clasesRestantes === 1 ? "Te queda 1 clase" : `Te quedan ${plan.clasesRestantes} clases`} de ${plan.clases} en tu plan.`}
+        </p>
+        {plan.situacionPago === "EN_REVISION" ? (
+          <p className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">Pago en revisión</p>
+        ) : plan.saldo > 0 ? (
+          <p className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">Por pagar: {formatCop(plan.saldo)}</p>
+        ) : null}
+        {canAttach && studio.paymentMethods.length ? (
           <div className="mt-4 space-y-2 border-t border-black/[0.06] pt-4">
             <p className="text-sm font-medium">Puedes pagar a:</p>
             {studio.paymentMethods.map((method, index) => (
@@ -481,12 +560,21 @@ function Confirmation({
         ) : null}
       </div>
 
-      {booked.paquete.saldo > 0 ? (
+      {canAttach ? (
         <div className="rounded-3xl bg-white p-5 ring-1 ring-black/[0.06]">
           <p className="font-semibold">¿Ya pagaste? Adjunta el comprobante</p>
           <p className="mb-4 mt-1 text-sm text-ink-500">El estudio lo revisa y registra tu pago.</p>
           <ReceiptUploader token={booked.accessToken} />
         </div>
+      ) : null}
+
+      {plan.miPlan ? (
+        <SaveLink
+          path={myPlanHref(studio.slug, plan.miPlan)}
+          title="Guarda tu enlace de Mi plan"
+          description="Ahí ves cuántas clases te quedan, tus reservas y tu pago, y reservas sin volver a escribir tus datos."
+          shareText={`Mi plan en ${studio.businessName}:`}
+        />
       ) : null}
 
       {whatsapp ? (
@@ -497,7 +585,7 @@ function Confirmation({
           className={`inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-ink-950 px-6 text-base font-semibold text-white hover:bg-ink-800 ${focusRing}`}
         >
           <FiMessageCircle className="size-5" />
-          {booked.paquete.saldo > 0 ? "Escribir al estudio por WhatsApp" : "Avisar por WhatsApp"}
+          Avisar al estudio por WhatsApp
         </a>
       ) : null}
 

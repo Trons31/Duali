@@ -65,3 +65,4 @@ del esquema con la URL local escrita a mano, y las pruebas se niegan a correr si
 | 018 | [Pantalla de error que no se rompe en el navegador](018-errores-navegador/spec.md) | Implementada y probada |
 | 019 | [Clientes, clases sueltas y asistencia](019-clientes-asistencia/spec.md) | Implementada y probada |
 | 020 | [Renovaciones, pagos y vencimientos](020-renovaciones-pagos/spec.md) | Propuesta |
+| 021 | [Comprar un plan en línea y reservar con él](021-compra-plan-en-linea/spec.md) | Implementada |

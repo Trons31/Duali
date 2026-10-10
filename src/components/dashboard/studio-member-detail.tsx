@@ -3,6 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { sileo } from "sileo";
+import { clientApiFetch } from "@/lib/client-api";
 import { FiArrowLeft, FiCalendar, FiEdit2, FiMail, FiMessageCircle, FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -13,6 +16,7 @@ import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components
 import {
   ClassesBar,
   MemberFormModal,
+  OnlineBadge,
   PackageStatusBadge,
   PaymentStatusBadge,
   RegisterPaymentModal,
@@ -156,6 +160,7 @@ export function StudioMemberDetail({
               <SaleCard
                 key={item.id}
                 item={item}
+                member={member}
                 today={today}
                 classes={classHistory.filter((entry) => entry.memberPackageId === item.id)}
                 onPay={() => setPaying(item)}
@@ -218,6 +223,7 @@ export function StudioMemberDetail({
 
 function SaleCard({
   item,
+  member,
   today,
   classes,
   onPay,
@@ -225,6 +231,7 @@ function SaleCard({
   onVoid
 }: {
   item: MemberPackageItem;
+  member?: { nombre: string; celular: string };
   today: string;
   classes: ClassHistoryItem[];
   onPay?: () => void;
@@ -258,8 +265,9 @@ function SaleCard({
             <ColorDot color={item.discipline.color} />
             {item.nombre} · {item.discipline.nombre}
           </p>
-          <p className="mt-0.5 text-xs text-ink-400">
+          <p className="mt-0.5 flex items-center gap-2 text-xs text-ink-400">
             {formatDateKeyShort(item.inicio)} – {formatDateKeyShort(item.vence)}
+            <OnlineBadge item={item} />
           </p>
         </div>
         <PackageStatusBadge item={item} />
@@ -317,6 +325,7 @@ function SaleCard({
               Extender
             </Button>
           ) : null}
+          {member ? <SendMyPlanButton saleId={item.id} member={member} /> : null}
           {onVoid ? (
             <Button variant="ghost" className="rounded-xl px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50" onClick={onVoid}>
               Anular
@@ -527,5 +536,41 @@ function PackageClasses({ classes, today }: { classes: ClassHistoryItem[]; today
         })}
       </ul>
     </details>
+  );
+}
+
+/**
+ * Spec 021 R10: manda a la clienta su enlace Mi plan. La ventana se abre antes
+ * de pedir el enlace para que el navegador no la bloquee.
+ */
+function SendMyPlanButton({ saleId, member }: { saleId: string; member: { nombre: string; celular: string } }) {
+  const { data: session } = useSession();
+  const [sending, setSending] = useState(false);
+
+  async function send() {
+    const token = session?.user.apiToken;
+    if (!token) return;
+    const popup = window.open("", "_blank");
+    setSending(true);
+    try {
+      const { path } = await clientApiFetch<{ path: string }>(`/api/member-packages/${saleId}/access-link`, token, { method: "POST" });
+      const message = `Hola ${member.nombre}, este es tu enlace de Mi plan: ${window.location.origin}${path}
+Ahí ves cuántas clases te quedan, tus reservas y tu pago, y reservas sin escribir tus datos.`;
+      const url = `${whatsappLink(member.celular)}?text=${encodeURIComponent(message)}`;
+      if (popup) popup.location.href = url;
+      else window.location.href = url;
+    } catch (error) {
+      popup?.close();
+      sileo.error({ title: (error as Error).message });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Button variant="ghost" className="rounded-xl px-3 py-2 text-xs font-medium text-ink-600 hover:bg-ink-50" loading={sending} onClick={send}>
+      <FiMessageCircle className="size-3.5" />
+      Enviar Mi plan
+    </Button>
   );
 }

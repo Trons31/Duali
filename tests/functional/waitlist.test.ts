@@ -32,6 +32,8 @@ async function fullStudio() {
   counter += 1;
   const slug = `espera-${Date.now()}-${counter}`;
   expectOk(await call(publicPageRoute.PUT, { token: business.token, method: "PUT", body: { slug, paginaPublicaActiva: true } }));
+  // Spec 021 D2: como antes, se vende por la web sin pagar.
+  await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
   const fecha = addDaysToKey(studioTodayKey(), 3);
   const scheduleId = schedules.find((item) => item.diaSemana === isoWeekday(fecha))!.id;
   return { ...business, catalog, slug, fecha, scheduleId };
@@ -50,7 +52,7 @@ async function book(s: Studio, who: { nombre: string; celular: string }) {
       token: "",
       method: "POST",
       params: { slug: s.slug },
-      body: { scheduleId: s.scheduleId, fecha: s.fecha, ...who, packageId: s.catalog.packages.individualBodyCombat }
+      body: { scheduleId: s.scheduleId, fecha: s.fecha, ...who, packageId: s.catalog.packages.individualBodyCombat, pago: { tipo: "EN_ESTUDIO" } }
     }),
     201
   );

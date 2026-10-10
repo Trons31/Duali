@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { sileo } from "sileo";
-import { FiCalendar, FiCreditCard, FiMessageSquare, FiPlus, FiSave, FiTrash2 } from "react-icons/fi";
+import { FiCalendar, FiCreditCard, FiGlobe, FiMessageSquare, FiPlus, FiSave, FiTrash2 } from "react-icons/fi";
 import { LuLoader, LuShapes, LuStore } from "react-icons/lu";
 import { Button } from "@/components/ui/button";
 import { clientApiFetch } from "@/lib/client-api";
@@ -30,6 +30,7 @@ export function SettingsSections({ profile }: { profile: SafeClient }) {
       <BusinessTypeSection profile={profile} />
       <InfoSection profile={profile} />
       {profile.moduloEstudio ? <BookingPolicySection profile={profile} /> : null}
+      {profile.moduloEstudio ? <OnlinePaymentsSection profile={profile} /> : null}
       <PaymentMethodsSection profile={profile} />
       <MessageSection profile={profile} />
     </>
@@ -356,6 +357,62 @@ function BookingPolicySection({ profile }: { profile: SafeClient }) {
           </div>
         </fieldset>
         <SaveButton loading={isSubmitting} label="Guardar política" />
+      </SectionCard>
+    </form>
+  );
+}
+
+type OnlinePaymentValues = { permitirPagoEnEstudio: boolean; exigirPagoValidado: boolean };
+
+/** Spec 021 R14: como se paga lo que se compra desde la pagina publica. */
+function OnlinePaymentsSection({ profile }: { profile: SafeClient }) {
+  const save = useSaveProfile();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { isSubmitting }
+  } = useForm<OnlinePaymentValues>({
+    defaultValues: { permitirPagoEnEstudio: profile.permitirPagoEnEstudio, exigirPagoValidado: profile.exigirPagoValidado }
+  });
+  const values = watch();
+
+  async function onSubmit(next: OnlinePaymentValues) {
+    const updated = await save(next, "Pagos en línea guardados");
+    if (updated) reset({ permitirPagoEnEstudio: updated.permitirPagoEnEstudio, exigirPagoValidado: updated.exigirPagoValidado });
+  }
+
+  const options = [
+    {
+      name: "permitirPagoEnEstudio",
+      title: "Permitir pagar en el estudio",
+      on: "En tu página aparece “Pagar en el estudio”: la compra queda debiendo y la cobras cuando llegue.",
+      off: "Para comprar en tu página hay que subir el comprobante de la transferencia."
+    },
+    {
+      name: "exigirPagoValidado",
+      title: "Esperar a validar el pago para reservar",
+      on: "Un plan comprado en línea solo reserva cuando apruebes su comprobante.",
+      off: "Puede reservar de una vez mientras revisas el comprobante; así no pierde el cupo."
+    }
+  ] as const;
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <SectionCard icon={<FiGlobe />} title="Pagos en línea" description="Cómo pagan los planes que se compran en tu página">
+        <div className="space-y-2">
+          {options.map((option) => (
+            <label key={option.name} className="flex cursor-pointer gap-3 rounded-xl border border-ink-200 p-3 hover:border-ink-300">
+              <input type="checkbox" className="mt-0.5 size-4 accent-brand-600" {...register(option.name)} />
+              <span>
+                <span className="block text-sm font-semibold text-ink-800">{option.title}</span>
+                <span className="mt-0.5 block text-xs text-ink-500">{values[option.name] ? option.on : option.off}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <SaveButton loading={isSubmitting} label="Guardar pagos en línea" />
       </SectionCard>
     </form>
   );

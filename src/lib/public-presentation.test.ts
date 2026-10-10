@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { bestValuePlanId, formatCop, joinNames, lowestPrice, pricePerClass, reserveHref } from "@/lib/public-presentation";
+import { bestValuePlanId, bookWithPlanHref, formatCop, joinNames, lowestPrice, myPlanHref, pricePerClass, purchaseHref, reserveHref } from "@/lib/public-presentation";
 
 const menu = [
   { id: "individual", clases: 1, precio: 15000 },
@@ -37,10 +37,15 @@ describe("presentación de la página pública (spec 012)", () => {
     assert.equal(joinNames([]), "");
   });
 
-  test("enlace para reservar una clase o con un plan", () => {
+  test("enlace para reservar una clase", () => {
     assert.equal(reserveHref("studio", { scheduleId: "h1", fecha: "2026-10-12" }), "/s/studio/reservar?h=h1&f=2026-10-12");
-    assert.equal(reserveHref("studio", null, "plan1"), "/s/studio/reservar?plan=plan1");
     assert.equal(reserveHref("studio"), "/s/studio/reservar");
+  });
+
+  test("spec 021: comprar un plan, Mi plan y reservar con el plan", () => {
+    assert.equal(purchaseHref("studio", "plan1"), "/s/studio/comprar?p=plan1");
+    assert.equal(myPlanHref("studio", "tok"), "/s/studio/plan/tok");
+    assert.equal(bookWithPlanHref("studio", "tok"), "/s/studio/reservar?mp=tok");
   });
 
   test("pesos colombianos", () => {

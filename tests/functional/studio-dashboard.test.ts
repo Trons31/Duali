@@ -10,7 +10,7 @@ import * as paymentRoute from "@/app/api/member-packages/[id]/payments/[paymentI
 import * as publicBookingsRoute from "@/app/api/public/studios/[slug]/bookings/route";
 import { getStudioDashboard } from "@/lib/studio-dashboard";
 import { addDaysToKey, isoWeekday, studioNow } from "@/lib/studio-time";
-import { call, createBusiness, disconnect, expectOk } from "./helpers";
+import { call, createBusiness, disconnect, expectOk, prisma } from "./helpers";
 import { createCatalog, createMember, createSchedule, sell } from "./studio-fixtures";
 
 after(disconnect);
@@ -83,13 +83,15 @@ describe("spec 013 · Inicio del estudio", () => {
     const [schedule] = await createSchedule(token, disciplines.bodyCombat, [isoWeekday(fecha)]);
     const slug = `inicio-${Date.now()}`;
     expectOk(await call(publicPageRoute.PUT, { token, method: "PUT", body: { slug, paginaPublicaActiva: true } }));
+    // Spec 021 D2: como antes, se vende por la web sin pagar.
+    await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
 
     expectOk(
       await call(publicBookingsRoute.POST, {
         token: "",
         method: "POST",
         params: { slug },
-        body: { scheduleId: schedule.id, fecha, celular: "3117770001", nombre: "Web", packageId: packages.individualBodyCombat }
+        body: { scheduleId: schedule.id, fecha, celular: "3117770001", nombre: "Web", packageId: packages.individualBodyCombat, pago: { tipo: "EN_ESTUDIO" } }
       }),
       201
     );

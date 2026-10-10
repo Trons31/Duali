@@ -21,6 +21,8 @@ export async function GET(request: Request) {
         moduloEstudio: true,
         horasCancelacion: true,
         devolverClaseInasistencia: true,
+        permitirPagoEnEstudio: true,
+        exigirPagoValidado: true,
         createdAt: true,
         updatedAt: true
       }

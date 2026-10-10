@@ -20,6 +20,8 @@ export type SafeClient = {
   moduloEstudio: boolean;
   horasCancelacion: number;
   devolverClaseInasistencia: boolean;
+  permitirPagoEnEstudio: boolean;
+  exigirPagoValidado: boolean;
   createdAt: string;
   updatedAt: string;
 };

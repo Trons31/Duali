@@ -31,12 +31,14 @@ async function webBookingWithBalance() {
   n += 1;
   const slug = `comprobantes-${Date.now()}-${n}`;
   expectOk(await call(publicPageRoute.PUT, { token: business.token, method: "PUT", body: { slug, paginaPublicaActiva: true } }));
+  // Spec 021 D2: como antes, se vende por la web sin pagar.
+  await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
   const booked = expectOk<{ accessToken: string }>(
     await call(publicBookingsRoute.POST, {
       token: "",
       method: "POST",
       params: { slug },
-      body: { scheduleId: schedule.id, fecha, celular: `31188800${n.toString().padStart(2, "0")}`, nombre: "Laura", packageId: catalog.packages.individualBodyCombat }
+      body: { scheduleId: schedule.id, fecha, celular: `31188800${n.toString().padStart(2, "0")}`, nombre: "Laura", packageId: catalog.packages.individualBodyCombat, pago: { tipo: "EN_ESTUDIO" } }
     }),
     201
   );
@@ -102,6 +104,8 @@ describe("spec 014 · enviar comprobante desde la reserva", () => {
     const [schedule] = await createSchedule(business.token, catalog.disciplines.bodyCombat, [isoWeekday(fecha)]);
     const slug = `pagada-${Date.now()}`;
     await call(publicPageRoute.PUT, { token: business.token, method: "PUT", body: { slug, paginaPublicaActiva: true } });
+    // Spec 021 D2: como antes, se vende por la web sin pagar.
+    await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
     const member = await createMember(business.token, "Sara");
     await sell(business.token, member.id, catalog.packages.basicoBodyCombat, { pago: { monto: 55000, metodoPago: "EFECTIVO" } });
     const booked = expectOk<{ accessToken: string }>(

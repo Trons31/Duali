@@ -140,6 +140,9 @@ model Client {
   horasCancelacion          Int       @default(2)
   // Spec 019 D4: si no asiste, se le devuelve la clase (por defecto, la pierde).
   devolverClaseInasistencia Boolean   @default(false)
+  // Spec 021 D2/D3: pagos en linea.
+  permitirPagoEnEstudio     Boolean   @default(false)
+  exigirPagoValidado        Boolean   @default(false)
   // Spec 008: direccion publica /s/{slug}; nadie queda publicado sin activarlo.
   slug                      String?   @unique
   paginaPublicaActiva       Boolean   @default(false)
@@ -766,23 +769,26 @@ model StudioMember {
 
 // nombre, clases y precio se copian al vender: cambiar el catalogo no altera ventas.
 model MemberPackage {
-  id              String    @id @default(cuid())
+  id              String        @id @default(cuid())
   clientId        String
   memberId        String
   packageId       String
   disciplineId    String
   nombre          String
   clases          Int
-  clasesUsadas    Int       @default(0)
-  precio          Decimal   @db.Decimal(12, 2)
-  pagado          Decimal   @default(0) @db.Decimal(12, 2)
-  inicio          DateTime  @db.Date
-  vence           DateTime  @db.Date
+  clasesUsadas    Int           @default(0)
+  precio          Decimal       @db.Decimal(12, 2)
+  pagado          Decimal       @default(0) @db.Decimal(12, 2)
+  inicio          DateTime      @db.Date
+  vence           DateTime      @db.Date
   anuladoAt       DateTime?
   motivoAnulacion String?
   notas           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // Spec 021: compra desde la pagina publica y enlace privado "Mi plan".
+  origen          BookingOrigin @default(PANEL)
+  accessToken     String?       @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   client     Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
   member     StudioMember           @relation(fields: [memberId], references: [id], onDelete: Restrict)
@@ -911,6 +917,8 @@ model PaymentReceipt {
   bookingId       String?
   url             String
   publicId        String
+  // Spec 021: el metodo que eligio la clienta al pagar (nombre del metodo del estudio).
+  metodoPago      String?
   estado          PaymentReceiptStatus @default(POR_REVISAR)
   paymentId       String?
   motivoRechazo   String?

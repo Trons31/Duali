@@ -49,7 +49,17 @@ export function PackageStatusBadge({ item }: { item: MemberPackageItem }) {
 export function PaymentStatusBadge({ item }: { item: MemberPackageItem }) {
   if (item.estado === "ANULADO") return null;
   if (item.saldo <= 0) return <span className="text-[11px] font-semibold text-brand-600">Pagado</span>;
+  // Spec 021: lo que falta por hacer con el pago de una compra en linea.
+  if (item.situacionPago === "EN_REVISION") return <span className="text-[11px] font-semibold text-amber-700">Pago en revisión · {currency(item.saldo)}</span>;
+  if (item.situacionPago === "RECHAZADO") return <span className="text-[11px] font-semibold text-rose-600">Comprobante rechazado · debe {currency(item.saldo)}</span>;
+  if (item.situacionPago === "PAGO_EN_ESTUDIO") return <span className="text-[11px] font-semibold text-rose-600">Paga en el estudio {currency(item.saldo)}</span>;
   return <span className="text-[11px] font-semibold text-rose-600">Debe {currency(item.saldo)}</span>;
+}
+
+/** Spec 021 R12: venta hecha desde la pagina publica. */
+export function OnlineBadge({ item }: { item: Pick<MemberPackageItem, "origen"> }) {
+  if (item.origen !== "PUBLICO") return null;
+  return <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">Compró en línea</span>;
 }
 
 const CLASS_STATE: Record<string, { label: string; className: string }> = {

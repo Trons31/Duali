@@ -95,6 +95,30 @@ export async function signUpload(clientId: string, kind: MediaKind, use: MediaUs
 
 export type MediaInput = { url: string; publicId: string };
 
+let offlineUploads = 0;
+
+/**
+ * Spec 021 R4: la foto del comprobante la sube el servidor, despues de validar
+ * la compra. Asi no hay firma publica sin token ni archivos huerfanos.
+ */
+export async function uploadImageFromServer(clientId: string, use: MediaUse, dataUrl: string): Promise<MediaInput> {
+  const folder = mediaFolder(clientId, "IMAGEN", use);
+  if (isOffline()) {
+    offlineUploads += 1;
+    const publicId = `${folder}/offline-${Date.now()}-${offlineUploads}`;
+    return { url: `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME ?? "test"}/image/upload/v1/${publicId}.jpg`, publicId };
+  }
+  config();
+  await ensureBusinessFolders(clientId);
+  const result = await cloudinary.uploader.upload(dataUrl, {
+    folder,
+    resource_type: "image",
+    allowed_formats: ALLOWED_FORMATS.IMAGEN,
+    transformation: IMAGE_TRANSFORMATION
+  });
+  return { url: result.secure_url, publicId: result.public_id };
+}
+
 /**
  * Spec 010: un archivo se acepta solo si esta en la carpeta de ese negocio y
  * la URL es de nuestra nube. Asi nadie guarda archivos de otro negocio.

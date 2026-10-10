@@ -28,6 +28,8 @@ async function studio() {
   counter += 1;
   const slug = `avisos-${Date.now()}-${counter}`;
   expectOk(await call(publicPageRoute.PUT, { token: business.token, method: "PUT", body: { slug, paginaPublicaActiva: true } }));
+  // Spec 021 D2: como antes, se vende por la web sin pagar.
+  await prisma.client.updateMany({ where: { slug }, data: { permitirPagoEnEstudio: true } });
   const scheduleFor = (fecha: string) => schedules.find((item) => item.diaSemana === isoWeekday(fecha))!.id;
   return { ...business, catalog, slug, scheduleFor };
 }
@@ -44,7 +46,7 @@ describe("spec 011 · push a la dueña", () => {
         token: "",
         method: "POST",
         params: { slug: s.slug },
-        body: { scheduleId: s.scheduleFor(fecha), fecha, celular: "3115559901", nombre: "Valentina", packageId: s.catalog.packages.individualBodyCombat }
+        body: { scheduleId: s.scheduleFor(fecha), fecha, celular: "3115559901", nombre: "Valentina", packageId: s.catalog.packages.individualBodyCombat, pago: { tipo: "EN_ESTUDIO" } }
       }),
       201
     );

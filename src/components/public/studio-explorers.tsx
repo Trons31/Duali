@@ -7,7 +7,7 @@ import { focusRing } from "@/components/public/public-shell";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import type { CatalogItem } from "@/components/public/studio-sections";
 import type { PublicSession } from "@/lib/public-studio";
-import { bestValuePlanId, formatCop, pricePerClass, reserveHref } from "@/lib/public-presentation";
+import { bestValuePlanId, formatCop, pricePerClass, purchaseHref, reserveHref } from "@/lib/public-presentation";
 import { WEEKDAYS, dateKeyToDate, formatTimeKey, isoWeekday } from "@/lib/studio-time";
 import { cn } from "@/lib/web-utils";
 
@@ -175,7 +175,7 @@ export function PlansExplorer({ slug, catalog }: { slug: string; catalog: Catalo
                       {plan.clases > 1 ? `${formatCop(pricePerClass(plan))} por clase` : "Pago por clase"}
                     </p>
                     <Link
-                      href={reserveHref(slug, null, plan.id)}
+                      href={purchaseHref(slug, plan.id)}
                       className={cn(
                         "mt-6 inline-flex min-h-11 items-center justify-center rounded-full text-sm font-semibold transition",
                         isBest ? "bg-ink-950 text-white hover:bg-ink-800" : "border border-black/10 hover:border-black/30",

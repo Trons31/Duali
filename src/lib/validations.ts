@@ -49,6 +49,8 @@ export const clientProfileSchema = z.object({
   moduloEstudio: z.boolean().optional(),
   horasCancelacion: z.coerce.number().int().min(0).max(168).optional(),
   devolverClaseInasistencia: z.boolean().optional(),
+  permitirPagoEnEstudio: z.boolean().optional(),
+  exigirPagoValidado: z.boolean().optional(),
   nombre: z.string().min(2).optional(),
   telefono: z.string().optional().nullable(),
   businessName: z.string().min(2).optional(),
@@ -544,16 +546,52 @@ export const publicPageSchema = z.object({
   paginaPublicaActiva: z.boolean().optional()
 });
 
-export const publicBookingSchema = z.object({
-  scheduleId: z.string().min(1),
-  fecha: dateKeySchema,
-  celular: z
-    .string()
-    .transform(normalizeMemberPhone)
-    .refine((value) => value.length >= 7 && value.length <= 15, "Celular inválido"),
-  nombre: z.string().trim().min(2, "Escribe tu nombre").max(60),
+const publicPhoneSchema = z
+  .string()
+  .transform(normalizeMemberPhone)
+  .refine((value) => value.length >= 7 && value.length <= 15, "Celular inválido");
+const publicNameSchema = z.string().trim().min(2, "Escribe tu nombre").max(60);
+
+/** Spec 021 D2: el comprobante (foto como data URL) o pagar en el estudio. */
+export const onlinePaymentSchema = z.discriminatedUnion("tipo", [
+  z.object({
+    tipo: z.literal("COMPROBANTE"),
+    // ~4 MB en base64; el detalle (tipo y peso) lo revisa receiptDataUrlProblem.
+    comprobante: z.string().max(6_000_000),
+    metodo: z.string().trim().min(1, "Elige un método de pago").max(80)
+  }),
+  z.object({ tipo: z.literal("EN_ESTUDIO") })
+]);
+
+export const publicBookingSchema = z
+  .object({
+    scheduleId: z.string().min(1),
+    fecha: dateKeySchema,
+    celular: publicPhoneSchema.optional(),
+    nombre: publicNameSchema.optional(),
+    apellido: optionalTextSchema(60),
+    packageId: z.string().min(1).optional(),
+    // Spec 021 R9: desde Mi plan, la identidad viene del enlace privado.
+    planToken: z.string().min(10).max(100).optional(),
+    // Spec 021 R5: validar y mostrar el plan que se usaria, sin reservar.
+    vistaPrevia: z.boolean().optional(),
+    // Spec 021 R6: pago de lo que se compra al reservar.
+    pago: onlinePaymentSchema.optional()
+  })
+  .refine((value) => value.planToken || (value.celular && value.nombre), { message: "Escribe tu celular y tu nombre", path: ["celular"] });
+
+/** Spec 021 R3. */
+export const publicPlanPurchaseSchema = z.object({
+  packageId: z.string().min(1),
+  celular: publicPhoneSchema,
+  nombre: publicNameSchema,
   apellido: optionalTextSchema(60),
-  packageId: z.string().min(1).optional()
+  pago: onlinePaymentSchema
+});
+
+export const publicPlanReceiptSchema = z.object({
+  comprobante: z.string().max(6_000_000),
+  metodo: z.string().trim().min(1, "Elige un método de pago").max(80)
 });
 
 export const publicBookingUpdateSchema = z.object({ cancelar: z.literal(true) });

@@ -31,6 +31,8 @@ before(async () => {
       businessName: "Studio Dance E2E",
       telefono: "3001234567",
       moduloEstudio: true,
+      // Spec 021 D2: la visitante del flujo 009 aparta y paga en el estudio.
+      permitirPagoEnEstudio: true,
       paymentMethodItems: [{ name: "Nequi", account: "3001234567" }]
     }
   });
@@ -117,8 +119,9 @@ describe("spec 008 · página pública renderizada", () => {
     // Body Combat: Individual 15.000/clase vs Básico 13.750/clase → Básico es mejor valor.
     assert.match(text, /Mejor valor/);
     assert.match(text, /\$13\.750 por clase/);
-    // Elegir un plan abre el asistente con el plan preseleccionado.
-    assert.ok(html.includes(`/s/${slug}/reservar?plan=`), "falta el enlace Elegir este plan");
+    // Spec 021 D1: elegir un plan lo compra, sin pasar por el calendario.
+    assert.ok(html.includes(`/s/${slug}/comprar?p=`), "falta el enlace Elegir este plan");
+    assert.equal(html.includes(`/s/${slug}/reservar?plan=`), false);
   });
 
   test("spec 012: con ?h&f el asistente abre directo en Tus datos", async () => {
@@ -148,7 +151,7 @@ describe("spec 009 · una visitante reserva de punta a punta", () => {
     assert.equal(needs.body.data.estado, "NECESITA_PAQUETE");
 
     const dropIn = needs.body.data.opciones.find((item: { clases: number }) => item.clases === 1);
-    const booked = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { ...base, packageId: dropIn.id });
+    const booked = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { ...base, packageId: dropIn.id, pago: { tipo: "EN_ESTUDIO" } });
     assert.equal(booked.status, 201);
     const token: string = booked.body.data.accessToken;
 
@@ -214,7 +217,7 @@ describe("spec 015 · lista de espera de punta a punta", () => {
     const visitor = new Browser();
     const options = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { scheduleId, fecha, celular: "3115550301", nombre: "Ana" });
     const dropIn = options.body.data.opciones.find((item: { clases: number }) => item.clases === 1);
-    const ana = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { scheduleId, fecha, celular: "3115550301", nombre: "Ana", packageId: dropIn.id });
+    const ana = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { scheduleId, fecha, celular: "3115550301", nombre: "Ana", packageId: dropIn.id, pago: { tipo: "EN_ESTUDIO" } });
     assert.equal(ana.status, 201);
 
     const home = visibleText((await visitor.page(`/s/${slug}`)).html);
@@ -329,5 +332,75 @@ describe("panel de la dueña (specs 001–008)", () => {
     } finally {
       await prisma.client.update({ where: { id: owner.id }, data: { moduloEstudio: true } });
     }
+  });
+});
+
+describe("spec 021 · comprar un plan en línea y Mi plan", () => {
+  const PHOTO = `data:image/png;base64,iVBORw0KGgo${"A".repeat(400)}`;
+  let planId = "";
+  let planToken = "";
+
+  before(async () => {
+    const plans = (await prisma.package.findMany({ where: { clientId: owner.id, nombre: "Básico", visiblePublico: true }, select: { id: true } }));
+    planId = plans[0].id;
+  });
+
+  test("Elegir este plan abre Comprar plan: datos y pago, sin calendario", async () => {
+    const { status, html } = await new Browser().page(`/s/${slug}/comprar?p=${planId}`);
+    assert.equal(status, 200);
+    const text = visibleText(html);
+    for (const expected of ["Tus datos", "Básico", "Continuar al pago", "Paso 1 de 2"]) assert.ok(text.includes(expected), `falta "${expected}"`);
+    assert.equal(text.includes("Elige tu clase"), false);
+  });
+
+  test("los enlaces viejos ?plan= llevan a comprar; un plan que no existe vuelve a los planes", async () => {
+    const old = await new Browser().page(`/s/${slug}/reservar?plan=${planId}`);
+    assert.ok([302, 303, 307, 308].includes(old.status), `status ${old.status}`);
+    assert.ok((old.location ?? "").includes(`/s/${slug}/comprar?p=${planId}`), `location ${old.location}`);
+    const missing = await new Browser().page(`/s/${slug}/comprar?p=no-existe`);
+    assert.ok([302, 303, 307, 308].includes(missing.status), `status ${missing.status}`);
+    assert.match(missing.location ?? "", /#planes/);
+  });
+
+  test("compra con comprobante → Mi plan → reservar con el plan sin datos", async () => {
+    const visitor = new Browser();
+    const bought = await visitor.json(`/api/public/studios/${slug}/plans`, "POST", {
+      packageId: planId,
+      celular: "3115550277",
+      nombre: "Paula",
+      pago: { tipo: "COMPROBANTE", comprobante: PHOTO, metodo: "Nequi" }
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+    planToken = bought.body.data.accessToken;
+
+    const mine = await visitor.page(`/s/${slug}/plan/${planToken}`);
+    assert.equal(mine.status, 200);
+    const text = visibleText(mine.html);
+    for (const expected of ["Hola, Paula", "Te quedan 4 de 4", "Pago en revisión", "Reservar con este plan", "Guarda este enlace"]) {
+      assert.ok(text.includes(expected), `Mi plan: falta "${expected}"`);
+    }
+    assert.equal((await visitor.page(`/s/${slug}/plan/token-inventado-123456`)).status, 404);
+    assert.equal((await visitor.page(`/s/otro-estudio/plan/${planToken}`)).status, 404);
+
+    const wizard = await visitor.page(`/s/${slug}/reservar?mp=${planToken}`);
+    assert.equal(wizard.status, 200);
+    const wizardText = visibleText(wizard.html);
+    assert.match(wizardText, /Elige tu clase/);
+    assert.equal(wizardText.includes("Tus datos"), false);
+
+    const booked = await visitor.json(`/api/public/studios/${slug}/bookings`, "POST", { scheduleId: scheduleForDate, fecha: classDate, planToken });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    assert.equal(booked.body.data.paquete.clasesRestantes, 3);
+    assert.match(visibleText((await visitor.page(`/s/${slug}/plan/${planToken}`)).html), /Te quedan 3 de 4/);
+  });
+
+  test("la dueña ve la compra en línea por revisar", async () => {
+    const browser = new Browser();
+    await browser.login(owner.email, PASSWORD);
+    const text = visibleText((await browser.page("/dashboard/avisos")).html);
+    assert.ok(text.includes("Compró en línea"), "falta la etiqueta Compró en línea");
+    assert.ok(text.includes("Paula"));
+    const plans = visibleText((await browser.page("/dashboard/clientes?tab=planes")).html);
+    assert.ok(plans.includes("Pago en revisión"), "falta el filtro Pago en revisión");
   });
 });
