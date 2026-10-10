@@ -95,8 +95,9 @@ const FILTER_OPTIONS: Array<{ label: string; value: StudentListFilter; icon: Rea
 
 const PAYMENT_METHODS = [
   { label: "Efectivo", value: "EFECTIVO" },
-  { label: "Transferencia", value: "TRANSFERENCIA" },
   { label: "Nequi", value: "NEQUI" },
+  { label: "Bancolombia", value: "BANCOLOMBIA" },
+  { label: "Transferencia", value: "TRANSFERENCIA" },
   { label: "Daviplata", value: "DAVIPLATA" }
 ];
 

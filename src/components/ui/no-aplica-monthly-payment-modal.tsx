@@ -45,7 +45,7 @@ export function NoAplicaMonthlyPaymentModal({
   }
 
   return (
-    <Modal
+    <Modal size="md"
       open={open}
       title="Marcar No aplica"
       description={target ? `${target.studentName} - ${target.concept}` : "Este cobro no contara como deuda."}

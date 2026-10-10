@@ -5,13 +5,45 @@ import { Prisma } from "@prisma/client";
 // cerrada. P2024: el pool se quedo sin conexiones libres.
 const CONNECTION_ERROR_CODES = new Set(["P1000", "P1001", "P1002", "P1008", "P1010", "P1011", "P1017", "P2024"]);
 
-export function isDatabaseConnectionError(error: unknown): boolean {
-  if (!error) return false;
+/**
+ * `instanceof` que nunca lanza. En el navegador (error.tsx y global-error.tsx
+ * son de cliente) Prisma entrega sustitutos de sus clases: a veces no existen y
+ * a veces son funciones sin `prototype`, y `instanceof` lanza un TypeError que
+ * tapa el error original. Ver spec 018.
+ */
+export function safeInstanceOf(error: unknown, ctor: unknown): boolean {
+  try {
+    if (typeof ctor !== "function") return false;
+    const prototype = (ctor as { prototype?: unknown }).prototype;
+    if (typeof prototype !== "object" || prototype === null) return false;
+    return error instanceof (ctor as new (...args: never[]) => unknown);
+  } catch {
+    return false;
+  }
+}
 
-  if (error instanceof Prisma.PrismaClientInitializationError) return true;
-  if (error instanceof Prisma.PrismaClientRustPanicError) return true;
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return CONNECTION_ERROR_CODES.has(error.code);
+/** Por nombre: funciona en servidor y navegador, sin depender de las clases. */
+function isPrismaError(error: unknown, name: string) {
+  return (error as { name?: unknown }).name === name || Object.prototype.toString.call(error) === `[object ${name}]`;
+}
+
+function prismaClass(name: "PrismaClientInitializationError" | "PrismaClientRustPanicError" | "PrismaClientKnownRequestError") {
+  try {
+    return (Prisma as Record<string, unknown> | undefined)?.[name];
+  } catch {
+    return undefined;
+  }
+}
+
+export function isDatabaseConnectionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  for (const name of ["PrismaClientInitializationError", "PrismaClientRustPanicError"] as const) {
+    if (isPrismaError(error, name) || safeInstanceOf(error, prismaClass(name))) return true;
+  }
+  if (isPrismaError(error, "PrismaClientKnownRequestError") || safeInstanceOf(error, prismaClass("PrismaClientKnownRequestError"))) {
+    const known = (error as { code?: unknown }).code;
+    return typeof known === "string" && CONNECTION_ERROR_CODES.has(known);
   }
 
   const code = (error as { code?: unknown }).code;
@@ -23,7 +55,8 @@ export function isDatabaseConnectionError(error: unknown): boolean {
     }
   }
 
-  const message = error instanceof Error ? error.message : "";
+  const raw = (error as { message?: unknown }).message;
+  const message = typeof raw === "string" ? raw : "";
   if (/can'?t reach database server|connection pool|server has closed the connection|getaddrinfo|fetch failed/i.test(message)) {
     return true;
   }

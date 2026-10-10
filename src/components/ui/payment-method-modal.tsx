@@ -7,8 +7,9 @@ import { cn, currency } from "@/lib/web-utils";
 
 export const PAYMENT_METHODS = [
   { value: "EFECTIVO", label: "Efectivo" },
-  { value: "TRANSFERENCIA", label: "Transferencia" },
   { value: "NEQUI", label: "Nequi" },
+  { value: "BANCOLOMBIA", label: "Bancolombia" },
+  { value: "TRANSFERENCIA", label: "Transferencia" },
   { value: "OTRO", label: "Otro" }
 ] as const;
 
@@ -44,7 +45,7 @@ export function PaymentMethodModal({
   onSelectMethod: (value: PaymentMethodValue) => void;
 }) {
   return (
-    <Modal open={open} title={title} description={description} onClose={onClose}>
+    <Modal size="md" open={open} title={title} description={description} onClose={onClose}>
       <div className="space-y-5">
         {amount !== undefined && amount !== null ? (
           <div className="flex items-center justify-between gap-4 rounded-[24px] border border-ink-100 bg-ink-50/70 px-4 py-4">

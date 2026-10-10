@@ -74,6 +74,48 @@ enum NotificationChannel {
   WEB_PUSH
 }
 
+enum DisciplineKind {
+  CLASE
+  COMBO
+}
+
+enum BookingStatus {
+  RESERVADA
+  ASISTIO
+  NO_ASISTIO
+  CANCELADA
+}
+
+enum BookingOrigin {
+  PANEL
+  PUBLICO
+}
+
+enum ContentType {
+  PUBLICACION
+  VIDEO
+}
+
+enum StudioMessageType {
+  RECORDATORIO_CLASE
+  PAQUETE_POR_VENCER
+  SALDO
+  CLASE_CANCELADA
+  CUPO_LISTA_ESPERA
+}
+
+enum WaitlistStatus {
+  EN_ESPERA
+  ASIGNADA
+  SALIO
+}
+
+enum PaymentReceiptStatus {
+  POR_REVISAR
+  APROBADO
+  RECHAZADO
+}
+
 enum SubscriptionStatus {
   ACTIVA
   PENDIENTE
@@ -83,34 +125,58 @@ enum SubscriptionStatus {
 }
 
 model Client {
-  id              String           @id @default(cuid())
-  nombre          String
-  email           String           @unique
-  passwordHash    String
-  telefono        String?
-  businessName    String
-  paymentMethods  String?
-  paymentMethodItems Json?
-  whatsappMessageTemplate String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  deletedAt       DateTime?
+  id                        String    @id @default(cuid())
+  nombre                    String
+  email                     String    @unique
+  passwordHash              String
+  telefono                  String?
+  businessName              String
+  paymentMethods            String?
+  paymentMethodItems        Json?
+  whatsappMessageTemplate   String?
+  moduloAcademia            Boolean   @default(true)
+  moduloEstudio             Boolean   @default(false)
+  // Spec 007: horas de anticipacion para cancelar una reserva y recuperar la clase.
+  horasCancelacion          Int       @default(2)
+  // Spec 019 D4: si no asiste, se le devuelve la clase (por defecto, la pierde).
+  devolverClaseInasistencia Boolean   @default(false)
+  // Spec 008: direccion publica /s/{slug}; nadie queda publicado sin activarlo.
+  slug                      String?   @unique
+  paginaPublicaActiva       Boolean   @default(false)
+  // Spec 010: portada de la pagina publica (Cloudinary).
+  portadaUrl                String?
+  portadaPublicId           String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  deletedAt                 DateTime?
 
-  groups          Group[]
-  students        Student[]
-  monthlyPayments MonthlyPayment[]
-  suppliesPayments SuppliesPayment[]
-  enrollmentPayments EnrollmentPayment[]
-  paymentInstallments PaymentInstallment[]
-  expenses        Expense[]
-  notifications   Notification[]
-  notificationOutboxes NotificationOutbox[]
+  groups                 Group[]
+  students               Student[]
+  monthlyPayments        MonthlyPayment[]
+  suppliesPayments       SuppliesPayment[]
+  enrollmentPayments     EnrollmentPayment[]
+  paymentInstallments    PaymentInstallment[]
+  expenses               Expense[]
+  notifications          Notification[]
+  notificationOutboxes   NotificationOutbox[]
   notificationDeliveries NotificationDelivery[]
-  reminders        Reminder[]
-  pushTokens       PushToken[]
-  webPushSubscriptions WebPushSubscription[]
-  subscriptions    ClientSubscription[]
-  subscriptionPayments SubscriptionPayment[]
+  reminders              Reminder[]
+  pushTokens             PushToken[]
+  webPushSubscriptions   WebPushSubscription[]
+  subscriptions          ClientSubscription[]
+  subscriptionPayments   SubscriptionPayment[]
+  disciplines            Discipline[]
+  packages               Package[]
+  classSchedules         ClassSchedule[]
+  classSessions          ClassSession[]
+  studioMembers          StudioMember[]
+  memberPackages         MemberPackage[]
+  memberPackagePayments  MemberPackagePayment[]
+  bookings               Booking[]
+  contentPosts           ContentPost[]
+  studioMessages         StudioMessage[]
+  paymentReceipts        PaymentReceipt[]
+  waitlistEntries        WaitlistEntry[]
 
   @@index([email])
   @@map("clients")
@@ -146,9 +212,9 @@ model ClientSubscription {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
-  client        Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  plan          Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
-  payments      SubscriptionPayment[]
+  client   Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  plan     Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments SubscriptionPayment[]
 
   @@index([clientId])
   @@index([planId])
@@ -169,8 +235,8 @@ model SubscriptionPayment {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  subscription   ClientSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  client         Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subscription ClientSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  client       Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
   @@index([clientId])
@@ -179,30 +245,30 @@ model SubscriptionPayment {
 }
 
 model WebPushConfig {
-  id          String   @id
-  publicKey   String   @unique
-  privateKey  String
-  subject     String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id
+  publicKey  String   @unique
+  privateKey String
+  subject    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@map("web_push_config")
 }
 
 model Group {
-  id                    String           @id @default(cuid())
-  nombre                String
-  descripcion           String?
-  precioMensualidadDefault Decimal       @db.Decimal(12, 2)
-  clientId              String
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
-  deletedAt             DateTime?
+  id                       String    @id @default(cuid())
+  nombre                   String
+  descripcion              String?
+  precioMensualidadDefault Decimal   @db.Decimal(12, 2)
+  clientId                 String
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  deletedAt                DateTime?
 
-  client                Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  students              Student[]
-  monthlyPayments       MonthlyPayment[]
-  suppliesPayments      SuppliesPayment[]
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  students         Student[]
+  monthlyPayments  MonthlyPayment[]
+  suppliesPayments SuppliesPayment[]
 
   @@index([clientId])
   @@index([clientId, nombre])
@@ -210,36 +276,37 @@ model Group {
 }
 
 model Student {
-  id              String        @id @default(cuid())
-  nombre          String
-  apellido        String
-  edad            Int
-  celular         String?
-  esMenorDeEdad   Boolean       @default(false)
-  nombrePadre     String?
-  telefonoPadre   String?
-  parentesco      String?
-  grupoId         String
-  clientId        String
-  estado          StudentStatus @default(ACTIVO)
-  precioMensualidad Decimal?    @db.Decimal(12, 2)
-  diaCobro        Int?
+  id                   String             @id @default(cuid())
+  nombre               String
+  apellido             String
+  edad                 Int
+  celular              String?
+  esMenorDeEdad        Boolean            @default(false)
+  nombrePadre          String?
+  telefonoPadre        String?
+  parentesco           String?
+  grupoId              String
+  clientId             String
+  estado               StudentStatus      @default(ACTIVO)
+  precioMensualidad    Decimal?           @db.Decimal(12, 2)
+  diaCobro             Int?
   modalidadMensualidad MonthlyBillingMode @default(ANTICIPADA)
-  fechaInicioClases DateTime?
-  fechaInicioPausa DateTime?
-  fechaFinPausa DateTime?
-  motivoEstado     String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  deletedAt       DateTime?
+  fechaInicioClases    DateTime?
+  fechaInicioPausa     DateTime?
+  fechaFinPausa        DateTime?
+  motivoEstado         String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  deletedAt            DateTime?
 
-  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  group           Group         @relation(fields: [grupoId], references: [id], onDelete: Restrict)
-  monthlyPayments MonthlyPayment[]
-  suppliesPayments SuppliesPayment[]
-  enrollmentPayment EnrollmentPayment?
+  client              Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group               Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  monthlyPayments     MonthlyPayment[]
+  suppliesPayments    SuppliesPayment[]
+  enrollmentPayment   EnrollmentPayment?
   paymentInstallments PaymentInstallment[]
-  reminders       Reminder[]
+  reminders           Reminder[]
+  studioMembers       StudioMember[]
 
   @@index([clientId])
   @@index([grupoId])
@@ -250,31 +317,31 @@ model Student {
 }
 
 model EnrollmentPayment {
-  id               String                  @id @default(cuid())
-  estudianteId     String                  @unique
-  clientId         String
-  monto            Decimal                 @db.Decimal(12, 2)
-  montoAbonado     Decimal                 @default(0) @db.Decimal(12, 2)
-  saldoPendiente   Decimal                 @default(0) @db.Decimal(12, 2)
-  cantidadAbonos   Int                     @default(0)
-  estado           EnrollmentPaymentStatus @default(PENDIENTE)
-  fechaVencimiento DateTime
-  fechaPago        DateTime?
-  fechaRegistro    DateTime?
-  metodoPago       String?
+  id                  String                  @id @default(cuid())
+  estudianteId        String                  @unique
+  clientId            String
+  monto               Decimal                 @db.Decimal(12, 2)
+  montoAbonado        Decimal                 @default(0) @db.Decimal(12, 2)
+  saldoPendiente      Decimal                 @default(0) @db.Decimal(12, 2)
+  cantidadAbonos      Int                     @default(0)
+  estado              EnrollmentPaymentStatus @default(PENDIENTE)
+  fechaVencimiento    DateTime
+  fechaPago           DateTime?
+  fechaRegistro       DateTime?
+  metodoPago          String?
   registradoPorUserId String?
   registradoPorNombre String?
-  ultimoMetodoAbono String?
-  fechaUltimoAbono DateTime?
-  notas            String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-  deletedAt        DateTime?
+  ultimoMetodoAbono   String?
+  fechaUltimoAbono    DateTime?
+  notas               String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  deletedAt           DateTime?
 
-  client           Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  student          Student                 @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
-  installments     PaymentInstallment[]
-  reminders        Reminder[]
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student      Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  installments PaymentInstallment[]
+  reminders    Reminder[]
 
   @@index([clientId])
   @@index([estudianteId])
@@ -284,36 +351,36 @@ model EnrollmentPayment {
 }
 
 model MonthlyPayment {
-  id               String               @id @default(cuid())
-  estudianteId     String
-  grupoId          String
-  clientId         String
-  mes              Int
-  anio             Int
-  monto            Decimal              @db.Decimal(12, 2)
-  montoAbonado     Decimal              @default(0) @db.Decimal(12, 2)
-  saldoPendiente   Decimal              @default(0) @db.Decimal(12, 2)
-  cantidadAbonos   Int                  @default(0)
-  fechaVencimiento DateTime
-  fechaPago        DateTime?
-  fechaRegistro    DateTime?
-  estado           MonthlyPaymentStatus @default(PENDIENTE)
-  metodoPago       String?
+  id                  String               @id @default(cuid())
+  estudianteId        String
+  grupoId             String
+  clientId            String
+  mes                 Int
+  anio                Int
+  monto               Decimal              @db.Decimal(12, 2)
+  montoAbonado        Decimal              @default(0) @db.Decimal(12, 2)
+  saldoPendiente      Decimal              @default(0) @db.Decimal(12, 2)
+  cantidadAbonos      Int                  @default(0)
+  fechaVencimiento    DateTime
+  fechaPago           DateTime?
+  fechaRegistro       DateTime?
+  estado              MonthlyPaymentStatus @default(PENDIENTE)
+  metodoPago          String?
   registradoPorUserId String?
   registradoPorNombre String?
-  ultimoMetodoAbono String?
-  fechaUltimoAbono DateTime?
-  comprobanteUrl   String?
-  notas            String?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  deletedAt        DateTime?
+  ultimoMetodoAbono   String?
+  fechaUltimoAbono    DateTime?
+  comprobanteUrl      String?
+  notas               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
 
-  client           Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  student          Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
-  group            Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
-  installments     PaymentInstallment[]
-  reminders        Reminder[]
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student      Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  group        Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
+  installments PaymentInstallment[]
+  reminders    Reminder[]
 
   @@unique([estudianteId, mes, anio])
   @@index([clientId])
@@ -325,36 +392,36 @@ model MonthlyPayment {
 }
 
 model PaymentInstallment {
-  id                  String             @id @default(cuid())
+  id                  String   @id @default(cuid())
   clientId            String
   estudianteId        String
   monthlyPaymentId    String?
   enrollmentPaymentId String?
   numero              Int
   concepto            String
-  monto               Decimal            @db.Decimal(12, 2)
+  monto               Decimal  @db.Decimal(12, 2)
   metodoPago          String
   fechaAbono          DateTime
-  saldoAnterior       Decimal            @db.Decimal(12, 2)
-  saldoRestante       Decimal            @db.Decimal(12, 2)
+  saldoAnterior       Decimal  @db.Decimal(12, 2)
+  saldoRestante       Decimal  @db.Decimal(12, 2)
   registradoPorUserId String?
   registradoPorNombre String?
   notas               String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  client              Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  student             Student            @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
-  monthlyPayment      MonthlyPayment?    @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
-  enrollmentPayment   EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
+  client            Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student           Student            @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  monthlyPayment    MonthlyPayment?    @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
+  enrollmentPayment EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
 
+  @@unique([monthlyPaymentId, numero])
+  @@unique([enrollmentPaymentId, numero])
   @@index([clientId])
   @@index([estudianteId])
   @@index([monthlyPaymentId])
   @@index([enrollmentPaymentId])
   @@index([clientId, fechaAbono])
-  @@unique([monthlyPaymentId, numero])
-  @@unique([enrollmentPaymentId, numero])
   @@map("payment_installments")
 }
 
@@ -373,9 +440,9 @@ model SuppliesPayment {
   updatedAt        DateTime              @updatedAt
   deletedAt        DateTime?
 
-  client           Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  group            Group?                @relation(fields: [grupoId], references: [id], onDelete: SetNull)
-  student          Student?              @relation(fields: [estudianteId], references: [id], onDelete: SetNull)
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group   Group?   @relation(fields: [grupoId], references: [id], onDelete: SetNull)
+  student Student? @relation(fields: [estudianteId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
   @@index([grupoId])
@@ -386,18 +453,18 @@ model SuppliesPayment {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   clientId    String
   concepto    String
   descripcion String?
-  monto       Decimal  @db.Decimal(12, 2)
+  monto       Decimal   @db.Decimal(12, 2)
   fecha       DateTime
   categoria   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([clientId, fecha])
@@ -406,37 +473,37 @@ model Expense {
 }
 
 model PushToken {
-  id          String   @id @default(cuid())
-  clientId    String
-  token       String   @unique
-  platform    String?
-  deviceName  String?
-  isActive    Boolean  @default(true)
-  lastUsedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  clientId   String
+  token      String   @unique
+  platform   String?
+  deviceName String?
+  isActive   Boolean  @default(true)
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@map("push_tokens")
 }
 
 model WebPushSubscription {
-  id              String   @id @default(cuid())
-  clientId        String
-  endpoint        String   @unique
-  p256dh          String
-  auth            String
-  expirationTime  BigInt?
-  userAgent       String?
-  deviceName      String?
-  isActive        Boolean  @default(true)
-  lastUsedAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  clientId       String
+  endpoint       String   @unique
+  p256dh         String
+  auth           String
+  expirationTime BigInt?
+  userAgent      String?
+  deviceName     String?
+  isActive       Boolean  @default(true)
+  lastUsedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([clientId, isActive])
@@ -444,27 +511,27 @@ model WebPushSubscription {
 }
 
 model Notification {
-  id          String             @id @default(cuid())
-  sequence    Int                @default(autoincrement())
-  clientId    String
-  title       String
-  body        String
-  data        Json?
-  type        String?
-  dedupKey    String?            @unique
-  attempts    Int                @default(0)
-  nextAttemptAt DateTime         @default(now())
-  status      NotificationStatus @default(PENDIENTE)
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  readAt      DateTime?
-  error       String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id            String             @id @default(cuid())
+  sequence      Int                @default(autoincrement())
+  clientId      String
+  title         String
+  body          String
+  data          Json?
+  type          String?
+  dedupKey      String?            @unique
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime           @default(now())
+  status        NotificationStatus @default(PENDIENTE)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  error         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
-  client      Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  outbox      NotificationOutbox?
-  deliveries  NotificationDelivery[]
+  client     Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  outbox     NotificationOutbox?
+  deliveries NotificationDelivery[]
 
   @@index([clientId])
   @@index([clientId, sequence])
@@ -475,21 +542,21 @@ model Notification {
 }
 
 model NotificationOutbox {
-  id                String                  @id @default(cuid())
-  notificationId    String                  @unique
-  clientId          String
-  status            NotificationQueueStatus @default(ENCOLADA)
-  attemptCount      Int                     @default(0)
-  nextAttemptAt     DateTime                @default(now())
+  id                  String                  @id @default(cuid())
+  notificationId      String                  @unique
+  clientId            String
+  status              NotificationQueueStatus @default(ENCOLADA)
+  attemptCount        Int                     @default(0)
+  nextAttemptAt       DateTime                @default(now())
   processingStartedAt DateTime?
-  lastAttemptAt     DateTime?
-  sentAt            DateTime?
-  lastError         String?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  lastAttemptAt       DateTime?
+  sentAt              DateTime?
+  lastError           String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
-  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  notification      Notification            @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
   @@index([clientId, status])
   @@index([status, nextAttemptAt])
@@ -511,8 +578,8 @@ model NotificationDelivery {
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
 
-  client            Client                     @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, channel])
   @@index([clientId, channel])
@@ -521,23 +588,23 @@ model NotificationDelivery {
 }
 
 model Reminder {
-  id                String         @id @default(cuid())
-  clientId          String
-  estudianteId      String
-  monthlyPaymentId  String?
+  id                  String         @id @default(cuid())
+  clientId            String
+  estudianteId        String
+  monthlyPaymentId    String?
   enrollmentPaymentId String?
-  phone             String
-  message           String
-  whatsappUrl       String
-  status            ReminderStatus @default(PENDIENTE)
-  sentAt            DateTime?
-  error             String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  phone               String
+  message             String
+  whatsappUrl         String
+  status              ReminderStatus @default(PENDIENTE)
+  sentAt              DateTime?
+  error               String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  client            Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  student           Student        @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
-  monthlyPayment    MonthlyPayment? @relation(fields: [monthlyPaymentId], references: [id], onDelete: SetNull)
+  client            Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student           Student            @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  monthlyPayment    MonthlyPayment?    @relation(fields: [monthlyPaymentId], references: [id], onDelete: SetNull)
   enrollmentPayment EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
@@ -546,4 +613,339 @@ model Reminder {
   @@index([enrollmentPaymentId])
   @@index([clientId, status])
   @@map("reminders")
+}
+
+// ─── Modo Estudio (specs 003 y 004) ──────────────────────────────────────────
+
+model Discipline {
+  id             String         @id @default(cuid())
+  clientId       String
+  tipo           DisciplineKind @default(CLASE)
+  nombre         String
+  descripcion    String?
+  color          String
+  imagenUrl      String?
+  imagenPublicId String?
+  orden          Int            @default(0)
+  activa         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  client         Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // Si es COMBO: las clases que incluye. Si es CLASE: los combos en los que esta.
+  comboItems     DisciplineComboItem[] @relation("ComboItems")
+  inCombos       DisciplineComboItem[] @relation("ComboMember")
+  packages       Package[]
+  schedules      ClassSchedule[]
+  memberPackages MemberPackage[]
+  contentPosts   ContentPost[]
+
+  @@index([clientId])
+  @@index([clientId, deletedAt])
+  @@map("disciplines")
+}
+
+model DisciplineComboItem {
+  comboId      String
+  disciplineId String
+
+  combo      Discipline @relation("ComboItems", fields: [comboId], references: [id], onDelete: Cascade)
+  discipline Discipline @relation("ComboMember", fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([comboId, disciplineId])
+  @@index([disciplineId])
+  @@map("discipline_combo_items")
+}
+
+model Package {
+  id             String    @id @default(cuid())
+  clientId       String
+  disciplineId   String
+  nombre         String
+  clases         Int
+  precio         Decimal   @db.Decimal(12, 2)
+  vigenciaDias   Int       @default(30)
+  visiblePublico Boolean   @default(true)
+  activo         Boolean   @default(true)
+  orden          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  client     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  discipline Discipline      @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  sales      MemberPackage[]
+
+  @@index([clientId])
+  @@index([disciplineId])
+  @@index([clientId, deletedAt])
+  @@map("packages")
+}
+
+// ─── Modo Estudio: horario y cupos (spec 005) ────────────────────────────────
+
+model ClassSchedule {
+  id           String    @id @default(cuid())
+  clientId     String
+  disciplineId String
+  // 1 = lunes ... 7 = domingo (ISO).
+  diaSemana    Int
+  // Hora "de pared" del estudio, "HH:mm".
+  horaInicio   String
+  duracionMin  Int
+  cupo         Int
+  instructor   String?
+  activo       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  client     Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  discipline Discipline     @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  sessions   ClassSession[]
+
+  @@index([clientId, deletedAt])
+  @@index([disciplineId])
+  @@map("class_schedules")
+}
+
+// Solo existe cuando una fecha necesita datos propios (cupo, cancelacion, reservas).
+model ClassSession {
+  id                String   @id @default(cuid())
+  clientId          String
+  scheduleId        String
+  fecha             DateTime @db.Date
+  horaInicio        String
+  duracionMin       Int
+  cupo              Int
+  cancelada         Boolean  @default(false)
+  motivoCancelacion String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  schedule        ClassSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  bookings        Booking[]
+  waitlistEntries WaitlistEntry[]
+
+  @@unique([scheduleId, fecha])
+  @@index([clientId, fecha])
+  @@map("class_sessions")
+}
+
+// ─── Modo Estudio: clientes y ventas (spec 006) ──────────────────────────────
+
+model StudioMember {
+  id              String    @id @default(cuid())
+  clientId        String
+  nombre          String
+  apellido        String?
+  // Solo digitos, sin indicativo 57.
+  celular         String
+  email           String?
+  fechaNacimiento DateTime? @db.Date
+  notas           String?
+  studentId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student         Student?        @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  packages        MemberPackage[]
+  bookings        Booking[]
+  messages        StudioMessage[]
+  waitlistEntries WaitlistEntry[]
+
+  @@unique([clientId, celular])
+  @@index([clientId, deletedAt])
+  @@index([studentId])
+  @@map("studio_members")
+}
+
+// nombre, clases y precio se copian al vender: cambiar el catalogo no altera ventas.
+model MemberPackage {
+  id              String    @id @default(cuid())
+  clientId        String
+  memberId        String
+  packageId       String
+  disciplineId    String
+  nombre          String
+  clases          Int
+  clasesUsadas    Int       @default(0)
+  precio          Decimal   @db.Decimal(12, 2)
+  pagado          Decimal   @default(0) @db.Decimal(12, 2)
+  inicio          DateTime  @db.Date
+  vence           DateTime  @db.Date
+  anuladoAt       DateTime?
+  motivoAnulacion String?
+  notas           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client     Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  member     StudioMember           @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  package    Package                @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  discipline Discipline             @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  payments   MemberPackagePayment[]
+  bookings   Booking[]
+  receipts   PaymentReceipt[]
+
+  @@index([clientId, vence])
+  @@index([memberId])
+  @@index([packageId])
+  @@map("member_packages")
+}
+
+model MemberPackagePayment {
+  id              String    @id @default(cuid())
+  clientId        String
+  memberPackageId String
+  monto           Decimal   @db.Decimal(12, 2)
+  metodoPago      String
+  fecha           DateTime
+  notas           String?
+  anuladoAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  memberPackage MemberPackage @relation(fields: [memberPackageId], references: [id], onDelete: Restrict)
+
+  @@index([clientId, fecha])
+  @@index([memberPackageId])
+  @@map("member_package_payments")
+}
+
+// ─── Modo Estudio: reservas (spec 007) ───────────────────────────────────────
+
+// La clase se descuenta del paquete al reservar (D2); claseDevuelta indica si se
+// devolvio al cancelar.
+model Booking {
+  id              String        @id @default(cuid())
+  clientId        String
+  sessionId       String
+  memberId        String
+  memberPackageId String
+  estado          BookingStatus @default(RESERVADA)
+  origen          BookingOrigin @default(PANEL)
+  canceladaAt     DateTime?
+  claseDevuelta   Boolean       @default(false)
+  // Spec 009: enlace privado de las reservas hechas desde la pagina publica.
+  accessToken     String?       @unique
+  // Spec 019: cuando se marco la asistencia, y si llego sin reservar.
+  asistenciaAt    DateTime?
+  sinReserva      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  session       ClassSession  @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  member        StudioMember  @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  memberPackage MemberPackage @relation(fields: [memberPackageId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, memberId])
+  @@index([clientId])
+  @@index([memberId])
+  @@index([memberPackageId])
+  @@map("bookings")
+}
+
+// ─── Modo Estudio: contenido (spec 010) ──────────────────────────────────────
+
+// Archivos en Cloudinary: duali/negocios/{clientId}/imagenes|videos/publicaciones.
+model ContentPost {
+  id            String      @id @default(cuid())
+  clientId      String
+  tipo          ContentType
+  titulo        String
+  cuerpo        String?
+  disciplineId  String?
+  mediaUrl      String?
+  mediaPublicId String?
+  // "IMAGEN" | "VIDEO"
+  mediaKind     String?
+  enlaceVideo   String?
+  publicado     Boolean     @default(false)
+  fijado        Boolean     @default(false)
+  publicadoEn   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  discipline Discipline? @relation(fields: [disciplineId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, deletedAt])
+  @@index([clientId, publicado])
+  @@map("content_posts")
+}
+
+// ─── Modo Estudio: avisos por WhatsApp enviados (spec 011) ───────────────────
+
+model StudioMessage {
+  id        String            @id @default(cuid())
+  clientId  String
+  memberId  String
+  tipo      StudioMessageType
+  // Reserva, venta o clase+fecha a la que se refiere el aviso.
+  refKey    String
+  sentAt    DateTime          @default(now())
+  createdAt DateTime          @default(now())
+
+  client Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  member StudioMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, tipo, refKey])
+  @@index([memberId])
+  @@map("studio_messages")
+}
+
+// ─── Modo Estudio: comprobantes de pago enviados desde la web (spec 014) ─────
+
+// Foto en duali/negocios/{clientId}/imagenes/comprobantes.
+model PaymentReceipt {
+  id              String               @id @default(cuid())
+  clientId        String
+  memberPackageId String
+  bookingId       String?
+  url             String
+  publicId        String
+  estado          PaymentReceiptStatus @default(POR_REVISAR)
+  paymentId       String?
+  motivoRechazo   String?
+  createdAt       DateTime             @default(now())
+  reviewedAt      DateTime?
+
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  memberPackage MemberPackage @relation(fields: [memberPackageId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, estado])
+  @@index([memberPackageId])
+  @@map("payment_receipts")
+}
+
+// Spec 015: lista de espera de una clase llena.
+model WaitlistEntry {
+  id          String         @id @default(cuid())
+  clientId    String
+  sessionId   String
+  memberId    String
+  // Plan del catalogo que eligio comprar si al asignarle cupo no tiene uno vigente.
+  packageId   String?
+  accessToken String         @unique
+  estado      WaitlistStatus @default(EN_ESPERA)
+  bookingId   String?
+  // Orden de llegada.
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  client  Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  session ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  member  StudioMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, memberId])
+  @@index([clientId, estado])
+  @@index([sessionId, estado, createdAt])
+  @@map("waitlist_entries")
 }

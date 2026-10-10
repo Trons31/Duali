@@ -1,2 +1,3 @@
-export const WEB_NOTIFICATION_ICON_URL =
-  "https://res.cloudinary.com/dc2fop9ty/image/upload/v1778078148/icon-metadata_y5lrqo.png";
+// Icono de las notificaciones web (spec 016). Ruta propia de la app: el navegador
+// y el service worker la resuelven contra el mismo origen.
+export const WEB_NOTIFICATION_ICON_URL = "/logo/icon-metadata.png";

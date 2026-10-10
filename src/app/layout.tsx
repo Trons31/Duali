@@ -41,7 +41,10 @@ export const metadata: Metadata = {
     statusBarStyle: "default"
   },
   icons: {
-    icon: "/logo/icon-metadata.png",
+    icon: [
+      { url: "/logo/icon.svg", type: "image/svg+xml" },
+      { url: "/logo/icon-metadata.png", type: "image/png", sizes: "512x512" }
+    ],
     shortcut: "/logo/icon-metadata.png",
     apple: "/logo/icon-metadata.png"
   },

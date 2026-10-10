@@ -304,6 +304,7 @@ function movementTypeLabel(type: AccountingMovement["type"]) {
   if (type === "MENSUALIDAD") return "Mensualidad";
   if (type === "INSCRIPCION") return "Inscripcion";
   if (type === "ABONO") return "Abono";
+  if (type === "PAQUETE") return "Paquete";
   return "Egreso";
 }
 

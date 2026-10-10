@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { DISCIPLINE_COLORS, normalizeMemberPhone, slugProblem } from "@/lib/studio-constants";
+import { isDateKey, isTimeKey } from "@/lib/studio-time";
 import { validateOverduePaymentMessageTemplate } from "@/lib/whatsapp-template";
 
 const localDateInputSchema = z.union([z.string(), z.date()]).transform((value, ctx) => {
@@ -43,6 +45,10 @@ export const loginSchema = z.object({
 });
 
 export const clientProfileSchema = z.object({
+  moduloAcademia: z.boolean().optional(),
+  moduloEstudio: z.boolean().optional(),
+  horasCancelacion: z.coerce.number().int().min(0).max(168).optional(),
+  devolverClaseInasistencia: z.boolean().optional(),
   nombre: z.string().min(2).optional(),
   telefono: z.string().optional().nullable(),
   businessName: z.string().min(2).optional(),
@@ -361,6 +367,247 @@ export const expenseSchema = z.object({
   fecha: localDateInputSchema,
   categoria: z.string().optional().nullable()
 });
+
+// ─── Modo Estudio (specs 003 y 004) ───────────────────────────────────────────
+
+export const disciplineSchema = z.object({
+  tipo: z.enum(["CLASE", "COMBO"]).default("CLASE"),
+  nombre: z.string().trim().min(2, "El nombre es muy corto").max(60),
+  descripcion: z
+    .string()
+    .trim()
+    .max(400)
+    .optional()
+    .nullable()
+    // undefined se respeta para que un PUT parcial no borre la descripcion.
+    .transform((value) => (value === undefined ? undefined : value || null)),
+  color: z.enum(DISCIPLINE_COLORS),
+  activa: z.boolean().optional(),
+  orden: z.coerce.number().int().min(0).optional(),
+  // Solo para combos: las disciplinas tipo CLASE que incluye.
+  incluyeIds: z.array(z.string().min(1)).max(30).optional(),
+  // Spec 010: imagen de la disciplina en Cloudinary (null la quita).
+  imagen: z
+    .object({ url: z.string().url().max(500), publicId: z.string().min(1).max(300) })
+    .optional()
+    .nullable()
+});
+
+const packageFieldsSchema = z.object({
+  nombre: z.string().trim().min(2, "El nombre es muy corto").max(60),
+  clases: z.coerce.number().int().min(1, "Mínimo 1 clase").max(200),
+  precio: z.coerce.number().min(0).max(100_000_000),
+  vigenciaDias: z.coerce.number().int().min(1).max(366).default(30),
+  visiblePublico: z.boolean().default(true),
+  activo: z.boolean().default(true),
+  orden: z.coerce.number().int().min(0).optional()
+});
+
+export const packageCreateSchema = packageFieldsSchema.extend({
+  disciplineIds: z.array(z.string().min(1)).min(1, "Elige al menos una disciplina").max(30)
+});
+
+export const packageUpdateSchema = packageFieldsSchema.partial();
+
+// ─── Modo Estudio: horario y cupos (spec 005) ─────────────────────────────────
+
+const dateKeySchema = z.string().refine(isDateKey, "Fecha inválida (YYYY-MM-DD)");
+const timeKeySchema = z.string().refine(isTimeKey, "Hora inválida (HH:mm)");
+const optionalTextSchema = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .nullable()
+    .transform((value) => (value === undefined ? undefined : value || null));
+
+const classScheduleFieldsSchema = z.object({
+  disciplineId: z.string().min(1),
+  horaInicio: timeKeySchema,
+  duracionMin: z.coerce.number().int().min(15, "Mínimo 15 minutos").max(240, "Máximo 4 horas"),
+  cupo: z.coerce.number().int().min(1, "Mínimo 1 cupo").max(500),
+  instructor: optionalTextSchema(80),
+  activo: z.boolean().optional()
+});
+
+export const classScheduleCreateSchema = classScheduleFieldsSchema.extend({
+  dias: z.array(z.coerce.number().int().min(1).max(7)).min(1, "Elige al menos un día").max(7)
+});
+
+export const classScheduleUpdateSchema = classScheduleFieldsSchema
+  .extend({ diaSemana: z.coerce.number().int().min(1).max(7) })
+  .partial();
+
+export const classSessionsQuerySchema = z
+  .object({ from: dateKeySchema, to: dateKeySchema })
+  .refine((value) => value.from <= value.to, "El rango está invertido");
+
+export const classSessionUpdateSchema = z.object({
+  scheduleId: z.string().min(1),
+  fecha: dateKeySchema,
+  cupo: z.coerce.number().int().min(1).max(500).optional(),
+  cancelada: z.boolean().optional(),
+  motivoCancelacion: optionalTextSchema(200)
+});
+
+// ─── Modo Estudio: clientes y ventas (spec 006) ───────────────────────────────
+
+export const STUDIO_PAYMENT_METHODS = ["EFECTIVO", "NEQUI", "BANCOLOMBIA", "TRANSFERENCIA", "OTRO"] as const;
+
+export const studioMemberSchema = z.object({
+  nombre: z.string().trim().min(2, "El nombre es muy corto").max(60),
+  apellido: optionalTextSchema(60),
+  celular: z
+    .string()
+    .transform(normalizeMemberPhone)
+    .refine((value) => value.length >= 7 && value.length <= 15, "Celular inválido"),
+  email: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .nullable()
+    .transform((value) => (value === undefined ? undefined : value?.toLowerCase() || null))
+    .refine((value) => !value || z.string().email().safeParse(value).success, "Correo inválido"),
+  fechaNacimiento: dateKeySchema.optional().nullable(),
+  notas: optionalTextSchema(500)
+});
+
+const studioPaymentSchema = z.object({
+  monto: z.coerce.number().positive("El monto debe ser mayor a 0").max(100_000_000),
+  metodoPago: z.enum(STUDIO_PAYMENT_METHODS)
+});
+
+export const memberPackageSaleSchema = z.object({
+  memberId: z.string().min(1),
+  packageId: z.string().min(1),
+  inicio: dateKeySchema.optional(),
+  precio: z.coerce.number().min(0).max(100_000_000).optional(),
+  notas: optionalTextSchema(300),
+  pago: studioPaymentSchema.optional()
+});
+
+export const memberPackageUpdateSchema = z.union([
+  z.object({ vence: dateKeySchema }),
+  z.object({ anular: z.literal(true), motivo: optionalTextSchema(200) })
+]);
+
+export const memberPackagePaymentSchema = studioPaymentSchema.extend({
+  fecha: dateKeySchema.optional(),
+  notas: optionalTextSchema(200)
+});
+
+// ─── Modo Estudio: reservas (spec 007) ────────────────────────────────────────
+
+export const bookingCreateSchema = z.object({
+  scheduleId: z.string().min(1),
+  fecha: dateKeySchema,
+  memberId: z.string().min(1),
+  memberPackageId: z.string().min(1).optional(),
+  /** Spec 019 R7: llego sin reservar; queda con asistencia. */
+  llegoSinReservar: z.boolean().optional(),
+  venta: z
+    .object({
+      packageId: z.string().min(1),
+      precio: z.coerce.number().min(0).max(100_000_000).optional(),
+      pago: studioPaymentSchema.optional()
+    })
+    .optional()
+});
+
+export const bookingUpdateSchema = z.union([
+  z.object({ cancelar: z.literal(true), devolverClase: z.boolean().optional() }),
+  z.object({ estado: z.enum(["RESERVADA", "ASISTIO", "NO_ASISTIO"]) })
+]);
+
+export const attendanceAllSchema = z.object({ scheduleId: z.string().min(1), fecha: dateKeySchema });
+
+export const bookingsQuerySchema = z.union([
+  z.object({ scheduleId: z.string().min(1), fecha: dateKeySchema }),
+  z.object({ memberId: z.string().min(1) })
+]);
+
+// ─── Pagina publica y reserva web (specs 008 y 009) ───────────────────────────
+
+export const publicPageSchema = z.object({
+  portada: z.lazy(() => mediaInputSchema).optional().nullable(),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .superRefine((value, ctx) => {
+      const problem = slugProblem(value);
+      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+    })
+    .optional(),
+  paginaPublicaActiva: z.boolean().optional()
+});
+
+export const publicBookingSchema = z.object({
+  scheduleId: z.string().min(1),
+  fecha: dateKeySchema,
+  celular: z
+    .string()
+    .transform(normalizeMemberPhone)
+    .refine((value) => value.length >= 7 && value.length <= 15, "Celular inválido"),
+  nombre: z.string().trim().min(2, "Escribe tu nombre").max(60),
+  apellido: optionalTextSchema(60),
+  packageId: z.string().min(1).optional()
+});
+
+export const publicBookingUpdateSchema = z.object({ cancelar: z.literal(true) });
+
+// ─── Lista de espera (spec 015) ───────────────────────────────────────────────
+
+export const publicWaitlistUpdateSchema = z.object({ salir: z.literal(true) });
+
+export const waitlistQuerySchema = z.object({ scheduleId: z.string().min(1), fecha: dateKeySchema });
+
+// ─── Contenido y archivos (spec 010) ──────────────────────────────────────────
+
+export const mediaInputSchema = z.object({
+  url: z.string().url().max(500),
+  publicId: z.string().min(1).max(300)
+});
+
+export const mediaSignatureSchema = z.object({
+  kind: z.enum(["IMAGEN", "VIDEO"]),
+  use: z.enum(["publicaciones", "disciplinas", "portada"])
+});
+
+export const mediaDiscardSchema = z.object({
+  publicId: z.string().min(1).max(300),
+  kind: z.enum(["IMAGEN", "VIDEO"])
+});
+
+export const contentPostSchema = z.object({
+  tipo: z.enum(["PUBLICACION", "VIDEO"]),
+  titulo: z.string().trim().min(2, "Escribe un título").max(120),
+  cuerpo: optionalTextSchema(3000),
+  disciplineId: z.string().min(1).optional().nullable(),
+  media: mediaInputSchema.optional().nullable(),
+  enlaceVideo: z.string().trim().max(500).optional().nullable(),
+  publicado: z.boolean().optional(),
+  fijado: z.boolean().optional()
+});
+
+// ─── Avisos del estudio (spec 011) ────────────────────────────────────────────
+
+export const studioMessageSentSchema = z.object({
+  tipo: z.enum(["RECORDATORIO_CLASE", "PAQUETE_POR_VENCER", "SALDO", "CLASE_CANCELADA", "CUPO_LISTA_ESPERA"]),
+  refKey: z.string().min(1).max(200),
+  memberId: z.string().min(1)
+});
+
+// ─── Comprobantes de pago (spec 014) ──────────────────────────────────────────
+
+export const receiptApproveSchema = z.object({
+  monto: z.coerce.number().positive("El monto debe ser mayor a 0").max(100_000_000),
+  metodoPago: z.enum(STUDIO_PAYMENT_METHODS)
+});
+
+export const receiptRejectSchema = z.object({ motivo: optionalTextSchema(200) });
 
 export const savePushTokenSchema = z.object({
   token: z.string().min(10),

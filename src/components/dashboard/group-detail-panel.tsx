@@ -65,8 +65,9 @@ const FILTER_OPTIONS: Array<{ label: string; value: StudentPaymentFilter }> = [
 
 const PAYMENT_METHODS = [
   { label: "Efectivo", value: "EFECTIVO" },
-  { label: "Transferencia", value: "TRANSFERENCIA" },
   { label: "Nequi", value: "NEQUI" },
+  { label: "Bancolombia", value: "BANCOLOMBIA" },
+  { label: "Transferencia", value: "TRANSFERENCIA" },
   { label: "Daviplata", value: "DAVIPLATA" }
 ];
 
@@ -447,7 +448,7 @@ export function GroupDetailPanel({ group }: { group: GroupDetailResponse }) {
         </section>
       </div>
 
-      <Modal
+      <Modal size="md"
         open={addStudentOpen}
         onClose={closeAddStudentModal}
         title="Agregar alumno"

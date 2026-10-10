@@ -1,5 +1,4 @@
-self.DUALI_NOTIFICATION_ICON =
-  "https://res.cloudinary.com/dc2fop9ty/image/upload/v1778078148/icon-metadata_y5lrqo.png";
+self.DUALI_NOTIFICATION_ICON = "/logo/icon-metadata.png";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

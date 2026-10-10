@@ -63,7 +63,7 @@ export function LoginForm() {
       <div className="relative z-10 mx-auto grid min-h-[100svh] w-full max-w-6xl items-center gap-10 px-4 py-8 lg:h-full lg:min-h-0 lg:grid-cols-[1.05fr_0.95fr] lg:gap-8 lg:px-6 lg:py-6">
         <section className="hidden lg:block">
           <div className="flex items-center gap-3">
-            <BrandLogo size={38} priority className="rounded-xl shadow-none" />
+            <BrandLogo size={38} priority />
             <span className="text-2xl font-black tracking-tight">Duali</span>
           </div>
 

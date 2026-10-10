@@ -34,12 +34,23 @@ const config: Config = {
         sand: "#f7f4ee",
         cream: "#fcfaf6"
       },
+      fontFamily: {
+        // Spec 012: titulos de la pagina publica (Instrument Serif via next/font).
+        display: ["var(--font-display)", "Georgia", "serif"]
+      },
       boxShadow: {
         soft: "0 20px 45px -28px rgba(15, 23, 36, 0.34)",
         card: "0 18px 50px -24px rgba(17, 24, 39, 0.18)"
       },
       borderRadius: {
         "4xl": "2rem"
+      },
+      keyframes: {
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } }
+      },
+      animation: {
+        // Menu movil de la pagina publica: corto, como CliqCut y la floristeria.
+        "fade-in": "fade-in 150ms ease-out"
       },
       backgroundImage: {
         "mesh-brand":

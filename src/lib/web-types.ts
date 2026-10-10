@@ -16,8 +16,63 @@ export type SafeClient = {
   paymentMethods: string | null;
   paymentMethodItems: PaymentMethodItem[] | null;
   whatsappMessageTemplate: string | null;
+  moduloAcademia: boolean;
+  moduloEstudio: boolean;
+  horasCancelacion: number;
+  devolverClaseInasistencia: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type BusinessModules = Pick<SafeClient, "moduloAcademia" | "moduloEstudio">;
+
+export type DisciplineItem = {
+  id: string;
+  tipo: "CLASE" | "COMBO";
+  nombre: string;
+  descripcion: string | null;
+  color: string;
+  imagenUrl: string | null;
+  imagenPublicId: string | null;
+  orden: number;
+  activa: boolean;
+  createdAt: string;
+  incluye: Array<{ id: string; nombre: string; color: string }>;
+};
+
+export type ClassScheduleItem = {
+  id: string;
+  disciplineId: string;
+  diaSemana: number;
+  horaInicio: string;
+  duracionMin: number;
+  cupo: number;
+  instructor: string | null;
+  activo: boolean;
+  discipline: { id: string; nombre: string; color: string };
+};
+
+export type { ClassSessionView as ClassSessionItem } from "@/lib/class-sessions";
+export type { MemberPackageView as MemberPackageItem, StudioMemberView as StudioMemberItem } from "@/lib/member-packages";
+
+export type { BookingView as BookingItem } from "@/lib/bookings";
+export type { ContentPostView as ContentPostItem } from "@/lib/content";
+
+export type MemberPackageSaleItem = import("@/lib/member-packages").MemberPackageView & {
+  member: { id: string; nombre: string; apellido: string | null; celular: string };
+};
+
+export type PackageItem = {
+  id: string;
+  disciplineId: string;
+  nombre: string;
+  clases: number;
+  precio: number | string;
+  vigenciaDias: number;
+  visiblePublico: boolean;
+  activo: boolean;
+  orden: number;
+  createdAt: string;
 };
 
 export type GroupSummary = {
@@ -364,6 +419,7 @@ export type AccountingSummary = {
   ingresosMensualidades: number;
   ingresosUtiles: number;
   ingresosInscripciones: number;
+  ingresosPaquetes: number;
   ingresosTotales: number;
   gastosTotales: number;
   balance: number;
@@ -394,7 +450,7 @@ export type AccountingPaymentMethod = {
 export type AccountingMovement = {
   id: string;
   date: string;
-  type: "MENSUALIDAD" | "INSCRIPCION" | "ABONO" | "EGRESO";
+  type: "MENSUALIDAD" | "INSCRIPCION" | "ABONO" | "PAQUETE" | "EGRESO";
   title: string;
   subtitle: string;
   amount: number;

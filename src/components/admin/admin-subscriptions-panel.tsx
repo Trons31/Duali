@@ -139,7 +139,7 @@ export function AdminSubscriptionsPanel({ data }: { data: AdminSubscriptionsResp
         </section>
       </div>
 
-      <Modal
+      <Modal size="md"
         open={Boolean(selectedClient)}
         title="Registrar pago"
         description={selectedClient ? selectedClient.businessName : undefined}

@@ -4,6 +4,7 @@ import { NotificationBootstrap } from "@/components/notifications/notification-b
 import { getDashboardAlertCounts } from "@/lib/dashboard-data";
 import { ensureCurrentMonthlyPayments } from "@/lib/monthly-payments";
 import { ensureClientSubscription, serializeSubscription } from "@/lib/subscriptions";
+import { getBusinessModules } from "@/lib/business-modules";
 import { auth } from "@/lib/web-auth";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -24,9 +25,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const clientId = session.user.id;
   await ensureCurrentMonthlyPayments(clientId);
 
-  const [alertCounts, subscription] = await Promise.all([
+  const [alertCounts, subscription, modules] = await Promise.all([
     getDashboardAlertCounts(clientId),
-    ensureClientSubscription(clientId)
+    ensureClientSubscription(clientId),
+    getBusinessModules(clientId)
   ]);
   const { pendingMonthlyCount, overdueMonthlyCount, enrollmentPendingCount } = alertCounts;
 
@@ -65,6 +67,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       planDays={plan.daysUntilNextBilling}
       planStatus={String(plan.status)}
       alerts={alerts.length ? alerts : [{ label: "Todo al día", tone: "success" as const }]}
+      modules={modules}
     >
       <NotificationBootstrap />
       {children}

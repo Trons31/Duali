@@ -1,5 +1,5 @@
 import "./prisma-debug";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { markAsOfflineIfConnectionError } from "./db-errors";
 
 type PrismaGlobal = {
@@ -11,7 +11,11 @@ type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
 const globalForPrisma = globalThis as unknown as PrismaGlobal;
 const databaseUrl = buildDatabaseUrl();
-const databaseKey = databaseUrl ?? "default";
+// La clave lleva los modelos del esquema: en desarrollo el cliente vive en
+// globalThis entre recargas, y tras `prisma generate` con modelos nuevos el
+// guardado no los conoce (prisma.paymentReceipt era undefined). Ver spec 018.
+const schemaKey = Object.keys(Prisma.ModelName).sort().join(",");
+const databaseKey = `${databaseUrl ?? "default"}|${schemaKey}`;
 const mustCreateClient = !globalForPrisma.prisma || globalForPrisma.databaseUrl !== databaseKey;
 
 if (mustCreateClient && globalForPrisma.prisma) {

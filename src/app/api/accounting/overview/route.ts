@@ -47,6 +47,8 @@ function normalizeMethod(method: string | null) {
       return "Transferencia";
     case "NEQUI":
       return "Nequi";
+    case "BANCOLOMBIA":
+      return "Bancolombia";
     case "DAVIPLATA":
       return "Daviplata";
     default:
@@ -131,6 +133,24 @@ export async function GET(request: Request) {
       },
       orderBy: [{ fecha: "desc" }, { createdAt: "desc" }]
     });
+    const packagePayments = await prisma.memberPackagePayment.findMany({
+      where: {
+        clientId,
+        anuladoAt: null,
+        memberPackage: { anuladoAt: null },
+        fecha: { gte: period.from, lte: period.to }
+      },
+      orderBy: [{ fecha: "desc" }, { createdAt: "desc" }],
+      include: {
+        memberPackage: {
+          select: {
+            nombre: true,
+            discipline: { select: { nombre: true } },
+            member: { select: { nombre: true, apellido: true } }
+          }
+        }
+      }
+    });
     const debtByStudent = await getOpenDebtByStudent(
       clientId,
       installments.map((installment) => installment.estudianteId)
@@ -139,7 +159,8 @@ export async function GET(request: Request) {
     const ingresosMensualidades = monthlyPayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
     const ingresosInscripciones = enrollmentPayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
     const ingresosAbonos = installments.reduce((sum, installment) => sum + Number(installment.monto), 0);
-    const ingresos = ingresosMensualidades + ingresosInscripciones + ingresosAbonos;
+    const ingresosPaquetes = packagePayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
+    const ingresos = ingresosMensualidades + ingresosInscripciones + ingresosAbonos + ingresosPaquetes;
     const egresos = expenses.reduce((sum, expense) => sum + Number(expense.monto), 0);
 
     const methodMap = new Map<string, { amount: number; count: number }>();
@@ -167,6 +188,15 @@ export async function GET(request: Request) {
       const current = methodMap.get(key) ?? { amount: 0, count: 0 };
       methodMap.set(key, {
         amount: current.amount + Number(installment.monto),
+        count: current.count + 1
+      });
+    }
+
+    for (const payment of packagePayments) {
+      const key = normalizeMethod(payment.metodoPago);
+      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
+      methodMap.set(key, {
+        amount: current.amount + Number(payment.monto),
         count: current.count + 1
       });
     }
@@ -213,6 +243,18 @@ export async function GET(request: Request) {
           subtitle: `${installment.concepto} · ${normalizeMethod(installment.metodoPago)}${group?.nombre ? ` · ${group.nombre}` : ""} · Deuda total ${money(totalDebtAfterInstallment)}`,
           amount: Number(installment.monto),
           remainingBalance: totalDebtAfterInstallment,
+          direction: "income" as const
+        };
+      }),
+      ...packagePayments.map((payment) => {
+        const sale = payment.memberPackage;
+        return {
+          id: payment.id,
+          date: payment.fecha.toISOString(),
+          type: "PAQUETE" as const,
+          title: `${sale.member.nombre}${sale.member.apellido ? ` ${sale.member.apellido}` : ""}`,
+          subtitle: `${sale.nombre} ${sale.discipline.nombre} · ${normalizeMethod(payment.metodoPago)}`,
+          amount: Number(payment.monto),
           direction: "income" as const
         };
       }),

@@ -320,6 +320,7 @@ function formatMethod(method: string) {
   if (upper === "EFECTIVO") return "Efectivo";
   if (upper === "TRANSFERENCIA") return "Transferencia";
   if (upper === "NEQUI") return "Nequi";
+  if (upper === "BANCOLOMBIA") return "Bancolombia";
   if (upper === "DAVIPLATA") return "Daviplata";
   return method;
 }

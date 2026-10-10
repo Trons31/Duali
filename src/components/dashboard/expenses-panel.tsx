@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { ScrollHint } from "@/components/shared/scroll-hint";
 import { Controller, useForm } from "react-hook-form";
 import { sileo } from "sileo";
 import { FiCalendar, FiChevronDown, FiChevronUp, FiFilter, FiPlus, FiTrendingDown } from "react-icons/fi";
@@ -260,7 +261,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
               </label>
 
               {filterMode === "day" ? (
-                <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">
+                <ScrollHint fade="white" className="-mx-4 mt-4 sm:-mx-6" scrollerClassName="px-4 pb-1 sm:px-6">
                   <div className="flex min-w-max gap-2">
                     {monthDays.map((day) => {
                       const isSelected = day.day === selectedDay;
@@ -294,7 +295,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
                       );
                     })}
                   </div>
-                </div>
+                </ScrollHint>
               ) : null}
             </div>
           ) : null}

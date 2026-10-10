@@ -12,6 +12,8 @@ type AccountingSummaryRow = {
   pending_enrollment_today_amount: Prisma.Decimal | number | string;
   monthly_received_this_month: Prisma.Decimal | number | string;
   enrollment_received_this_month: Prisma.Decimal | number | string;
+  package_income: Prisma.Decimal | number | string;
+  package_received_this_month: Prisma.Decimal | number | string;
   active_students: bigint | number;
   pending_today_payments: bigint | number;
   pending_enrollment_today_payments: bigint | number;
@@ -88,6 +90,16 @@ export async function getAccountingSummary(clientId: string) {
       FROM "expenses"
       WHERE "clientId" = ${clientId} AND "deletedAt" IS NULL
     ),
+    -- Modo Estudio (spec 006): pagos vigentes de ventas no anuladas.
+    package_totals AS (
+      SELECT
+        COALESCE(SUM(p."monto"), 0) AS package_income,
+        COALESCE(SUM(p."monto") FILTER (WHERE p."fecha" >= ${monthStart} AND p."fecha" <= ${monthEnd}), 0)
+          AS package_received_this_month
+      FROM "member_package_payments" p
+      JOIN "member_packages" s ON s."id" = p."memberPackageId"
+      WHERE p."clientId" = ${clientId} AND p."anuladoAt" IS NULL AND s."anuladoAt" IS NULL
+    ),
     student_totals AS (
       SELECT COUNT(*) FILTER (WHERE "estado"::text = 'ACTIVO') AS active_students
       FROM "students"
@@ -98,6 +110,7 @@ export async function getAccountingSummary(clientId: string) {
     CROSS JOIN enrollment
     CROSS JOIN supplies
     CROSS JOIN expense_totals
+    CROSS JOIN package_totals
     CROSS JOIN student_totals
   `);
 
@@ -106,19 +119,23 @@ export async function getAccountingSummary(clientId: string) {
   const ingresosMensualidades = Number(summary.monthly_income);
   const ingresosUtiles = Number(summary.supplies_income);
   const ingresosInscripciones = Number(summary.enrollment_income);
+  const ingresosPaquetes = Number(summary.package_income);
   const totalGastos = Number(summary.expenses);
-  const ingresosTotales = ingresosMensualidades + ingresosUtiles + ingresosInscripciones;
+  const ingresosTotales = ingresosMensualidades + ingresosUtiles + ingresosInscripciones + ingresosPaquetes;
 
   return {
     ingresosMensualidades,
     ingresosUtiles,
     ingresosInscripciones,
+    ingresosPaquetes,
     ingresosTotales,
     gastosTotales: totalGastos,
     balance: ingresosTotales - totalGastos,
     pendientesPorCobrar: Number(summary.pending_today_amount) + Number(summary.pending_enrollment_today_amount),
     pagosRecibidosEsteMes:
-      Number(summary.monthly_received_this_month) + Number(summary.enrollment_received_this_month),
+      Number(summary.monthly_received_this_month) +
+      Number(summary.enrollment_received_this_month) +
+      Number(summary.package_received_this_month),
     estudiantesActivos: Number(summary.active_students),
     mensualidadesPendientes: Number(summary.pending_today_payments),
     mensualidadesVencidas: Number(summary.overdue_payments),

@@ -26,7 +26,8 @@ export async function proxy(request: NextRequest) {
   const isLoggedIn = Boolean(token);
   const isAdmin = token?.role === "ADMIN" || token?.sub === "duali-admin";
   const { pathname } = request.nextUrl;
-  const isPublicRoute = publicRoutes.has(pathname);
+  // Spec 008: la pagina publica de cada estudio (/s/{slug}) no pide sesion.
+  const isPublicRoute = publicRoutes.has(pathname) || pathname.startsWith("/s/");
 
   if (pathname.startsWith("/admin")) {
     if (pathname === "/admin/login") {

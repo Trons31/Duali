@@ -5,10 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { FiLogOut, FiMenu, FiX, FiZap } from "react-icons/fi";
-import { navSections } from "@/components/dashboard/nav-items";
+import { getNavSections } from "@/components/dashboard/nav-items";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { clientApiFetch } from "@/lib/client-api";
 import { cn } from "@/lib/web-utils";
+import type { BusinessModules } from "@/lib/web-types";
 
 type HeaderAlert = {
   label: string;
@@ -20,6 +21,7 @@ export function DashboardShell({
   planDays,
   planStatus,
   alerts,
+  modules,
   children
 }: {
   user: {
@@ -30,6 +32,7 @@ export function DashboardShell({
   planDays: number;
   planStatus: string;
   alerts: HeaderAlert[];
+  modules: BusinessModules;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -39,6 +42,7 @@ export function DashboardShell({
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
   const isPlanOverdue = planDays < 0 || planStatus === "VENCIDA";
   const visiblePlanDays = Math.max(planDays, 0);
+  const navSections = getNavSections(modules);
 
   useEffect(() => {
     setActiveAlertIndex(0);
@@ -98,15 +102,13 @@ export function DashboardShell({
   const navContent = (
     <div className="relative flex h-full flex-col overflow-hidden bg-white text-ink-950">
       <div className="relative px-2 pb-3 pt-2">
-        <div className="rounded-2xl border border-ink-100 bg-white p-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <BrandLogo size={44} priority className="rounded-2xl shadow-none" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-black leading-tight text-ink-950">{user.businessName}</p>
-              <p className="mt-1 truncate text-xs font-medium leading-tight text-ink-500">Academia</p>
-              <p className="mt-0.5 truncate text-xs leading-tight text-ink-400">{user.name ?? "Administrador"}</p>
-            </div>
-
+        {/* Como el Sidebar de Nubi: marca arriba; persona, tipo de negocio y plan abajo. */}
+        <div className="rounded-2xl border border-brand-100 bg-white shadow-sm">
+          <div className="flex items-center gap-3 px-3 pb-3 pt-3.5">
+            <BrandLogo size={40} priority />
+            <p className="min-w-0 flex-1 whitespace-normal break-words text-base font-black leading-tight text-ink-950">
+              {user.businessName}
+            </p>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -117,28 +119,15 @@ export function DashboardShell({
             </button>
           </div>
 
-          <Link
-            href="/dashboard/mi-plan"
-            onClick={() => setOpen(false)}
-            className={cn(
-              "mt-3 flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-xs font-bold shadow-sm transition hover:opacity-90",
-              isPlanOverdue
-                ? "border-rose-100 bg-rose-50 text-rose-700"
-                : visiblePlanDays <= 3
-                  ? "border-amber-100 bg-amber-50 text-amber-700"
-                  : "border-brand-100 bg-brand-50 text-brand-700"
-            )}
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white">
-              <FiZap className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate uppercase">Plan</span>
-              <span className="block truncate font-semibold">
-                {isPlanOverdue ? "Vencido" : `${visiblePlanDays} dia${visiblePlanDays === 1 ? "" : "s"} restantes`}
+          <div className="border-t border-brand-100/70 px-3 pb-3 pt-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-sm font-semibold text-ink-800">{user.name || user.businessName}</p>
+              <span className="shrink-0 rounded-md bg-ink-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-500">
+                {businessKindLabel(modules)}
               </span>
-            </span>
-          </Link>
+            </div>
+            <PlanBadge days={visiblePlanDays} overdue={isPlanOverdue} onNavigate={() => setOpen(false)} />
+          </div>
         </div>
       </div>
 
@@ -208,7 +197,7 @@ export function DashboardShell({
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div className="flex min-w-0 items-center gap-2">
-                  <BrandLogo size={34} priority className="rounded-xl shadow-none" />
+                  <BrandLogo size={34} priority />
                   <p className="truncate text-sm font-bold text-ink-950">{user.businessName}</p>
                 </div>
               </div>
@@ -251,6 +240,35 @@ export function DashboardShell({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function businessKindLabel(modules: BusinessModules) {
+  if (modules.moduloAcademia && modules.moduloEstudio) return "Academia + Estudio";
+  return modules.moduloEstudio ? "Estudio" : "Academia";
+}
+
+/** Linea del plan como el SubscriptionBadge de Nubi: rojo a 3 dias o vencido, ambar a 7. */
+function PlanBadge({ days, overdue, onNavigate }: { days: number; overdue: boolean; onNavigate: () => void }) {
+  const urgent = overdue || days <= 3;
+  const tone = urgent ? "text-rose-700" : days <= 7 ? "text-amber-700" : "text-brand-700";
+  const status = overdue ? "Vencido" : days === 0 ? "Vence hoy" : days === 1 ? "Vence en 1 día" : `Vence en ${days} días`;
+
+  return (
+    <Link
+      href="/dashboard/mi-plan"
+      onClick={onNavigate}
+      className={cn("mt-1.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80", tone)}
+    >
+      <FiZap className="size-3.5 shrink-0" />
+      <span className="truncate">Plan · {status}</span>
+      {urgent ? (
+        <span className="relative flex size-2 shrink-0">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-rose-400 opacity-75 motion-reduce:animate-none" />
+          <span className="relative inline-flex size-2 rounded-full bg-rose-500" />
+        </span>
+      ) : null}
+    </Link>
   );
 }
 

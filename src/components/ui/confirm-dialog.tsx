@@ -14,7 +14,9 @@ export function ConfirmDialog({
   noticeTone,
   loading = false,
   onClose,
-  onConfirm
+  onConfirm,
+  confirmDisabled = false,
+  children
 }: {
   open: boolean;
   title: string;
@@ -27,6 +29,9 @@ export function ConfirmDialog({
   loading?: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  confirmDisabled?: boolean;
+  /** Contenido propio bajo el aviso (p. ej. una casilla o el motivo). */
+  children?: React.ReactNode;
 }) {
   const resolvedNoticeTone = noticeTone ?? (variant === "danger" ? "danger" : "success");
 
@@ -36,12 +41,13 @@ export function ConfirmDialog({
       title={title}
       description={description}
       onClose={onClose}
+      size="sm"
       footer={
-        <div className="flex justify-end gap-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
             {cancelText}
           </Button>
-          <Button type="button" variant={variant} onClick={onConfirm} loading={loading}>
+          <Button type="button" variant={variant} className="w-full sm:w-auto" onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
             {confirmText}
           </Button>
         </div>
@@ -60,6 +66,7 @@ export function ConfirmDialog({
           {notice}
         </div>
       ) : null}
+      {children ? <div className={notice ? "mt-4" : undefined}>{children}</div> : null}
     </Modal>
   );
 }
