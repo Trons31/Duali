@@ -1,6 +1,7 @@
 import { ClassSchedulePanel } from "@/components/dashboard/class-schedule-panel";
 import { StudioModuleNotice } from "@/components/dashboard/studio-module-notice";
 import { getBusinessModules } from "@/lib/business-modules";
+import type { InstructorView } from "@/lib/instructors";
 import { apiFetch } from "@/lib/server-api";
 import { addDaysToKey, isDateKey, startOfWeekKey, studioTodayKey } from "@/lib/studio-time";
 import { auth } from "@/lib/web-auth";
@@ -20,10 +21,11 @@ export default async function ClassSchedulePage({
   const weekStart = startOfWeekKey(semana && isDateKey(semana) ? semana : today);
   const weekEnd = addDaysToKey(weekStart, 6);
 
-  const [sessions, schedules, disciplines] = await Promise.all([
+  const [sessions, schedules, disciplines, instructors] = await Promise.all([
     apiFetch<ClassSessionItem[]>(`/api/class-sessions?from=${weekStart}&to=${weekEnd}`),
     apiFetch<ClassScheduleItem[]>("/api/class-schedules"),
-    apiFetch<DisciplineItem[]>("/api/disciplines")
+    apiFetch<DisciplineItem[]>("/api/disciplines"),
+    apiFetch<InstructorView[]>("/api/instructors")
   ]);
 
   return (
@@ -35,6 +37,14 @@ export default async function ClassSchedulePage({
       sessions={sessions}
       schedules={schedules}
       disciplines={disciplines.filter((discipline) => discipline.tipo === "CLASE" && discipline.activa)}
+      // Spec 023 R4: solo los activos se pueden asignar.
+      instructors={instructors
+        .filter((instructor) => instructor.activo)
+        .map((instructor) => ({
+          id: instructor.id,
+          nombre: instructor.nombreCompleto,
+          disciplinaIds: instructor.disciplinas.map((discipline) => discipline.id)
+        }))}
     />
   );
 }

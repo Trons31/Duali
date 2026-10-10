@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { before, describe, test } from "node:test";
-import { assertOwnedMedia, signUpload } from "@/lib/cloudinary";
+import { v2 as cloudinary } from "cloudinary";
+import { IMAGE_TRANSFORMATION, SERVER_IMAGE_TRANSFORMATION, assertOwnedMedia, signUpload } from "@/lib/cloudinary";
 import { belongsToBusiness, extractCloudinaryPublicId, mediaFolder } from "@/lib/media-folders";
 import { parseVideoLink } from "@/lib/video-links";
 
@@ -120,5 +121,13 @@ describe("enlaces de video (spec 010 R2)", () => {
     ]) {
       assert.equal(parseVideoLink(url), null, url);
     }
+  });
+});
+
+describe("subida del comprobante desde el servidor (spec 021 R4)", () => {
+  test("la reducción va como objeto: un texto el SDK lo manda como transformación guardada (t_…)", () => {
+    const sent = cloudinary.utils.generate_transformation_string({ transformation: SERVER_IMAGE_TRANSFORMATION });
+    assert.equal(sent.startsWith("t_"), false);
+    assert.deepEqual(sent.split(",").sort(), IMAGE_TRANSFORMATION.split(",").sort(), "la misma reducción que la subida del navegador");
   });
 });

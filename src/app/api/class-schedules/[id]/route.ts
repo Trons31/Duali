@@ -2,6 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { countFutureActiveBookings } from "@/lib/bookings";
 import { assertClassDiscipline, classScheduleInclude } from "@/lib/class-sessions";
 import { ApiError, handleError, noContent, ok, readBody } from "@/lib/http";
+import { scheduleInstructorData } from "@/lib/instructors";
 import { prisma } from "@/lib/prisma";
 import { classScheduleUpdateSchema } from "@/lib/validations";
 
@@ -23,7 +24,8 @@ export async function PUT(request: Request, context: Params) {
     const body = classScheduleUpdateSchema.parse(await readBody(request));
     if (body.disciplineId) await assertClassDiscipline(clientId, body.disciplineId);
 
-    const schedule = await prisma.classSchedule.update({ where: { id }, data: body, include: classScheduleInclude });
+    const data = { ...body, ...(await scheduleInstructorData(clientId, body)) };
+    const schedule = await prisma.classSchedule.update({ where: { id }, data, include: classScheduleInclude });
     return ok(schedule);
   } catch (error) {
     return handleError(error);

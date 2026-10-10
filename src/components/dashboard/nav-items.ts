@@ -1,5 +1,6 @@
 import type { IconType } from "react-icons";
 import {
+  FiCreditCard,
   FiBell,
   FiBookOpen,
   FiCalendar,
@@ -13,10 +14,12 @@ import {
   FiPackage,
   FiShoppingBag,
   FiTrendingUp,
+  FiUserCheck,
   FiUsers,
   FiZap
 } from "react-icons/fi";
 import { IoSettingsOutline } from "react-icons/io5";
+import { canSeePage, type Access } from "@/lib/collaborator-permissions";
 import type { BusinessModules } from "@/lib/web-types";
 
 type NavItem = { href: string; label: string; icon: IconType };
@@ -60,6 +63,16 @@ const navSections: NavSection[] = [
     ]
   },
   {
+    // Spec 023 D9: el equipo del estudio.
+    title: "EQUIPO",
+    module: "estudio",
+    // Spec 024 D1: como CliqCut, Colaboradores y Pagos.
+    items: [
+      { href: "/dashboard/colaboradores", label: "Colaboradores", icon: FiUserCheck },
+      { href: "/dashboard/colaboradores/pagos", label: "Pagos", icon: FiCreditCard }
+    ]
+  },
+  {
     title: "MI PÁGINA",
     module: "estudio",
     items: [
@@ -93,10 +106,14 @@ const navSections: NavSection[] = [
   }
 ];
 
-export function getNavSections(modules: BusinessModules) {
-  return navSections.filter((section) => {
-    if (section.module === "academia") return modules.moduloAcademia;
-    if (section.module === "estudio") return modules.moduloEstudio;
-    return true;
-  });
+export function getNavSections(modules: BusinessModules, access: Access = { kind: "OWNER" }) {
+  return navSections
+    .filter((section) => {
+      if (section.module === "academia") return modules.moduloAcademia;
+      if (section.module === "estudio") return modules.moduloEstudio;
+      return true;
+    })
+    // Spec 024 R6: un colaborador solo ve lo que tiene permitido.
+    .map((section) => ({ ...section, items: section.items.filter((item) => canSeePage(access, item.href)) }))
+    .filter((section) => section.items.length);
 }

@@ -1,6 +1,6 @@
 import { getPendingAttendance } from "@/lib/attendance";
 import { listClassSessions } from "@/lib/class-sessions";
-import { memberPackageInclude, serializeMemberPackage } from "@/lib/member-packages";
+import { expiredWithoutRenewal, memberPackageInclude, serializeMemberPackage } from "@/lib/member-packages";
 import { prisma } from "@/lib/prisma";
 import { addDaysToKey, dateKeyToDate, dateToDateKey, startOfWeekKey, studioNow } from "@/lib/studio-time";
 
@@ -88,8 +88,11 @@ export async function getStudioDashboard(clientId: string, instant = new Date())
       discipline: session.discipline
     })),
     atender: {
-      porVencer: views.filter((view) => view.porVencer || view.pocasClases).length,
+      porVencer: views.filter((view) => (view.porVencer || view.pocasClases) && !view.renovadoPor).length,
       conSaldo: new Set(views.filter((view) => view.saldo > 0).map((view) => view.memberId)).size,
+      // Spec 020 R10.
+      saldosVencidos: views.filter((view) => view.saldoVencido).length,
+      vencidosSemana: expiredWithoutRenewal(views, 7).length,
       recordatoriosManana: tomorrowBookings,
       comprobantes: receiptsToReview,
       // Spec 019 R10: clases que ya terminaron con reservas sin marcar.

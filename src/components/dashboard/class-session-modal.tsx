@@ -11,6 +11,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
 import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import { AttendanceToggle } from "@/components/dashboard/attendance-ui";
+import { InstructorSelect, type InstructorOption } from "@/components/dashboard/instructor-select";
 import { ReminderList } from "@/components/dashboard/reminder-list";
 import { memberName } from "@/components/dashboard/studio-sales-ui";
 import { clientApiFetch } from "@/lib/client-api";
@@ -38,12 +39,14 @@ function formatLongDate(key: string) {
 export function ClassSessionModal({
   session,
   today,
+  instructors,
   canEditSchedule,
   onEditSchedule,
   onClose
 }: {
   session: ClassSessionItem;
   today: string;
+  instructors: InstructorOption[];
   canEditSchedule: boolean;
   onEditSchedule: () => void;
   onClose: () => void;
@@ -53,6 +56,8 @@ export function ClassSessionModal({
   const [bookings, setBookings] = useState<BookingItem[] | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistView[]>([]);
   const [mode, setMode] = useState<"detalle" | "reservar">("detalle");
+  // Spec 023 D5: quien la dicta cambia al elegir un reemplazo sin cerrar el detalle.
+  const [teacher, setTeacher] = useState(session.instructor);
 
   const loadBookings = useCallback(async () => {
     if (!token) return;
@@ -101,8 +106,12 @@ export function ClassSessionModal({
             <InfoBlock icon={<FiUsers />} label="Cupos" value={`${bookings ? active.length : session.reservadas}/${session.cupo}`} />
             <InfoBlock icon={<FiClock />} label="Duración" value={`${session.duracionMin} min`} />
             {/* Opcional: se define en Horarios fijos al crear o editar el horario. */}
-            <InfoBlock icon={<FiUser />} label="Instructor" value={session.instructor || "Sin asignar"} muted={!session.instructor} />
+            <InfoBlock icon={<FiUser />} label="Instructor" value={teacher || "Sin asignar"} muted={!teacher} />
           </div>
+
+          {!session.cancelada && instructors.length ? (
+            <ReplacementPicker session={session} instructors={instructors} onChange={setTeacher} />
+          ) : null}
 
           {session.cancelada ? (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
@@ -724,5 +733,72 @@ function CancelledClassReminders({ session, token }: { session: ClassSessionItem
       <p className="text-xs text-ink-500">A cada una ya se le devolvió la clase.</p>
       <ReminderList items={items} empty="" />
     </section>
+  );
+}
+
+/**
+ * Spec 023 D5/R4: reemplazo de una sola fecha. La clase se le paga a quien la
+ * dicta; elegir "el titular" quita el reemplazo.
+ */
+function ReplacementPicker({
+  session,
+  instructors,
+  onChange
+}: {
+  session: ClassSessionItem;
+  instructors: InstructorOption[];
+  onChange: (teacher: string | null) => void;
+}) {
+  const request = useStudioRequest();
+  const [value, setValue] = useState(session.reemplazo ? (session.instructorId ?? "") : "");
+  const [saving, setSaving] = useState(false);
+  const options = instructors.filter((item) => item.id !== session.titularId);
+  // Un reemplazo que despues se desactivo sigue visible para no perderlo.
+  const extra =
+    session.reemplazo && session.instructorId && !options.some((item) => item.id === session.instructorId)
+      ? { value: session.instructorId, label: `${session.instructor} (inactivo)` }
+      : null;
+  const nameOf = (id: string) => (id ? (options.find((item) => item.id === id)?.nombre ?? (id === session.instructorId ? session.instructor : null)) : session.titular);
+  const paidTo = nameOf(value);
+
+  async function change(next: string) {
+    const previous = value;
+    setValue(next);
+    setSaving(true);
+    const saved = await request(
+      "/api/class-sessions",
+      { method: "PUT", body: JSON.stringify({ scheduleId: session.scheduleId, fecha: session.fecha, instructorId: next || null }) },
+      next ? "Reemplazo guardado" : "La dicta el titular"
+    );
+    setSaving(false);
+    if (saved) onChange(nameOf(next));
+    else setValue(previous);
+  }
+
+  return (
+    <div className="rounded-xl border border-ink-200 p-3">
+      <label className={labelClass} htmlFor="session-replacement">
+        Reemplazo para esta fecha
+      </label>
+      <InstructorSelect
+        id="session-replacement"
+        value={value}
+        onChange={change}
+        instructors={options}
+        disciplineId={session.discipline.id}
+        emptyLabel={session.titular ? `Sin reemplazo · la dicta ${session.titular}` : "Sin reemplazo"}
+        extraOption={extra}
+        disabled={saving}
+      />
+      <p className="mt-1.5 text-[11px] text-ink-500">
+        {paidTo ? (
+          <>
+            Esta clase se le paga a <span className="font-semibold text-ink-700">{paidTo}</span>.
+          </>
+        ) : (
+          "Sin instructor: esta clase no se le paga a nadie."
+        )}
+      </p>
+    </div>
   );
 }

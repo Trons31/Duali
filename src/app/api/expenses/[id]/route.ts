@@ -1,5 +1,6 @@
 import { requireClient } from "@/lib/auth";
 import { ApiError, handleError, noContent, ok, readBody } from "@/lib/http";
+import { assertNotInstructorExpense } from "@/lib/instructor-payments";
 import { prisma } from "@/lib/prisma";
 import { expenseSchema } from "@/lib/validations";
 
@@ -24,6 +25,7 @@ export async function PUT(request: Request, context: Params) {
     const body = expenseSchema.partial().parse(await readBody(request));
     const exists = await prisma.expense.findFirst({ where: { id, clientId, deletedAt: null } });
     if (!exists) throw new ApiError(404, "Gasto no encontrado");
+    await assertNotInstructorExpense(clientId, id);
     const expense = await prisma.expense.update({ where: { id }, data: body });
     return ok(expense);
   } catch (error) {
@@ -37,6 +39,7 @@ export async function DELETE(request: Request, context: Params) {
     const { clientId } = await requireClient(request);
     const exists = await prisma.expense.findFirst({ where: { id, clientId, deletedAt: null } });
     if (!exists) throw new ApiError(404, "Gasto no encontrado");
+    await assertNotInstructorExpense(clientId, id);
     await prisma.expense.update({ where: { id }, data: { deletedAt: new Date() } });
     return noContent();
   } catch (error) {

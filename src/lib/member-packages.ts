@@ -12,6 +12,10 @@ export type MemberPackagePaymentStatus = "PAGADO" | "PARCIAL" | "PENDIENTE";
 
 export const EXPIRING_SOON_DAYS = 3;
 export const FEW_CLASSES_LEFT = 2;
+/** Spec 020 D2: plazo para pagar el saldo cuando el estudio no lo cambia. */
+export const DEFAULT_BALANCE_DAYS = 7;
+/** Spec 020 R7: hasta cuando un plan vencido sigue siendo "por renovar". */
+export const RENEWAL_WINDOW_DAYS = 60;
 
 export { normalizeMemberPhone } from "@/lib/studio-constants";
 
@@ -28,7 +32,11 @@ export const memberPackageInclude = {
     orderBy: [{ session: { fecha: "asc" } }, { session: { horaInicio: "asc" } }]
   },
   // Spec 021: estado del pago (en revision, rechazado).
-  receipts: { select: { estado: true, createdAt: true } }
+  receipts: { select: { estado: true, createdAt: true } },
+  // Spec 020: plazo del saldo y renovaciones.
+  client: { select: { diasPlazoSaldo: true } },
+  renovacionDe: { select: { id: true, nombre: true, inicio: true, vence: true } },
+  renovaciones: { where: { anuladoAt: null }, select: { id: true, nombre: true, inicio: true, vence: true }, orderBy: { createdAt: "desc" }, take: 1 }
 } satisfies Prisma.MemberPackageInclude;
 
 type MemberPackageRow = Prisma.MemberPackageGetPayload<{ include: typeof memberPackageInclude }>;
@@ -58,6 +66,23 @@ export function classUsage(bookings: UsageBooking[]) {
   };
 }
 
+/** Spec 020 D2: "paga el resto antes del..."; sin fecha guardada, inicio + plazo. */
+export function paymentDeadline(sale: { fechaLimitePago: Date | null; inicio: Date }, diasPlazoSaldo: number) {
+  return sale.fechaLimitePago ? dateToDateKey(sale.fechaLimitePago) : addDaysToKey(dateToDateKey(sale.inicio), diasPlazoSaldo);
+}
+
+/**
+ * Spec 020 D1: un plan vigente (con clases) se renueva desde el dia siguiente a
+ * su vencimiento, para no perder dias; uno vencido o agotado, desde hoy.
+ */
+export function renewalStart(sale: { estado: MemberPackageStatus; vence: string }, today: string) {
+  return sale.estado === "ACTIVO" && sale.vence >= today ? addDaysToKey(sale.vence, 1) : today;
+}
+
+function renewalLink(row: { id: string; nombre: string; inicio: Date; vence: Date } | null | undefined) {
+  return row ? { id: row.id, nombre: row.nombre, inicio: dateToDateKey(row.inicio), vence: dateToDateKey(row.vence) } : null;
+}
+
 /** Spec 019 D2: una venta de 1 clase es una clase suelta; con mas, un plan. */
 export function isDropIn(item: { clases: number }) {
   return item.clases === 1;
@@ -71,6 +96,13 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
   const estado = memberPackageStatus(row, today);
   const clasesRestantes = Math.max(row.clases - row.clasesUsadas, 0);
   const diasParaVencer = daysBetweenKeys(today, vence);
+  const situacionPago = row.anuladoAt ? ("PAGADO" as const) : paymentState({ saldo, origen: row.origen, receipts: row.receipts });
+  // Spec 020 R2/R12: un pago en revision no esta atrasado (ya pago; falta validar).
+  const fechaLimitePago = paymentDeadline(row, row.client.diasPlazoSaldo);
+  const saldoVencido = saldo > 0 && situacionPago !== "EN_REVISION" && fechaLimitePago < today;
+  const renovadoPor = renewalLink(row.renovaciones[0]);
+  const porVencer = estado === "ACTIVO" && diasParaVencer <= EXPIRING_SOON_DAYS;
+  const claseSuelta = isDropIn(row);
 
   return {
     id: row.id,
@@ -88,11 +120,11 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
     inicio: dateToDateKey(row.inicio),
     vence,
     estado,
-    porVencer: estado === "ACTIVO" && diasParaVencer <= EXPIRING_SOON_DAYS,
+    porVencer,
     pocasClases: estado === "ACTIVO" && row.clases > 1 && clasesRestantes <= FEW_CLASSES_LEFT,
     diasParaVencer,
     uso: classUsage(row.bookings),
-    claseSuelta: isDropIn(row),
+    claseSuelta,
     // La clase para la que se uso (o se aparto) una clase suelta.
     clase: (() => {
       const booking = row.bookings.find((item) => !item.claseDevuelta);
@@ -110,7 +142,16 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
     notas: row.notas,
     // Spec 021 R12.
     origen: row.origen,
-    situacionPago: row.anuladoAt ? ("PAGADO" as const) : paymentState({ saldo, origen: row.origen, receipts: row.receipts }),
+    situacionPago,
+    // Spec 020 R1/R2.
+    fechaLimitePago,
+    saldoVencido,
+    diasAtrasoSaldo: saldoVencido ? daysBetweenKeys(fechaLimitePago, today) : 0,
+    diasVencido: estado === "VENCIDO" ? daysBetweenKeys(vence, today) : 0,
+    renovadoPor,
+    renovacionDe: renewalLink(row.renovacionDe),
+    // Spec 020 R3: por vencer, vencido o agotado, y sin renovar.
+    puedeRenovar: !claseSuelta && !renovadoPor && (porVencer || estado === "VENCIDO" || estado === "AGOTADO"),
     createdAt: row.createdAt.toISOString(),
     payments: row.payments.map((payment) => ({
       id: payment.id,
@@ -124,6 +165,29 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
 }
 
 export type MemberPackageView = ReturnType<typeof serializeMemberPackage>;
+
+type ExpiryView = Pick<
+  MemberPackageView,
+  "id" | "memberId" | "estado" | "claseSuelta" | "renovadoPor" | "diasVencido" | "vence" | "discipline"
+>;
+
+/**
+ * Spec 020 R7: planes vencidos hace RENEWAL_WINDOW_DAYS dias o menos, sin
+ * renovar, de clientes que no tienen otro plan vigente. Uno por cliente y
+ * disciplina (el mas reciente), del que vencio hace menos al que mas.
+ */
+export function expiredWithoutRenewal<T extends ExpiryView>(views: T[], windowDays = RENEWAL_WINDOW_DAYS): T[] {
+  const withActivePlan = new Set(views.filter((view) => view.estado === "ACTIVO" && !view.claseSuelta).map((view) => view.memberId));
+  const latest = new Map<string, T>();
+  for (const view of views) {
+    if (view.estado !== "VENCIDO" || view.claseSuelta || view.renovadoPor || view.diasVencido > windowDays) continue;
+    if (withActivePlan.has(view.memberId)) continue;
+    const key = `${view.memberId}|${view.discipline.id}`;
+    const current = latest.get(key);
+    if (!current || view.vence > current.vence) latest.set(key, view);
+  }
+  return Array.from(latest.values()).sort((a, b) => a.diasVencido - b.diasVencido);
+}
 
 /** Los paquetes que todavia importan en la operacion: vigentes o con saldo. */
 export function isCurrentPackage(item: MemberPackageView) {
@@ -185,6 +249,10 @@ type SaleInput = {
   /** Spec 021: compra desde la pagina publica, con su enlace "Mi plan". */
   origen?: "PANEL" | "PUBLICO";
   accessToken?: string;
+  /** Spec 020 D2: nula = la regla del plazo del estudio. */
+  fechaLimitePago?: string | null;
+  /** Spec 020 D1: la venta que esta renueva. */
+  renovacionDeId?: string | null;
 };
 
 /**
@@ -201,6 +269,11 @@ export async function sellMemberPackage(tx: ExtendedTransactionClient, input: Sa
 
   const precio = input.precio ?? Number(item.precio);
   if (input.pago && input.pago.monto > precio) throw new ApiError(422, "El pago no puede superar el precio del paquete");
+  if (input.fechaLimitePago && input.fechaLimitePago < input.inicio) {
+    throw new ApiError(422, "La fecha para pagar el saldo no puede ser antes del inicio");
+  }
+  // Si queda pagado, la fecha limite no aplica.
+  const fechaLimitePago = input.pago && input.pago.monto >= precio ? null : input.fechaLimitePago;
 
   const sale = await tx.memberPackage.create({
     data: {
@@ -216,7 +289,9 @@ export async function sellMemberPackage(tx: ExtendedTransactionClient, input: Sa
       vence: dateKeyToDate(addDaysToKey(input.inicio, item.vigenciaDias - 1)),
       notas: input.notas ?? null,
       origen: input.origen ?? "PANEL",
-      accessToken: input.accessToken ?? null
+      accessToken: input.accessToken ?? null,
+      fechaLimitePago: fechaLimitePago ? dateKeyToDate(fechaLimitePago) : null,
+      renovacionDeId: input.renovacionDeId ?? null
     }
   });
 
@@ -233,6 +308,38 @@ export async function sellMemberPackage(tx: ExtendedTransactionClient, input: Sa
   }
 
   return sale;
+}
+
+type RenewInput = Omit<SaleInput, "memberId" | "packageId" | "inicio" | "renovacionDeId"> & { saleId: string; today: string; inicio?: string };
+
+/**
+ * Spec 020 D1/R3: renovar es vender el mismo paquete otra vez, encadenado a la
+ * venta anterior. La fila anterior se bloquea para que dos pedidos a la vez no
+ * creen dos renovaciones.
+ */
+export async function renewMemberPackage(tx: ExtendedTransactionClient, input: RenewInput) {
+  await tx.$executeRaw(Prisma.sql`SELECT 1 FROM "member_packages" WHERE "id" = ${input.saleId} AND "clientId" = ${input.clientId} FOR UPDATE`);
+  const previous = await tx.memberPackage.findFirst({
+    where: { id: input.saleId, clientId: input.clientId },
+    select: {
+      id: true,
+      memberId: true,
+      packageId: true,
+      clases: true,
+      clasesUsadas: true,
+      vence: true,
+      anuladoAt: true,
+      renovaciones: { where: { anuladoAt: null }, select: { id: true }, take: 1 }
+    }
+  });
+  if (!previous) throw new ApiError(404, "Venta no encontrada");
+  if (previous.anuladoAt) throw new ApiError(409, "La venta está anulada");
+  if (isDropIn(previous)) throw new ApiError(422, "Las clases sueltas no se renuevan; vende otra");
+  if (previous.renovaciones.length) throw new ApiError(409, "Este plan ya se renovó");
+
+  const { saleId, today, ...sale } = input;
+  const inicio = input.inicio ?? renewalStart({ estado: memberPackageStatus(previous, today), vence: dateToDateKey(previous.vence) }, today);
+  return sellMemberPackage(tx, { ...sale, memberId: previous.memberId, packageId: previous.packageId, inicio, renovacionDeId: saleId });
 }
 
 /**

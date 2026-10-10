@@ -5,7 +5,9 @@ import {
   cancelledClassMessage,
   classReminderMessage,
   digestBody,
+  expiredPackageMessage,
   expiringPackageMessage,
+  overdueBalanceMessage,
   waitlistSpotMessage,
   whatsappHref
 } from "@/lib/studio-messages";
@@ -99,5 +101,29 @@ describe("cupo de la lista de espera (spec 015 R5)", () => {
     assert.doesNotMatch(text, /por pagar/);
     assert.doesNotMatch(text, /https?:/);
     assert.match(text, /avísanos con 2 h/);
+  });
+});
+
+describe("avisos de vencidos (spec 020 R8)", () => {
+  test("plan vencido sin renovar invita a renovar con la página", () => {
+    const text = expiredPackageMessage({ businessName: "Studio", nombre: "Ida", paquete: "Plus", disciplina: "Jump", vence: "2026-10-30", pageUrl: "https://x/s/studio" });
+    assert.match(text, /Tu plan Plus de Jump venció el viernes, 30 de octubre/);
+    assert.match(text, /renovarlo/);
+    assert.match(text, /https:\/\/x\/s\/studio/);
+  });
+
+  test("saldo vencido con la fecha y los métodos de pago", () => {
+    const text = overdueBalanceMessage({
+      businessName: "Studio",
+      nombre: "Dora",
+      paquete: "Plus",
+      disciplina: "Jump",
+      saldo: 60000,
+      fechaLimite: "2026-10-16",
+      paymentMethods: [{ name: "Nequi", account: "3001234567" }]
+    });
+    assert.match(text, /Tu saldo de \$60\.000 del plan Plus de Jump venció el viernes, 16 de octubre/);
+    assert.match(text, /• Nequi: 3001234567/);
+    assert.equal(text.includes("\n\n"), false);
   });
 });

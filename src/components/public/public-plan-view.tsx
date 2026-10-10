@@ -8,7 +8,7 @@ import { PaymentStep } from "@/components/public/public-payment";
 import { focusRing } from "@/components/public/public-shell";
 import type { PublicPlan } from "@/lib/online-plans";
 import type { OnlinePayment } from "@/lib/online-payments";
-import { bookWithPlanHref, formatCop, myPlanHref } from "@/lib/public-presentation";
+import { bookWithPlanHref, formatCop, myPlanHref, renewPlanHref } from "@/lib/public-presentation";
 import { dateKeyToDate, formatTimeKey } from "@/lib/studio-time";
 import { cn } from "@/lib/web-utils";
 
@@ -118,8 +118,27 @@ export function PublicPlanView({ token, initial }: { token: string; initial: Pub
               <FiCalendar className="size-5" />
               Reservar con este plan
             </Link>
-          ) : plan.motivoNoReserva ? (
+          ) : plan.motivoNoReserva && !plan.renovacion ? (
             <p className="rounded-2xl bg-sand px-4 py-3 text-sm text-ink-600">{plan.motivoNoReserva}</p>
+          ) : null}
+          {/* Spec 020 R13 */}
+          {plan.renovacion?.enlace ? (
+            <Link
+              href={myPlanHref(slug, plan.renovacion.enlace)}
+              className={`mt-3 flex min-h-12 items-center justify-center rounded-full px-6 text-sm font-semibold underline underline-offset-4 ${focusRing}`}
+            >
+              Ya renovaste: ver {plan.renovacion.nombre} (vence {formatDay(plan.renovacion.vence, { day: "numeric", month: "short" })})
+            </Link>
+          ) : plan.puedeRenovar ? (
+            <Link
+              href={renewPlanHref(slug, token)}
+              className={cn(
+                `mt-3 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full px-6 text-base font-semibold ${focusRing}`,
+                plan.puedeReservar ? "bg-white text-ink-950 ring-1 ring-black/[0.12] hover:bg-sand" : "bg-ink-950 text-white hover:bg-ink-800"
+              )}
+            >
+              Renovar plan · {formatCop(plan.precio)}
+            </Link>
           ) : null}
         </div>
       </section>

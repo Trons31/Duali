@@ -1,4 +1,4 @@
-import { FiAlertCircle, FiCalendar, FiCreditCard, FiFileText, FiUserCheck } from "react-icons/fi";
+import { FiAlertCircle, FiAlertTriangle, FiCalendar, FiCreditCard, FiFileText, FiRotateCcw, FiUserCheck } from "react-icons/fi";
 import { ReceiptReviewList } from "@/components/dashboard/receipt-review-list";
 import type { ReceiptView } from "@/lib/receipts";
 import { ReminderList } from "@/components/dashboard/reminder-list";
@@ -8,7 +8,14 @@ import { apiFetch } from "@/lib/server-api";
 import type { ReminderItem } from "@/lib/studio-reminders";
 import { auth } from "@/lib/web-auth";
 
-type Reminders = { manana: ReminderItem[]; porVencer: ReminderItem[]; saldos: ReminderItem[]; listaEspera: ReminderItem[] };
+type Reminders = {
+  manana: ReminderItem[];
+  porVencer: ReminderItem[];
+  saldos: ReminderItem[];
+  listaEspera: ReminderItem[];
+  vencidos: ReminderItem[];
+  saldosVencidos: ReminderItem[];
+};
 
 /** Avisos por WhatsApp para los clientes del estudio (spec 011 R4). */
 export default async function RemindersPage() {
@@ -23,7 +30,10 @@ export default async function RemindersPage() {
   const sections = [
     { title: "Clases de mañana", description: "Recuérdales su cupo", icon: <FiCalendar />, items: reminders.manana, empty: "Nadie tiene clase mañana" },
     { title: "Paquetes por vencer", description: "Vencen en 3 días o les quedan pocas clases", icon: <FiAlertCircle />, items: reminders.porVencer, empty: "Ningún paquete por vencer" },
-    { title: "Saldos pendientes", description: "Con tus métodos de pago", icon: <FiCreditCard />, items: reminders.saldos, empty: "Nadie debe" }
+    // Spec 020 R8.
+    { title: "Planes vencidos sin renovar", description: "Vencieron hace 60 días o menos", icon: <FiRotateCcw />, items: reminders.vencidos, empty: "Nadie con el plan vencido" },
+    { title: "Saldos vencidos", description: "Pasó la fecha para pagar", icon: <FiAlertTriangle />, items: reminders.saldosVencidos, empty: "Ningún saldo vencido" },
+    { title: "Saldos pendientes", description: "Aún en plazo, con tus métodos de pago", icon: <FiCreditCard />, items: reminders.saldos, empty: "Nadie debe" }
   ];
 
   return (

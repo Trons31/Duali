@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/http";
+import { instructorName } from "@/lib/instructors";
 import { prisma } from "@/lib/prisma";
 import type { ExtendedTransactionClient } from "@/lib/prisma-types";
 import {
@@ -41,7 +42,13 @@ export type ClassSessionView = {
   reservadas: number;
   cancelada: boolean;
   motivoCancelacion: string | null;
+  /** Spec 023 D5: quien la dicta (el reemplazo si hay uno). */
   instructor: string | null;
+  instructorId: string | null;
+  reemplazo: boolean;
+  /** El titular del horario y su nombre, para mostrarlo junto al reemplazo. */
+  titularId: string | null;
+  titular: string | null;
   discipline: { id: string; nombre: string; color: string };
 };
 
@@ -59,7 +66,10 @@ export async function listClassSessions(clientId: string, from: string, to: stri
     // historia propia (cancelacion, cupo y, desde la spec 007, reservas).
     prisma.classSession.findMany({
       where: { clientId, fecha: { gte: dateKeyToDate(from), lte: dateKeyToDate(to) } },
-      include: { schedule: { select: { instructor: true, discipline: { select: disciplineSelect } } } }
+      include: {
+        schedule: { select: { instructor: true, instructorId: true, discipline: { select: disciplineSelect } } },
+        reemplazo: { select: { id: true, nombre: true, apellido: true } }
+      }
     })
   ]);
 
@@ -85,6 +95,10 @@ export async function listClassSessions(clientId: string, from: string, to: stri
         cancelada: false,
         motivoCancelacion: null,
         instructor: schedule.instructor,
+        instructorId: schedule.instructorId,
+        reemplazo: false,
+        titularId: schedule.instructorId,
+        titular: schedule.instructor,
         discipline: schedule.discipline
       });
     }
@@ -115,7 +129,11 @@ export async function listClassSessions(clientId: string, from: string, to: stri
       reservadas: bookedBySession.get(session.id) ?? 0,
       cancelada: session.cancelada,
       motivoCancelacion: session.motivoCancelacion,
-      instructor: session.schedule.instructor,
+      instructor: session.reemplazo ? instructorName(session.reemplazo) : session.schedule.instructor,
+      instructorId: session.reemplazo?.id ?? session.schedule.instructorId,
+      reemplazo: Boolean(session.reemplazo),
+      titularId: session.schedule.instructorId,
+      titular: session.schedule.instructor,
       discipline: session.schedule.discipline
     });
   }

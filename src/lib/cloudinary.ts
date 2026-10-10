@@ -17,6 +17,12 @@ import {
 
 // Como Nubi (logoTransform/qrTransform): las imagenes se reducen al subirlas.
 export const IMAGE_TRANSFORMATION = "c_limit,w_2000,h_2000,q_auto";
+/**
+ * La misma reduccion para subir desde el servidor. El SDK toma un texto en
+ * `transformation` como el nombre de una transformacion guardada (t_...), y
+ * Cloudinary responde "Unknown transformation"; por eso va como objeto.
+ */
+export const SERVER_IMAGE_TRANSFORMATION = [{ crop: "limit", width: 2000, height: 2000, quality: "auto" }];
 
 export const ALLOWED_FORMATS: Record<MediaKind, string[]> = {
   IMAGEN: ["jpg", "jpeg", "png", "webp", "heic"],
@@ -114,7 +120,7 @@ export async function uploadImageFromServer(clientId: string, use: MediaUse, dat
     folder,
     resource_type: "image",
     allowed_formats: ALLOWED_FORMATS.IMAGEN,
-    transformation: IMAGE_TRANSFORMATION
+    transformation: SERVER_IMAGE_TRANSFORMATION
   });
   return { url: result.secure_url, publicId: result.public_id };
 }

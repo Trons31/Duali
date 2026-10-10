@@ -45,6 +45,11 @@ export function myPlanHref(slug: string, token: string) {
 }
 
 /** Spec 021 R9: reservar con el plan, sin volver a pedir los datos. */
+/** Spec 020 R13: renovar desde Mi plan (Pago, sin pedir datos). */
+export function renewPlanHref(slug: string, token: string) {
+  return `/s/${slug}/comprar?renueva=${encodeURIComponent(token)}`;
+}
+
 export function bookWithPlanHref(slug: string, token: string) {
   return `/s/${slug}/reservar?mp=${encodeURIComponent(token)}`;
 }

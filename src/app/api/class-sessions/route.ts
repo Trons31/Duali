@@ -2,6 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { cancelSessionBookings, countActiveBookings, lockSession } from "@/lib/bookings";
 import { ensureClassSession, listClassSessions } from "@/lib/class-sessions";
 import { ApiError, handleError, ok, readBody } from "@/lib/http";
+import { assertAssignableInstructor } from "@/lib/instructors";
 import { prisma } from "@/lib/prisma";
 import { daysBetweenKeys } from "@/lib/studio-time";
 import { classSessionUpdateSchema, classSessionsQuerySchema } from "@/lib/validations";
@@ -31,9 +32,10 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { clientId } = await requireClient(request);
-    const { scheduleId, fecha, cupo, cancelada, motivoCancelacion } = classSessionUpdateSchema.parse(
+    const { scheduleId, fecha, cupo, cancelada, motivoCancelacion, instructorId } = classSessionUpdateSchema.parse(
       await readBody(request)
     );
+    if (instructorId) await assertAssignableInstructor(clientId, instructorId);
 
     const session = await prisma.$transaction(async (tx) => {
       const current = await ensureClassSession(clientId, scheduleId, fecha, tx);
@@ -46,9 +48,12 @@ export async function PUT(request: Request) {
       // Spec 007 R4: cancelar la clase cancela sus reservas y devuelve la clase a todas.
       if (cancelada === true && !current.cancelada) await cancelSessionBookings(tx, current.id);
 
+      // Spec 023 D5: el reemplazo; elegir al titular es lo mismo que no tener reemplazo.
+      const titular = instructorId !== undefined ? (await tx.classSchedule.findUniqueOrThrow({ where: { id: scheduleId }, select: { instructorId: true } })).instructorId : null;
       return tx.classSession.update({
         where: { id: current.id },
         data: {
+          ...(instructorId !== undefined ? { instructorId: instructorId && instructorId !== titular ? instructorId : null } : {}),
           ...(cupo !== undefined ? { cupo } : {}),
           ...(cancelada !== undefined
             ? { cancelada, motivoCancelacion: cancelada ? (motivoCancelacion ?? null) : null }

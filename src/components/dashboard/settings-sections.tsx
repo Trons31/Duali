@@ -272,7 +272,7 @@ function InfoSection({ profile }: { profile: SafeClient }) {
   );
 }
 
-type BookingPolicyValues = { horasCancelacion: string; inasistencia: "pierde" | "devuelve" };
+type BookingPolicyValues = { horasCancelacion: string; inasistencia: "pierde" | "devuelve"; diasPlazoSaldo: string };
 
 /** Spec 007 R7: plazo para cancelar y recuperar la clase. Spec 019 R11: que pasa si no asiste. */
 function BookingPolicySection({ profile }: { profile: SafeClient }) {
@@ -286,25 +286,35 @@ function BookingPolicySection({ profile }: { profile: SafeClient }) {
   } = useForm<BookingPolicyValues>({
     defaultValues: {
       horasCancelacion: String(profile.horasCancelacion ?? 2),
-      inasistencia: profile.devolverClaseInasistencia ? "devuelve" : "pierde"
+      inasistencia: profile.devolverClaseInasistencia ? "devuelve" : "pierde",
+      diasPlazoSaldo: String(profile.diasPlazoSaldo ?? 7)
     }
   });
   const horas = Number(watch("horasCancelacion") || 0);
+  const plazo = Number(watch("diasPlazoSaldo") || 0);
   const inasistencia = watch("inasistencia");
 
   async function onSubmit(values: BookingPolicyValues) {
     const updated = await save(
-      { horasCancelacion: Number(values.horasCancelacion), devolverClaseInasistencia: values.inasistencia === "devuelve" },
+      {
+        horasCancelacion: Number(values.horasCancelacion),
+        devolverClaseInasistencia: values.inasistencia === "devuelve",
+        diasPlazoSaldo: Number(values.diasPlazoSaldo)
+      },
       "Política de reservas guardada"
     );
     if (updated) {
-      reset({ horasCancelacion: String(updated.horasCancelacion), inasistencia: updated.devolverClaseInasistencia ? "devuelve" : "pierde" });
+      reset({
+        horasCancelacion: String(updated.horasCancelacion),
+        inasistencia: updated.devolverClaseInasistencia ? "devuelve" : "pierde",
+        diasPlazoSaldo: String(updated.diasPlazoSaldo)
+      });
     }
   }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      <SectionCard icon={<FiCalendar />} title="Reservas" description="Cuándo se devuelve la clase si cancelan o no asisten">
+      <SectionCard icon={<FiCalendar />} title="Reservas" description="Cuándo se devuelve la clase si cancelan o no asisten, y el plazo para pagar el saldo">
         <div className="max-w-xs">
           <label className={labelClass} htmlFor="horasCancelacion">
             Horas de anticipación para cancelar
@@ -356,6 +366,31 @@ function BookingPolicySection({ profile }: { profile: SafeClient }) {
             ))}
           </div>
         </fieldset>
+        {/* Spec 020 R11 */}
+        <div className="max-w-xs">
+          <label className={labelClass} htmlFor="diasPlazoSaldo">
+            Plazo para pagar el saldo (días)
+          </label>
+          <input
+            id="diasPlazoSaldo"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={90}
+            className={inputClass}
+            {...register("diasPlazoSaldo", {
+              required: "Requerido",
+              min: { value: 0, message: "Mínimo 0" },
+              max: { value: 90, message: "Máximo 90 días" }
+            })}
+          />
+          {errors.diasPlazoSaldo ? <p className="mt-1 text-xs font-medium text-rose-600">{errors.diasPlazoSaldo.message}</p> : null}
+        </div>
+        <p className="rounded-xl border border-ink-200 bg-ink-50/60 p-3 text-xs leading-relaxed text-ink-600">
+          {plazo === 0
+            ? "Quien queda debiendo debe pagar el mismo día que empieza su plan."
+            : `Quien queda debiendo tiene ${plazo} día${plazo === 1 ? "" : "s"} desde que empieza su plan. Después, el saldo sale como vencido. Al vender puedes cambiar la fecha.`}
+        </p>
         <SaveButton loading={isSubmitting} label="Guardar política" />
       </SectionCard>
     </form>

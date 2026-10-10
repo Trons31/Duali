@@ -1,12 +1,14 @@
 import type { StudioMessageType } from "@prisma/client";
-import { memberPackageInclude, serializeMemberPackage } from "@/lib/member-packages";
+import { expiredWithoutRenewal, memberPackageInclude, serializeMemberPackage } from "@/lib/member-packages";
 import { prisma } from "@/lib/prisma";
 import {
   balanceMessage,
   cancelledClassMessage,
   classReminderMessage,
+  expiredPackageMessage,
   expiringPackageMessage,
   formatDayMonth,
+  overdueBalanceMessage,
   waitlistSpotMessage,
   whatsappHref
 } from "@/lib/studio-messages";
@@ -23,6 +25,8 @@ export type ReminderItem = {
   mensaje: string;
   href: string;
   enviadoAt: string | null;
+  /** Spec 020 R9: la venta del aviso, para el boton de la ficha. */
+  saleId?: string;
 };
 
 type Studio = {
@@ -54,12 +58,18 @@ async function sentMap(clientId: string, keys: Array<{ tipo: StudioMessageType; 
   return new Map(rows.map((row) => [`${row.tipo}|${row.refKey}`, row.sentAt]));
 }
 
+const dias = (count: number) => (count === 1 ? "1 día" : `${count} días`);
+
 function withSent(items: Omit<ReminderItem, "enviadoAt">[], sent: Map<string, Date>): ReminderItem[] {
   return items.map((item) => ({ ...item, enviadoAt: sent.get(`${item.tipo}|${item.refKey}`)?.toISOString() ?? null }));
 }
 
-/** Spec 011 R4: reservas de manana, paquetes por vencer y saldos pendientes. */
-export async function getStudioReminders(clientId: string, options: { baseUrl?: string; instant?: Date } = {}) {
+/**
+ * Spec 011 R4: reservas de manana, paquetes por vencer y saldos pendientes.
+ * Spec 020 R8: planes vencidos sin renovar y saldos vencidos. Con `memberId`,
+ * solo los de ese cliente (R9, la ficha).
+ */
+export async function getStudioReminders(clientId: string, options: { baseUrl?: string; instant?: Date; memberId?: string } = {}) {
   const today = studioNow(options.instant).dateKey;
   const tomorrow = addDaysToKey(today, 1);
   const studio = await prisma.client.findUniqueOrThrow({
@@ -67,11 +77,13 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
     select: { businessName: true, slug: true, paginaPublicaActiva: true, paymentMethodItems: true, horasCancelacion: true }
   });
   const url = pageUrl(studio, options.baseUrl);
+  const memberFilter = options.memberId ? { memberId: options.memberId } : {};
 
   const [bookings, sales, spots] = await Promise.all([
     prisma.booking.findMany({
       where: {
         clientId,
+        ...memberFilter,
         estado: "RESERVADA",
         member: { deletedAt: null },
         session: { fecha: dateKeyToDate(tomorrow), cancelada: false }
@@ -84,7 +96,7 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
       orderBy: [{ session: { horaInicio: "asc" } }]
     }),
     prisma.memberPackage.findMany({
-      where: { clientId, anuladoAt: null, member: { deletedAt: null } },
+      where: { clientId, ...memberFilter, anuladoAt: null, member: { deletedAt: null } },
       include: { ...memberPackageInclude, member: { select: { id: true, nombre: true, apellido: true, celular: true } } },
       orderBy: [{ vence: "asc" }]
     }),
@@ -92,6 +104,7 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
     prisma.waitlistEntry.findMany({
       where: {
         clientId,
+        ...memberFilter,
         estado: "ASIGNADA",
         member: { deletedAt: null },
         session: { fecha: { gte: dateKeyToDate(today) }, cancelada: false }
@@ -138,7 +151,7 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
 
   // El refKey lleva el vencimiento y las clases: si extiende o reserva, vuelve a aparecer como pendiente.
   const porVencer = views
-    .filter(({ view }) => view.porVencer || view.pocasClases)
+    .filter(({ view }) => (view.porVencer || view.pocasClases) && !view.renovadoPor)
     .map(({ sale, view }) => {
       const mensaje = expiringPackageMessage({
         businessName: studio.businessName,
@@ -152,6 +165,7 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
       return {
         tipo: "PAQUETE_POR_VENCER" as const,
         refKey: `${sale.id}:${view.vence}:${view.clasesRestantes}`,
+        saleId: sale.id,
         member: sale.member,
         detalle: `${view.nombre} ${view.discipline.nombre} · ${view.clasesRestantes} clase${view.clasesRestantes === 1 ? "" : "s"} · vence ${formatDayMonth(view.vence)}`,
         mensaje,
@@ -159,8 +173,9 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
       };
     });
 
+  // Spec 020 R12: un pago en revision no se cobra; uno vencido va en su propia seccion.
   const saldos = views
-    .filter(({ view }) => view.saldo > 0)
+    .filter(({ view }) => view.saldo > 0 && !view.saldoVencido && view.situacionPago !== "EN_REVISION")
     .map(({ sale, view }) => {
       const mensaje = balanceMessage({
         businessName: studio.businessName,
@@ -173,12 +188,60 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
       return {
         tipo: "SALDO" as const,
         refKey: `${sale.id}:${view.saldo}`,
+        saleId: sale.id,
         member: sale.member,
-        detalle: `${view.nombre} ${view.discipline.nombre} · debe $${view.saldo.toLocaleString("es-CO")}`,
+        detalle: `${view.nombre} ${view.discipline.nombre} · debe $${view.saldo.toLocaleString("es-CO")} · antes del ${formatDayMonth(view.fechaLimitePago)}`,
         mensaje,
         href: whatsappHref(sale.member.celular, mensaje)
       };
     });
+
+  // Spec 020 R8. Usan los tipos de spec 011 con su propia clave (...:vencido).
+  const saldosVencidos = views
+    .filter(({ view }) => view.saldoVencido)
+    .sort((a, b) => b.view.diasAtrasoSaldo - a.view.diasAtrasoSaldo)
+    .map(({ sale, view }) => {
+      const mensaje = overdueBalanceMessage({
+        businessName: studio.businessName,
+        nombre: sale.member.nombre,
+        paquete: view.nombre,
+        disciplina: view.discipline.nombre,
+        saldo: view.saldo,
+        fechaLimite: view.fechaLimitePago,
+        paymentMethods: paymentMethods(studio)
+      });
+      return {
+        tipo: "SALDO" as const,
+        refKey: `${sale.id}:${view.saldo}:vencido`,
+        saleId: sale.id,
+        member: sale.member,
+        detalle: `${view.nombre} ${view.discipline.nombre} · $${view.saldo.toLocaleString("es-CO")} · vencido hace ${dias(view.diasAtrasoSaldo)}`,
+        mensaje,
+        href: whatsappHref(sale.member.celular, mensaje)
+      };
+    });
+
+  const salesById = new Map(sales.map((sale) => [sale.id, sale]));
+  const vencidos = expiredWithoutRenewal(views.map(({ view }) => view)).map((view) => {
+    const sale = salesById.get(view.id)!;
+    const mensaje = expiredPackageMessage({
+      businessName: studio.businessName,
+      nombre: sale.member.nombre,
+      paquete: view.nombre,
+      disciplina: view.discipline.nombre,
+      vence: view.vence,
+      pageUrl: url
+    });
+    return {
+      tipo: "PAQUETE_POR_VENCER" as const,
+      refKey: `${sale.id}:vencido`,
+      saleId: sale.id,
+      member: sale.member,
+      detalle: `${view.nombre} ${view.discipline.nombre} · venció hace ${dias(view.diasVencido)}`,
+      mensaje,
+      href: whatsappHref(sale.member.celular, mensaje)
+    };
+  });
 
   const listaEspera = spotBookings.map((booking) => {
     const fecha = dateToDateKey(booking.session.fecha);
@@ -204,12 +267,14 @@ export async function getStudioReminders(clientId: string, options: { baseUrl?: 
     };
   });
 
-  const sent = await sentMap(clientId, [...manana, ...porVencer, ...saldos, ...listaEspera]);
+  const sent = await sentMap(clientId, [...manana, ...porVencer, ...saldos, ...listaEspera, ...vencidos, ...saldosVencidos]);
   return {
     manana: withSent(manana, sent),
     porVencer: withSent(porVencer, sent),
     saldos: withSent(saldos, sent),
-    listaEspera: withSent(listaEspera, sent)
+    listaEspera: withSent(listaEspera, sent),
+    vencidos: withSent(vencidos, sent),
+    saldosVencidos: withSent(saldosVencidos, sent)
   };
 }
 

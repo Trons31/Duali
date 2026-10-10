@@ -116,6 +116,49 @@ enum PaymentReceiptStatus {
   RECHAZADO
 }
 
+// Spec 023 D1: la parte variable de la forma de pago de un instructor.
+enum InstructorVariable {
+  POR_CLASE
+  ALUMNO_FIJO
+  ALUMNO_PORCENTAJE
+}
+
+// Spec 023 D6: calendario de los ciclos de pago de instructores.
+enum PayFrequency {
+  DIARIO
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+}
+
+enum InstructorCycleType {
+  COMISION
+  SUELDO
+}
+
+enum InstructorCycleStatus {
+  ABIERTO
+  CERRADO
+}
+
+enum InstructorCycleSettlement {
+  SIN_PAGAR
+  PARCIAL
+  PAGADO
+}
+
+// Spec 023 D2: el porcentaje sale del precio vendido o solo de lo cobrado.
+enum InstructorPercentBase {
+  VENDIDO
+  COBRADO
+}
+
+// Spec 024 D2: quien mas entra al sistema del negocio.
+enum CollaboratorRole {
+  ADMIN
+  SOCIO
+}
+
 enum SubscriptionStatus {
   ACTIVA
   PENDIENTE
@@ -143,6 +186,8 @@ model Client {
   // Spec 021 D2/D3: pagos en linea.
   permitirPagoEnEstudio     Boolean   @default(false)
   exigirPagoValidado        Boolean   @default(false)
+  // Spec 020 D2: dias para pagar el saldo de una venta.
+  diasPlazoSaldo            Int       @default(7)
   // Spec 008: direccion publica /s/{slug}; nadie queda publicado sin activarlo.
   slug                      String?   @unique
   paginaPublicaActiva       Boolean   @default(false)
@@ -171,6 +216,11 @@ model Client {
   disciplines            Discipline[]
   packages               Package[]
   classSchedules         ClassSchedule[]
+  instructors            Instructor[]
+  instructorPaySettings  InstructorPaymentSettings?
+  instructorCycles       InstructorCycle[]
+  instructorPayments     InstructorPayment[]
+  collaborators          Collaborator[]
   classSessions          ClassSession[]
   studioMembers          StudioMember[]
   memberPackages         MemberPackage[]
@@ -635,12 +685,13 @@ model Discipline {
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
 
-  client         Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client         Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
   // Si es COMBO: las clases que incluye. Si es CLASE: los combos en los que esta.
-  comboItems     DisciplineComboItem[] @relation("ComboItems")
-  inCombos       DisciplineComboItem[] @relation("ComboMember")
+  comboItems     DisciplineComboItem[]  @relation("ComboItems")
+  inCombos       DisciplineComboItem[]  @relation("ComboMember")
   packages       Package[]
   schedules      ClassSchedule[]
+  instructors    InstructorDiscipline[]
   memberPackages MemberPackage[]
   contentPosts   ContentPost[]
 
@@ -699,6 +750,9 @@ model ClassSchedule {
   duracionMin  Int
   cupo         Int
   instructor   String?
+  // Spec 023 D5: instructor titular. `instructor` (texto) se conserva y se
+  // sincroniza con su nombre para lo viejo y la pagina publica.
+  instructorId String?
   activo       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -707,9 +761,11 @@ model ClassSchedule {
   client     Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   discipline Discipline     @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
   sessions   ClassSession[]
+  titular    Instructor?    @relation("InstructorTitular", fields: [instructorId], references: [id], onDelete: SetNull)
 
   @@index([clientId, deletedAt])
   @@index([disciplineId])
+  @@index([instructorId])
   @@map("class_schedules")
 }
 
@@ -724,6 +780,8 @@ model ClassSession {
   cupo              Int
   cancelada         Boolean  @default(false)
   motivoCancelacion String?
+  // Spec 023 D5: reemplazo de esta fecha; nulo = el titular del horario.
+  instructorId      String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -731,9 +789,11 @@ model ClassSession {
   schedule        ClassSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
   bookings        Booking[]
   waitlistEntries WaitlistEntry[]
+  reemplazo       Instructor?     @relation("InstructorReemplazo", fields: [instructorId], references: [id], onDelete: SetNull)
 
   @@unique([scheduleId, fecha])
   @@index([clientId, fecha])
+  @@index([instructorId])
   @@map("class_sessions")
 }
 
@@ -787,18 +847,25 @@ model MemberPackage {
   // Spec 021: compra desde la pagina publica y enlace privado "Mi plan".
   origen          BookingOrigin @default(PANEL)
   accessToken     String?       @unique
+  // Spec 020 D2: "paga el resto antes del..."; nula = inicio + clients.diasPlazoSaldo.
+  fechaLimitePago DateTime?     @db.Date
+  // Spec 020 D1: la venta que esta renueva.
+  renovacionDeId  String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  client     Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  member     StudioMember           @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  package    Package                @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  discipline Discipline             @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
-  payments   MemberPackagePayment[]
-  bookings   Booking[]
-  receipts   PaymentReceipt[]
+  client       Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  member       StudioMember           @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  package      Package                @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  discipline   Discipline             @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  payments     MemberPackagePayment[]
+  bookings     Booking[]
+  receipts     PaymentReceipt[]
+  renovacionDe MemberPackage?         @relation("Renovaciones", fields: [renovacionDeId], references: [id], onDelete: SetNull)
+  renovaciones MemberPackage[]        @relation("Renovaciones")
 
   @@index([clientId, vence])
+  @@index([renovacionDeId])
   @@index([memberId])
   @@index([packageId])
   @@map("member_packages")
@@ -956,4 +1023,241 @@ model WaitlistEntry {
   @@index([clientId, estado])
   @@index([sessionId, estado, createdAt])
   @@map("waitlist_entries")
+}
+
+// ─── Modo Estudio: instructores (spec 023) ───────────────────────────────────
+
+// Forma de pago (D1): sueldo fijo = solo `sueldo`; variable = solo `variable`;
+// sueldo + variable = ambos. `valor` es pesos o, con ALUMNO_PORCENTAJE, un %.
+model Instructor {
+  id             String              @id @default(cuid())
+  clientId       String
+  nombre         String
+  apellido       String?
+  celular        String?
+  email          String?
+  color          String              @default("#0ea5e9")
+  activo         Boolean             @default(true)
+  notas          String?
+  sueldo         Decimal?            @db.Decimal(12, 2)
+  variable       InstructorVariable?
+  valor          Decimal?            @db.Decimal(12, 2)
+  minimoPorClase Decimal?            @db.Decimal(12, 2)
+  alumnosMinimos Int                 @default(1)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+
+  client      Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  disciplines InstructorDiscipline[]
+  schedules   ClassSchedule[]        @relation("InstructorTitular")
+  reemplazos  ClassSession[]         @relation("InstructorReemplazo")
+  cycles      InstructorCycle[]
+  payments    InstructorPayment[]
+
+  @@index([clientId, deletedAt])
+  @@map("instructors")
+}
+
+// D4: disciplinas que da; `valor` reemplaza el general en esa disciplina.
+model InstructorDiscipline {
+  instructorId String
+  disciplineId String
+  valor        Decimal? @db.Decimal(12, 2)
+
+  instructor Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  discipline Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([instructorId, disciplineId])
+  @@index([disciplineId])
+  @@map("instructor_disciplines")
+}
+
+// D6, D3 y D2: un registro por estudio. Sin el, Pagos solo invita a configurarlo.
+// `diaPago`: semanal 1 (lunes) a 7 (domingo); quincenal y mensual 1 a 28.
+model InstructorPaymentSettings {
+  clientId             String                @id
+  frecuencia           PayFrequency          @default(SEMANAL)
+  diaPago              Int                   @default(7)
+  frecuenciaSueldo     PayFrequency          @default(MENSUAL)
+  diaPagoSueldo        Int                   @default(15)
+  diaPagoAbreSiguiente Boolean               @default(false)
+  inasistenciasCuentan Boolean               @default(false)
+  pagarClasesVacias    Boolean               @default(false)
+  basePorcentaje       InstructorPercentBase @default(VENDIDO)
+  // Primer dia con ciclos: no se genera deuda de antes.
+  activadoEl           DateTime              @db.Date
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("instructor_payment_settings")
+}
+
+// D7: un ciclo por instructor y calendario, con la forma de pago congelada.
+// Mientras `pagado` sea 0 se recalcula al consultar; con el primer pago queda fijo.
+model InstructorCycle {
+  id                        String                    @id @default(cuid())
+  clientId                  String
+  instructorId              String
+  tipo                      InstructorCycleType
+  inicio                    DateTime                  @db.Date
+  fin                       DateTime                  @db.Date
+  venceEl                   DateTime                  @db.Date
+  estado                    InstructorCycleStatus     @default(ABIERTO)
+  situacion                 InstructorCycleSettlement @default(SIN_PAGAR)
+  sueldoSnapshot            Decimal?                  @db.Decimal(12, 2)
+  variableSnapshot          InstructorVariable?
+  valorSnapshot             Decimal?                  @db.Decimal(12, 2)
+  minimoSnapshot            Decimal?                  @db.Decimal(12, 2)
+  alumnosMinimosSnapshot    Int                       @default(1)
+  valoresDisciplinaSnapshot Json?
+  clases                    Int                       @default(0)
+  alumnos                   Int                       @default(0)
+  sinMarcar                 Int                       @default(0)
+  generado                  Decimal                   @default(0) @db.Decimal(12, 2)
+  cobradoDespues            Decimal                   @default(0) @db.Decimal(12, 2)
+  sueldo                    Decimal                   @default(0) @db.Decimal(12, 2)
+  ajustes                   Decimal                   @default(0) @db.Decimal(12, 2)
+  adelantos                 Decimal                   @default(0) @db.Decimal(12, 2)
+  neto                      Decimal                   @default(0) @db.Decimal(12, 2)
+  pagado                    Decimal                   @default(0) @db.Decimal(12, 2)
+  pendiente                 Decimal                   @default(0) @db.Decimal(12, 2)
+  calculadoAt               DateTime                  @default(now())
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+
+  client       Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  instructor   Instructor                     @relation(fields: [instructorId], references: [id], onDelete: Restrict)
+  classes      InstructorCycleClass[]
+  collections  InstructorCycleCollection[]
+  applications InstructorPaymentApplication[]
+
+  @@unique([instructorId, tipo, inicio, fin])
+  @@index([clientId, tipo, fin])
+  @@map("instructor_cycles")
+}
+
+// D7: una fila por clase dictada con lo que se uso para calcularla. Una clase
+// (horario + fecha) se paga una sola vez.
+model InstructorCycleClass {
+  id               String             @id @default(cuid())
+  cycleId          String
+  scheduleId       String
+  fecha            DateTime           @db.Date
+  sessionId        String?
+  horaInicio       String
+  disciplineId     String
+  disciplina       String
+  alumnos          Int
+  inasistencias    Int                @default(0)
+  sinMarcar        Int                @default(0)
+  valorClases      Decimal            @default(0) @db.Decimal(12, 2)
+  variableAplicada InstructorVariable
+  valorAplicado    Decimal            @db.Decimal(12, 2)
+  regla            String
+  ganado           Decimal            @db.Decimal(12, 2)
+
+  cycle InstructorCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, fecha])
+  @@index([cycleId])
+  @@map("instructor_cycle_classes")
+}
+
+// D2 (solo lo cobrado): lo acreditado de cada asistencia en cada ciclo, para
+// sumar "Cobrado despues" cuando la clienta paga el resto, sin pagar dos veces.
+model InstructorCycleCollection {
+  id         String  @id @default(cuid())
+  cycleId    String
+  bookingId  String
+  valor      Decimal @db.Decimal(12, 2)
+  acreditado Decimal @db.Decimal(12, 2)
+  // true = es lo cobrado despues de una clase de un ciclo ya pagado.
+  tardio     Boolean @default(false)
+
+  cycle InstructorCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, cycleId])
+  @@index([bookingId])
+  @@map("instructor_cycle_collections")
+}
+
+// D8: un pago a un instructor en un calendario (comisiones o sueldos). Puede ser
+// parcial, repartirse entre varios ciclos y registrarse en dos formas a la vez.
+// Crea su egreso (`expenseId`); anularlo deshace las aplicaciones y el egreso.
+model InstructorPayment {
+  id              String              @id @default(cuid())
+  clientId        String
+  instructorId    String
+  tipo            InstructorCycleType
+  monto           Decimal             @db.Decimal(12, 2)
+  fecha           DateTime
+  nota            String?
+  expenseId       String?
+  anuladoAt       DateTime?
+  motivoAnulacion String?
+  createdAt       DateTime            @default(now())
+
+  client       Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  instructor   Instructor                     @relation(fields: [instructorId], references: [id], onDelete: Restrict)
+  methods      InstructorPaymentMethod[]
+  applications InstructorPaymentApplication[]
+
+  @@index([clientId, fecha])
+  @@index([instructorId])
+  @@map("instructor_payments")
+}
+
+// D8: pago en dos formas (como BarberPaymentAllocation de CliqCut).
+model InstructorPaymentMethod {
+  id        String  @id @default(cuid())
+  paymentId String
+  metodo    String
+  monto     Decimal @db.Decimal(12, 2)
+
+  payment InstructorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@map("instructor_payment_methods")
+}
+
+// D8: cuanto de un pago fue a cada ciclo (saldo anterior primero).
+model InstructorPaymentApplication {
+  id        String  @id @default(cuid())
+  paymentId String
+  cycleId   String
+  monto     Decimal @db.Decimal(12, 2)
+
+  payment InstructorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  cycle   InstructorCycle   @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId])
+  @@index([cycleId])
+  @@map("instructor_payment_applications")
+}
+
+// ─── Colaboradores con acceso al sistema (spec 024) ──────────────────────────
+
+// Administradores (con los permisos que marque la dueña) y socios (todo menos
+// el plan y el equipo). Entran con su correo y trabajan sobre el negocio.
+model Collaborator {
+  id           String           @id @default(cuid())
+  clientId     String
+  nombre       String
+  email        String           @unique
+  celular      String?
+  passwordHash String
+  rol          CollaboratorRole @default(ADMIN)
+  permisos     Json             @default("{}")
+  activo       Boolean          @default(true)
+  ultimoAcceso DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, activo])
+  @@map("collaborators")
 }

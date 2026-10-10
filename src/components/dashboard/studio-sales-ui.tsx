@@ -25,23 +25,30 @@ export function whatsappLink(celular: string) {
   return `https://wa.me/${celular.length === 10 ? `57${celular}` : celular}`;
 }
 
+export function daysLabel(days: number) {
+  return days === 1 ? "1 día" : `${days} días`;
+}
+
+/** Spec 020 R1: la vigencia con dias (vence en, vencio hace, renovado). */
 export function PackageStatusBadge({ item }: { item: MemberPackageItem }) {
   if (item.claseSuelta) return <DropInStatusBadge item={item} />;
   const { label, className } =
     item.estado === "ANULADO"
       ? { label: "Anulado", className: "bg-ink-100 text-ink-500" }
-      : item.estado === "VENCIDO"
-        ? { label: "Vencido", className: "bg-rose-50 text-rose-700" }
-        : item.estado === "AGOTADO"
-          ? { label: "Sin clases", className: "bg-ink-100 text-ink-600" }
-          : item.porVencer
-            ? {
-                label: item.diasParaVencer <= 0 ? "Vence hoy" : `Vence en ${item.diasParaVencer} d`,
-                className: "bg-amber-50 text-amber-700"
-              }
-            : item.pocasClases
-              ? { label: `Quedan ${item.clasesRestantes}`, className: "bg-amber-50 text-amber-700" }
-              : { label: "Vigente", className: "bg-brand-50 text-brand-700" };
+      : item.renovadoPor
+        ? { label: "Renovado", className: "bg-ink-100 text-ink-600" }
+        : item.estado === "VENCIDO"
+          ? { label: `Venció hace ${daysLabel(item.diasVencido)}`, className: "bg-rose-50 text-rose-700" }
+          : item.estado === "AGOTADO"
+            ? { label: `Usó sus ${item.clases} clases`, className: "bg-ink-100 text-ink-600" }
+            : item.porVencer
+              ? {
+                  label: item.diasParaVencer <= 0 ? "Vence hoy" : item.diasParaVencer === 1 ? "Vence mañana" : `Vence en ${daysLabel(item.diasParaVencer)}`,
+                  className: "bg-amber-50 text-amber-700"
+                }
+              : item.pocasClases
+                ? { label: `Quedan ${item.clasesRestantes}`, className: "bg-amber-50 text-amber-700" }
+                : { label: "Vigente", className: "bg-brand-50 text-brand-700" };
 
   return <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", className)}>{label}</span>;
 }
@@ -51,9 +58,41 @@ export function PaymentStatusBadge({ item }: { item: MemberPackageItem }) {
   if (item.saldo <= 0) return <span className="text-[11px] font-semibold text-brand-600">Pagado</span>;
   // Spec 021: lo que falta por hacer con el pago de una compra en linea.
   if (item.situacionPago === "EN_REVISION") return <span className="text-[11px] font-semibold text-amber-700">Pago en revisión · {currency(item.saldo)}</span>;
+  // Spec 020 R2: el saldo con su fecha limite.
+  if (item.saldoVencido) {
+    return (
+      <span className="text-[11px] font-semibold text-rose-600">
+        Saldo vencido hace {daysLabel(item.diasAtrasoSaldo)} · {currency(item.saldo)}
+      </span>
+    );
+  }
   if (item.situacionPago === "RECHAZADO") return <span className="text-[11px] font-semibold text-rose-600">Comprobante rechazado · debe {currency(item.saldo)}</span>;
   if (item.situacionPago === "PAGO_EN_ESTUDIO") return <span className="text-[11px] font-semibold text-rose-600">Paga en el estudio {currency(item.saldo)}</span>;
-  return <span className="text-[11px] font-semibold text-rose-600">Debe {currency(item.saldo)}</span>;
+  return (
+    <span className="text-[11px] font-semibold text-rose-600">
+      Debe {currency(item.saldo)} <span className="font-normal text-ink-500">· paga antes del {formatDateKeyShort(item.fechaLimitePago)}</span>
+    </span>
+  );
+}
+
+/** Spec 020 R4: de donde viene una renovacion y en que sigue un plan renovado. */
+export function RenewalNote({ item }: { item: Pick<MemberPackageItem, "renovadoPor" | "renovacionDe" | "estado"> }) {
+  if (item.estado === "ANULADO") return null;
+  if (item.renovadoPor) {
+    return (
+      <p className="text-[11px] text-ink-500">
+        Renovado · sigue {item.renovadoPor.nombre} hasta {formatDateKeyShort(item.renovadoPor.vence)}
+      </p>
+    );
+  }
+  if (item.renovacionDe) {
+    return (
+      <p className="text-[11px] text-ink-500">
+        Renovación de {item.renovacionDe.nombre} ({formatDateKeyShort(item.renovacionDe.inicio)} – {formatDateKeyShort(item.renovacionDe.vence)})
+      </p>
+    );
+  }
+  return null;
 }
 
 /** Spec 021 R12: venta hecha desde la pagina publica. */
@@ -311,6 +350,7 @@ export function SellPackageModal({
   today,
   disciplines,
   packages,
+  diasPlazoSaldo = 7,
   onClose
 }: {
   memberLabel: string;
@@ -318,6 +358,7 @@ export function SellPackageModal({
   today: string;
   disciplines: DisciplineItem[];
   packages: PackageItem[];
+  diasPlazoSaldo?: number;
   onClose: () => void;
 }) {
   const request = useStudioRequest();
@@ -349,6 +390,9 @@ export function SellPackageModal({
   const precio = Number(watch("precio") || 0);
   const monto = Number(watch("monto") || 0);
   const [error, setError] = useState<string | null>(null);
+  const [fechaLimite, setFechaLimite] = useState("");
+  const inicio = watch("inicio") || today;
+  const debe = !pagarAhora || monto < precio;
 
   function pickPackage(item: PackageItem) {
     const price = String(Math.round(Number(item.precio)));
@@ -360,6 +404,7 @@ export function SellPackageModal({
   const onSubmit = handleSubmit(async (values) => {
     if (!selected) return setError("Elige un paquete");
     if (values.pagarAhora && (monto <= 0 || monto > precio)) return setError("El pago debe ser mayor a 0 y no superar el precio");
+    if (debe && fechaLimite && fechaLimite < values.inicio) return setError("La fecha para pagar el resto no puede ser antes del inicio");
     setError(null);
 
     const saved = await request(
@@ -371,7 +416,9 @@ export function SellPackageModal({
           packageId: selected.id,
           inicio: values.inicio,
           precio,
-          ...(values.pagarAhora ? { pago: { monto, metodoPago: values.metodoPago } } : {})
+          ...(values.pagarAhora ? { pago: { monto, metodoPago: values.metodoPago } } : {}),
+          // Spec 020 D2: sin tocarla, aplica el plazo de Ajustes.
+          ...(debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
         })
       },
       "Paquete vendido"
@@ -504,6 +551,13 @@ export function SellPackageModal({
                 ) : (
                   <p className="text-[11px] text-ink-500">Quedará debiendo {currency(precio)}.</p>
                 )}
+                {debe && precio > 0 ? (
+                  <BalanceDeadlineField
+                    value={fechaLimite || addDaysToKey(inicio, diasPlazoSaldo)}
+                    min={inicio}
+                    onChange={setFechaLimite}
+                  />
+                ) : null}
               </div>
             </>
           ) : null}
@@ -519,6 +573,163 @@ export function SellPackageModal({
             </Button>
           </div>
         </form>
+      )}
+    </Modal>
+  );
+}
+
+/** Spec 020 D2: "Paga el resto antes del...". */
+function BalanceDeadlineField({ value, min, onChange }: { value: string; min: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <label className={labelClass} htmlFor="sale-fecha-limite">
+        Paga el resto antes del
+      </label>
+      <input
+        id="sale-fecha-limite"
+        type="date"
+        min={min}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
+/**
+ * Spec 020 D1/R3: renovar es vender el mismo paquete otra vez. Un plan vigente
+ * sigue el dia despues de vencer; uno vencido o agotado empieza hoy (la misma
+ * regla de renewalStart en el servidor).
+ */
+export function RenewPackageModal({
+  sale,
+  memberLabel,
+  today,
+  packages,
+  diasPlazoSaldo = 7,
+  onClose
+}: {
+  sale: MemberPackageItem;
+  memberLabel: string;
+  today: string;
+  packages: PackageItem[];
+  diasPlazoSaldo?: number;
+  onClose: () => void;
+}) {
+  const request = useStudioRequest();
+  const item = packages.find((entry) => entry.id === sale.packageId && entry.activo);
+  const [inicio, setInicio] = useState(sale.estado === "ACTIVO" && sale.vence >= today ? addDaysToKey(sale.vence, 1) : today);
+  const [precio, setPrecio] = useState(item ? String(Math.round(Number(item.precio))) : "");
+  const [pagarAhora, setPagarAhora] = useState(false);
+  const [monto, setMonto] = useState("");
+  const [metodoPago, setMetodoPago] = useState("EFECTIVO");
+  const [fechaLimite, setFechaLimite] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const price = Number(precio || 0);
+  const paid = pagarAhora ? Number(monto || 0) : 0;
+  const debe = paid < price;
+
+  async function submit() {
+    if (pagarAhora && (paid <= 0 || paid > price)) return setError("El pago debe ser mayor a 0 y no superar el precio");
+    if (debe && fechaLimite && fechaLimite < inicio) return setError("La fecha para pagar el resto no puede ser antes del inicio");
+    setError(null);
+    setSaving(true);
+    const saved = await request(
+      `/api/member-packages/${sale.id}/renew`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          inicio,
+          precio: price,
+          ...(pagarAhora ? { pago: { monto: paid, metodoPago } } : {}),
+          ...(debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
+        })
+      },
+      "Plan renovado"
+    );
+    setSaving(false);
+    if (saved) onClose();
+  }
+
+  return (
+    <Modal
+      size="md"
+      open
+      onClose={() => (saving ? undefined : onClose())}
+      title="Renovar plan"
+      description={`${memberLabel} · ${sale.nombre} ${sale.discipline.nombre} (${sale.clases} clases)`}
+    >
+      {!item ? (
+        <p className="rounded-xl border border-dashed border-ink-200 bg-ink-50 p-4 text-center text-sm text-ink-500">
+          Este paquete ya no se vende. Véndele otro desde Vender paquete.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass} htmlFor="renew-inicio">
+                Empieza
+              </label>
+              <input
+                id="renew-inicio"
+                type="date"
+                value={inicio}
+                onChange={(event) => setInicio(event.target.value || today)}
+                className={inputClass}
+              />
+              <p className="mt-1 text-[11px] text-ink-400">Vence {formatDateKeyShort(addDaysToKey(inicio, item.vigenciaDias - 1))}</p>
+            </div>
+            <div>
+              <label className={labelClass}>Precio</label>
+              <MoneyInput value={precio} onChange={setPrecio} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Precio" />
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-ink-200 bg-ink-50/60 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-ink-700">
+              <input
+                type="checkbox"
+                className="size-4 accent-brand-600"
+                checked={pagarAhora}
+                onChange={(event) => {
+                  setPagarAhora(event.target.checked);
+                  if (event.target.checked && !monto) setMonto(precio);
+                }}
+              />
+              Pagó ahora
+            </label>
+            {pagarAhora ? (
+              <>
+                <div>
+                  <label className={labelClass}>Monto recibido</label>
+                  <MoneyInput value={monto} onChange={setMonto} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto recibido" />
+                </div>
+                <PaymentMethodPicker value={metodoPago} onChange={setMetodoPago} />
+              </>
+            ) : null}
+            {debe && price > 0 ? (
+              <BalanceDeadlineField value={fechaLimite || addDaysToKey(inicio, diasPlazoSaldo)} min={inicio} onChange={setFechaLimite} />
+            ) : null}
+          </div>
+
+          {sale.clasesRestantes > 0 ? (
+            <p className="text-[11px] text-amber-700">
+              Le {sale.clasesRestantes === 1 ? "queda 1 clase" : `quedan ${sale.clasesRestantes} clases`} sin usar: no se pasan al plan nuevo.
+            </p>
+          ) : null}
+          {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="secondary" className="flex-1 rounded-xl py-2.5" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="button" className="flex-1 rounded-xl py-2.5 shadow-none" loading={saving} onClick={submit}>
+              Renovar {currency(price)}
+            </Button>
+          </div>
+        </div>
       )}
     </Modal>
   );

@@ -64,5 +64,8 @@ del esquema con la URL local escrita a mano, y las pruebas se niegan a correr si
 | 017 | [Navegación de la página pública y filas desplazables](017-navegacion-publica/spec.md) | Implementada y probada |
 | 018 | [Pantalla de error que no se rompe en el navegador](018-errores-navegador/spec.md) | Implementada y probada |
 | 019 | [Clientes, clases sueltas y asistencia](019-clientes-asistencia/spec.md) | Implementada y probada |
-| 020 | [Renovaciones, pagos y vencimientos](020-renovaciones-pagos/spec.md) | Propuesta |
+| 020 | [Renovaciones, pagos y vencimientos](020-renovaciones-pagos/spec.md) | Implementada |
 | 021 | [Comprar un plan en línea y reservar con él](021-compra-plan-en-linea/spec.md) | Implementada |
+| 022 | [Rediseño de la ficha del cliente](022-ficha-cliente/spec.md) | En curso |
+| 023 | [Instructores y pagos a instructores](023-instructores-pagos/spec.md) | En curso |
+| 024 | [Colaboradores: instructores, administradores y socios](024-colaboradores/spec.md) | Hecha (falta e2e) |

@@ -1,6 +1,6 @@
 # 020 · Renovaciones, pagos y vencimientos
 
-**Estado:** Propuesta — pendiente de aprobación · **Fecha:** 2026-10-09
+**Estado:** Implementada · **Fecha:** 2026-10-09 · **Aprobada:** 2026-10-10, con D1–D4 como se recomendaron
 
 ## Contexto
 
@@ -139,28 +139,44 @@ Nada se renombra ni se borra.
   esta semana sin renovar.
 - **R11 — Ajustes › Reservas:** "Plazo para pagar el saldo: [7] días".
 
+### E. Con la compra en línea (spec 021)
+
+- **R12 — Pago en revisión no está atrasado:** si la venta tiene un comprobante por
+  revisar, no cuenta como saldo vencido ni sale en Saldos pendientes de Avisos (ya
+  pagó; falta que la dueña valide). Rechazado o "paga en el estudio" sí cuentan.
+- **R13 — Renovar desde Mi plan** (lo que la 021 dejó para esta spec): con el plan por
+  vencer, vencido o agotado y sin renovar, Mi plan muestra **Renovar**. Lleva al paso
+  Pago del mismo plan, sin pedir datos (la identidad sale del enlace). La venta nueva
+  queda encadenada (D1), con su propio enlace Mi plan, y la dueña recibe el aviso de
+  compra en línea como en la 021.
+
 ## API
 
 - `POST /api/member-packages/[id]/renew` `{ precio?, inicio?, pago?, fechaLimitePago? }` (R3).
 - `POST /api/member-packages` acepta `fechaLimitePago` (D2).
-- `GET /api/member-packages/payments?desde&hasta&metodo&q` (R5).
-- `GET /api/studio-reminders` suma `vencidos` y `saldosVencidos` (R8).
+- `GET /api/member-packages` ya trae los abonos de cada venta: la pestaña Pagos (R5)
+  se arma con esos mismos datos, como Planes y Clases sueltas, sin otra ruta.
+- `GET /api/studio-reminders` suma `vencidos` y `saldosVencidos` (R8);
+  `?memberId=` devuelve solo los de un cliente (R9).
+- `POST /api/public/plans/[token]/renew` `{ pago }` (R13).
 
 ## Criterios de aceptación
 
-- [ ] Un plan vencido dice "Venció hace N días" y uno por vencer "Vence en N días".
-- [ ] Renovar un plan vigente empieza al día siguiente de su vencimiento; uno vencido, hoy.
-- [ ] La venta anterior queda "Renovado" y la nueva dice de cuál viene.
-- [ ] Un saldo después de su fecha límite dice "Saldo vencido hace N días".
-- [ ] La pestaña Pagos lista todos los abonos con totales del mes; los anulados, tachados.
-- [ ] Avisos muestra vencidos sin renovar y saldos vencidos, con WhatsApp.
-- [ ] Bancolombia aparece como método de pago (hecho, ver Notas).
-- [ ] La migración solo agrega columnas nulas o con default.
+- [x] Un plan vencido dice "Venció hace N días" y uno por vencer "Vence en N días".
+- [x] Renovar un plan vigente empieza al día siguiente de su vencimiento; uno vencido, hoy.
+- [x] La venta anterior queda "Renovado" y la nueva dice de cuál viene.
+- [x] Un saldo después de su fecha límite dice "Saldo vencido hace N días".
+- [x] La pestaña Pagos lista todos los abonos con totales del mes; los anulados, tachados.
+- [x] Avisos muestra vencidos sin renovar y saldos vencidos, con WhatsApp.
+- [x] Bancolombia aparece como método de pago (hecho, ver Notas).
+- [x] La migración solo agrega columnas nulas o con default.
+- [x] Un pago en revisión no aparece como saldo vencido ni en Saldos pendientes.
+- [x] Desde Mi plan se renueva sin escribir datos, y la venta nueva dice de cuál viene.
 
 ## Fases de implementación
 
 1. **Estados con días y fecha límite** (R1, R2, R11 + migración).
-2. **Renovar** (R3, R4).
+2. **Renovar** (R3, R4, R13).
 3. **Pagos** (R5, R6).
 4. **Vencidos y avisos** (R7–R10).
 
@@ -177,6 +193,20 @@ de pagos con filtros y aislamiento por negocio, avisos nuevos) y de punta a punt
 - Cobro automático o enlace de pago (pasarela).
 - Renovación automática al vencer.
 - Pasar las clases sin usar al plan nuevo.
+
+## Notas de implementación
+
+- **Tipos de aviso:** "Plan vencido sin renovar" usa el tipo `PAQUETE_POR_VENCER` y
+  "Saldo vencido" el tipo `SALDO`, con su propia clave (`…:vencido`). Así la marca de
+  enviado funciona igual y no hay que tocar el enum de la base.
+- **Renovado** = tiene una renovación sin anular. Si se anula la renovación, la venta
+  anterior vuelve a mostrarse como vencida (o por vencer) y se puede renovar otra vez.
+- Las clases sueltas no se renuevan.
+- **Agotado:** un plan sin clases pero aún en fechas se renueva desde hoy (no desde
+  su vencimiento), para que no quede días sin clases.
+- **Pagos anulados:** el panel no pide motivo al anular un pago, así que en Pagos se
+  ven tachados con "Pago anulado" (o "Venta anulada") y no cuentan como ingreso.
+- **Ficha:** un plan vencido sin renovar sigue arriba (con Renovar) hasta 60 días.
 
 ## Notas
 

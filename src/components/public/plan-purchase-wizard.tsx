@@ -32,15 +32,23 @@ function formatLong(key: string) {
   return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", timeZone: "UTC" }).format(dateKeyToDate(key));
 }
 
-/** Spec 021 D1/R1: comprar un plan sin pedir clase. Tus datos → Pago → Listo. */
+/** Spec 020 R13: renovar desde Mi plan; la identidad sale del enlace. */
+export type RenewalContext = { token: string; nombre: string; inicio: string };
+
+/**
+ * Spec 021 D1/R1: comprar un plan sin pedir clase. Tus datos → Pago → Listo.
+ * Al renovar (spec 020 R13) solo queda Pago → Listo.
+ */
 export function PlanPurchaseWizard({
   studio,
-  plan
+  plan,
+  renewal
 }: {
   studio: { slug: string; businessName: string; paymentMethods: PaymentMethod[]; permitirPagoEnEstudio: boolean; exigirPagoValidado: boolean };
   plan: PurchasePlan;
+  renewal?: RenewalContext;
 }) {
-  const [step, setStep] = useState<Step>("datos");
+  const [step, setStep] = useState<Step>(renewal ? "pago" : "datos");
   const [person, setPerson] = useState<PersonData>({ celular: "", nombre: "", apellido: "" });
   const [payment, setPayment] = useState<OnlinePayment | null>(null);
   const [sending, setSending] = useState(false);
@@ -53,11 +61,17 @@ export function PlanPurchaseWizard({
     setSending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/public/studios/${studio.slug}/plans`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ packageId: plan.id, celular: person.celular, nombre: person.nombre, apellido: person.apellido || null, pago: payment })
-      });
+      const response = renewal
+        ? await fetch(`/api/public/plans/${encodeURIComponent(renewal.token)}/renew`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ pago: payment })
+          })
+        : await fetch(`/api/public/studios/${studio.slug}/plans`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ packageId: plan.id, celular: person.celular, nombre: person.nombre, apellido: person.apellido || null, pago: payment })
+          });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error ?? "No pudimos completar la compra. Intenta de nuevo.");
       setPurchased(payload.data);
@@ -78,7 +92,7 @@ export function PlanPurchaseWizard({
           <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-white text-ink-950">
             <FiCheck className="size-7" />
           </span>
-          <h1 className="mt-4 font-display text-5xl italic leading-none">¡Tu plan está listo!</h1>
+          <h1 className="mt-4 font-display text-5xl italic leading-none">{renewal ? "¡Plan renovado!" : "¡Tu plan está listo!"}</h1>
           <p className="mt-3 text-sm text-white/75">
             {purchased.plan.nombre} · {plan.clases === 1 ? "1 clase" : `${plan.clases} clases`} · vence el {formatLong(purchased.plan.vence)}
           </p>
@@ -117,8 +131,9 @@ export function PlanPurchaseWizard({
     );
   }
 
-  const steps: Array<Exclude<Step, "listo">> = ["datos", "pago"];
+  const steps: Array<Exclude<Step, "listo">> = renewal ? ["pago"] : ["datos", "pago"];
   const index = steps.indexOf(step as Exclude<Step, "listo">);
+  const backHref = renewal ? myPlanHref(studio.slug, renewal.token) : `/s/${studio.slug}#planes`;
 
   return (
     <div className="space-y-6">
@@ -126,7 +141,7 @@ export function PlanPurchaseWizard({
         index={index}
         total={steps.length}
         label={STEP_LABELS[step as Exclude<Step, "listo">]}
-        backHref={`/s/${studio.slug}#planes`}
+        backHref={backHref}
         onBack={index > 0 ? () => setStep(steps[index - 1]) : undefined}
       />
 
@@ -140,10 +155,17 @@ export function PlanPurchaseWizard({
             {plan.clases === 1 ? "1 clase" : `${plan.clases} clases · ${formatCop(pricePerClass(plan))} c/u`} · {plan.vigenciaDias} días · {formatCop(plan.precio)}
           </span>
           {plan.incluye.length ? <span className="block truncate text-xs text-ink-400">Incluye {plan.incluye.join(", ")}</span> : null}
+          {renewal ? (
+            <span className="block text-xs text-ink-500">
+              Renovación para {renewal.nombre} · empieza el {formatLong(renewal.inicio)}
+            </span>
+          ) : null}
         </span>
-        <Link href={`/s/${studio.slug}#planes`} className={`min-h-11 shrink-0 content-center rounded-full px-3 text-sm font-medium underline underline-offset-4 ${focusRing}`}>
-          Cambiar
-        </Link>
+        {renewal ? null : (
+          <Link href={`/s/${studio.slug}#planes`} className={`min-h-11 shrink-0 content-center rounded-full px-3 text-sm font-medium underline underline-offset-4 ${focusRing}`}>
+            Cambiar
+          </Link>
+        )}
       </div>
 
       {step === "datos" ? (
@@ -159,7 +181,7 @@ export function PlanPurchaseWizard({
 
       {step === "pago" ? (
         <section className="space-y-5">
-          <h1 className="font-display text-5xl italic leading-none">Paga tu plan</h1>
+          <h1 className="font-display text-5xl italic leading-none">{renewal ? "Renueva tu plan" : "Paga tu plan"}</h1>
           <p className="text-sm text-ink-500">
             Transfiere el valor y sube el comprobante. El estudio lo valida y tu plan queda pagado
             {studio.exigirPagoValidado ? "; podrás reservar cuando lo valide." : "; mientras tanto ya puedes reservar."}
@@ -167,7 +189,13 @@ export function PlanPurchaseWizard({
           <PaymentStep total={plan.precio} methods={studio.paymentMethods} allowInStudio={studio.permitirPagoEnEstudio} onChange={setPayment} />
           <ErrorBox message={error} />
           <PrimaryButton disabled={!payment} loading={sending} onClick={buy}>
-            {payment?.tipo === "EN_ESTUDIO" ? "Comprar y pagar en el estudio" : "Enviar comprobante y comprar"}
+            {renewal
+              ? payment?.tipo === "EN_ESTUDIO"
+                ? "Renovar y pagar en el estudio"
+                : "Enviar comprobante y renovar"
+              : payment?.tipo === "EN_ESTUDIO"
+                ? "Comprar y pagar en el estudio"
+                : "Enviar comprobante y comprar"}
           </PrimaryButton>
         </section>
       ) : null}

@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { FiLogOut, FiMenu, FiX, FiZap } from "react-icons/fi";
+import { FiLock, FiLogOut, FiMenu, FiX, FiZap } from "react-icons/fi";
 import { getNavSections } from "@/components/dashboard/nav-items";
 import { BrandLogo } from "@/components/shared/brand-logo";
 import { clientApiFetch } from "@/lib/client-api";
+import { canSeePage, type Access } from "@/lib/collaborator-permissions";
 import { cn } from "@/lib/web-utils";
 import type { BusinessModules } from "@/lib/web-types";
 
@@ -22,6 +23,7 @@ export function DashboardShell({
   planStatus,
   alerts,
   modules,
+  access,
   children
 }: {
   user: {
@@ -33,6 +35,8 @@ export function DashboardShell({
   planStatus: string;
   alerts: HeaderAlert[];
   modules: BusinessModules;
+  /** Spec 024: la dueña o un colaborador con sus permisos. */
+  access: Access;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -42,7 +46,13 @@ export function DashboardShell({
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
   const isPlanOverdue = planDays < 0 || planStatus === "VENCIDA";
   const visiblePlanDays = Math.max(planDays, 0);
-  const navSections = getNavSections(modules);
+  const navSections = getNavSections(modules, access);
+  const isCollaborator = access.kind === "COLLABORATOR";
+  // El enlace mas especifico gana: en /dashboard/colaboradores/pagos se marca Pagos, no Colaboradores.
+  const activeHref = navSections
+    .flatMap((section) => section.items.map((item) => item.href))
+    .filter((href) => (href === "/dashboard" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`)))
+    .sort((a, b) => b.length - a.length)[0];
 
   useEffect(() => {
     setActiveAlertIndex(0);
@@ -126,12 +136,17 @@ export function DashboardShell({
                 {businessKindLabel(modules)}
               </span>
             </div>
-            <PlanBadge days={visiblePlanDays} overdue={isPlanOverdue} onNavigate={() => setOpen(false)} />
+            {/* Como CliqCut: el colaborador no ve el plan, que es de la dueña. */}
+            {isCollaborator ? (
+              <p className="mt-1 text-xs font-semibold text-brand-700">{access.role === "SOCIO" ? "Socio" : "Administrador"}</p>
+            ) : (
+              <PlanBadge days={visiblePlanDays} overdue={isPlanOverdue} onNavigate={() => setOpen(false)} />
+            )}
           </div>
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {navSections.map((section) => (
           <div key={section.title} className="mt-4 border-t border-ink-100 pt-4 first:mt-1 first:border-t-0 first:pt-0">
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
@@ -140,7 +155,7 @@ export function DashboardShell({
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const Icon = item.icon;
-                const active = item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
+                const active = item.href === activeHref;
 
                 return (
                   <Link
@@ -225,7 +240,7 @@ export function DashboardShell({
         </header>
 
         <main className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl bg-[#f8fafc] px-4 py-6 sm:px-6 sm:py-8 xl:min-h-screen">
-          {children}
+          {canSeePage(access, pathname) ? children : <NoAccess />}
         </main>
       </div>
 
@@ -313,6 +328,22 @@ function HeaderAlertRotator({
       >
         {alert.label}
       </span>
+    </div>
+  );
+}
+
+/** Spec 024 R6: entrar por URL a una pagina sin permiso. */
+function NoAccess() {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-2xl border border-ink-200 bg-white p-8 text-center shadow-sm">
+      <span className="flex size-12 items-center justify-center rounded-2xl bg-ink-100 text-ink-500">
+        <FiLock className="size-5" />
+      </span>
+      <h1 className="text-lg font-bold text-ink-900">No tienes acceso a esta sección</h1>
+      <p className="text-sm text-ink-500">Pídele a la dueña del negocio que te dé el permiso.</p>
+      <Link href="/dashboard" className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        Ir a Inicio
+      </Link>
     </div>
   );
 }

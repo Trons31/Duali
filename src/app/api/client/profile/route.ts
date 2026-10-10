@@ -23,6 +23,7 @@ export async function GET(request: Request) {
         devolverClaseInasistencia: true,
         permitirPagoEnEstudio: true,
         exigirPagoValidado: true,
+        diasPlazoSaldo: true,
         createdAt: true,
         updatedAt: true
       }

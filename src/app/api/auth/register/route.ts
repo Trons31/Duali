@@ -8,6 +8,9 @@ export async function POST(request: Request) {
     const body = registerSchema.parse(await readBody(request));
     const existing = await prisma.client.findUnique({ where: { email: body.email } });
     if (existing) throw new ApiError(409, "El email ya está registrado");
+    if (await prisma.collaborator.findUnique({ where: { email: body.email }, select: { id: true } })) {
+      throw new ApiError(409, "El email ya está registrado");
+    }
 
     const client = await prisma.client.create({
       data: {

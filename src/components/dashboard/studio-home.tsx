@@ -60,8 +60,15 @@ export function StudioHome({ data, userName, baseUrl }: { data: StudioDashboardD
       icon: <FiCheckSquare />,
       href: "/dashboard/horario?vista=asistencia"
     },
-    { count: data.atender.comprobantes, label: "comprobantes de pago por revisar", icon: <FiFileText /> },
+    { count: data.atender.comprobantes, label: "comprobantes de pago por revisar", icon: <FiFileText />, href: "/dashboard/avisos" },
     { count: data.atender.recordatoriosManana, label: "recordatorios para mañana", icon: <FiCalendar /> },
+    { count: data.atender.saldosVencidos, label: data.atender.saldosVencidos === 1 ? "saldo vencido" : "saldos vencidos", icon: <FiCreditCard />, href: "/dashboard/avisos" },
+    {
+      count: data.atender.vencidosSemana,
+      label: data.atender.vencidosSemana === 1 ? "plan vencido esta semana sin renovar" : "planes vencidos esta semana sin renovar",
+      icon: <FiAlertCircle />,
+      href: "/dashboard/avisos"
+    },
     { count: data.atender.porVencer, label: "paquetes por vencer o con pocas clases", icon: <FiAlertCircle /> },
     { count: data.atender.conSaldo, label: "clientes con saldo pendiente", icon: <FiCreditCard /> }
   ];

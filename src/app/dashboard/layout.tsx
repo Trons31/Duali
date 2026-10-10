@@ -5,6 +5,8 @@ import { getDashboardAlertCounts } from "@/lib/dashboard-data";
 import { ensureCurrentMonthlyPayments } from "@/lib/monthly-payments";
 import { ensureClientSubscription, serializeSubscription } from "@/lib/subscriptions";
 import { getBusinessModules } from "@/lib/business-modules";
+import { getCollaboratorAccess } from "@/lib/collaborators";
+import type { Access } from "@/lib/collaborator-permissions";
 import { auth } from "@/lib/web-auth";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -23,6 +25,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const clientId = session.user.id;
+
+  // Spec 024: permisos al dia (no los del inicio de sesion); desactivado, vuelve al login.
+  let access: Access = { kind: "OWNER" };
+  if (session.user.collaboratorId) {
+    const collaborator = await getCollaboratorAccess(clientId, session.user.collaboratorId);
+    if (!collaborator) redirect("/auth/login?session=expired");
+    access = { kind: "COLLABORATOR", role: collaborator.rol, permissions: collaborator.permisos };
+  }
   await ensureCurrentMonthlyPayments(clientId);
 
   const [alertCounts, subscription, modules] = await Promise.all([
@@ -68,6 +78,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       planStatus={String(plan.status)}
       alerts={alerts.length ? alerts : [{ label: "Todo al día", tone: "success" as const }]}
       modules={modules}
+      access={access}
     >
       <NotificationBootstrap />
       {children}

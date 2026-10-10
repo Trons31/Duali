@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FiCheck, FiCopy, FiUser } from "react-icons/fi";
+import { FiUser } from "react-icons/fi";
 import { focusRing } from "@/components/public/public-shell";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import type { CatalogItem } from "@/components/public/studio-sections";
@@ -191,44 +191,6 @@ export function PlansExplorer({ slug, catalog }: { slug: string; catalog: Catalo
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/** Spec 012 R6: cuentas para pagar, con boton Copiar. */
-export function PaymentAccounts({ methods }: { methods: Array<{ name: string; account: string }> }) {
-  const [copied, setCopied] = useState<number | null>(null);
-
-  async function copy(index: number, value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(index);
-      setTimeout(() => setCopied(null), 1800);
-    } catch {
-      // Sin permiso de portapapeles: el numero sigue visible para copiarlo a mano.
-    }
-  }
-
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {methods.map((method, index) => (
-        <div key={`${method.name}-${index}`} className="flex items-center justify-between gap-3 rounded-3xl border border-black/[0.06] bg-white p-5">
-          <div className="min-w-0">
-            <p className="font-semibold">{method.name || "Cuenta"}</p>
-            {method.account ? <p className="mt-0.5 break-all font-mono text-sm text-ink-600">{method.account}</p> : null}
-          </div>
-          {method.account ? (
-            <button
-              type="button"
-              onClick={() => copy(index, method.account)}
-              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-black/10 px-4 text-sm font-medium hover:border-black/30 ${focusRing}`}
-            >
-              {copied === index ? <FiCheck className="size-4" /> : <FiCopy className="size-4" />}
-              {copied === index ? "Copiado" : "Copiar"}
-            </button>
-          ) : null}
-        </div>
-      ))}
     </div>
   );
 }

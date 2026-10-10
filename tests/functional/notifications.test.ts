@@ -16,8 +16,8 @@ import { createCatalog, createMember, createSchedule, sell } from "./studio-fixt
 
 after(disconnect);
 
-type Reminder = { tipo: string; refKey: string; member: { id: string; nombre: string }; mensaje: string; href: string; enviadoAt: string | null };
-type Reminders = { manana: Reminder[]; porVencer: Reminder[]; saldos: Reminder[] };
+type Reminder = { tipo: string; refKey: string; member: { id: string; nombre: string }; detalle: string; mensaje: string; href: string; enviadoAt: string | null };
+type Reminders = { manana: Reminder[]; porVencer: Reminder[]; saldos: Reminder[]; saldosVencidos: Reminder[]; vencidos: Reminder[] };
 
 let counter = 0;
 
@@ -139,8 +139,12 @@ describe("spec 011 · avisos por WhatsApp", () => {
 
     assert.equal(reminders.porVencer.length, 1);
     assert.match(reminders.porVencer[0].mensaje, /Te quedan 3 clases/);
-    assert.equal(reminders.saldos.length, 1);
-    assert.match(reminders.saldos[0].mensaje, /\$25\.000/);
+    // Spec 020 R8: empezó hace 28 días y el plazo es de 7: el saldo ya está vencido.
+    assert.equal(reminders.saldos.length, 0);
+    assert.equal(reminders.saldosVencidos.length, 1);
+    assert.match(reminders.saldosVencidos[0].mensaje, /\$25\.000/);
+    assert.match(reminders.saldosVencidos[0].mensaje, /venció el/);
+    assert.match(reminders.saldosVencidos[0].detalle, /vencido hace 21 días/);
 
     const all = JSON.stringify(reminders);
     assert.equal(all.includes("Ajena"), false, "no mezcla negocios");

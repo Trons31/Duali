@@ -3,6 +3,7 @@ import { cache } from "react";
 import { createBooking, findSellablePackages, findUsablePackages } from "@/lib/bookings";
 import { listClassSessions } from "@/lib/class-sessions";
 import { ApiError } from "@/lib/http";
+import { instructorName } from "@/lib/instructors";
 import { prisma } from "@/lib/prisma";
 import type { MediaInput } from "@/lib/cloudinary";
 import { paymentState } from "@/lib/online-payments";
@@ -359,7 +360,9 @@ export async function getPublicBooking(token: string) {
           horaInicio: true,
           duracionMin: true,
           cancelada: true,
-          schedule: { select: { instructor: true, discipline: { select: { nombre: true, color: true } } } }
+          schedule: { select: { instructor: true, discipline: { select: { nombre: true, color: true } } } },
+          // Spec 023 R5: si hay reemplazo, se muestra quien la dicta.
+          reemplazo: { select: { nombre: true, apellido: true } }
         }
       },
       client: { select: { businessName: true, slug: true, telefono: true, horasCancelacion: true } }
@@ -388,7 +391,7 @@ export async function getPublicBooking(token: string) {
       horaInicio: booking.session.horaInicio,
       duracionMin: booking.session.duracionMin,
       cancelada: booking.session.cancelada,
-      instructor: booking.session.schedule.instructor,
+      instructor: booking.session.reemplazo ? instructorName(booking.session.reemplazo) : booking.session.schedule.instructor,
       discipline: booking.session.schedule.discipline
     },
     estudio: booking.client

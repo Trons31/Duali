@@ -90,6 +90,47 @@ export function balanceMessage(input: {
     .join("\n");
 }
 
+/** Spec 020 R8: plan vencido sin renovar. */
+export function expiredPackageMessage(input: {
+  businessName: string;
+  nombre: string;
+  paquete: string;
+  disciplina: string;
+  vence: string;
+  pageUrl?: string | null;
+}) {
+  return [
+    `Hola ${input.nombre} 👋`,
+    `Tu plan ${input.paquete} de ${input.disciplina} venció el ${formatLongDateKey(input.vence)}. ¡Te extrañamos!`,
+    "¿Quieres renovarlo? Te apartamos tu cupo.",
+    signature(input.businessName, input.pageUrl)
+  ].join("\n");
+}
+
+/** Spec 020 R8/R9: saldo que paso su fecha limite. */
+export function overdueBalanceMessage(input: {
+  businessName: string;
+  nombre: string;
+  paquete: string;
+  disciplina: string;
+  saldo: number;
+  fechaLimite: string;
+  paymentMethods: Array<{ name: string; account: string }>;
+}) {
+  const methods = input.paymentMethods
+    .map((method) => [method.name, method.account].filter(Boolean).join(": "))
+    .filter(Boolean);
+  return [
+    `Hola ${input.nombre} 👋`,
+    `Tu saldo de ${money(input.saldo)} del plan ${input.paquete} de ${input.disciplina} venció el ${formatLongDateKey(input.fechaLimite)}.`,
+    methods.length ? `Puedes pagar a:\n${methods.map((line) => `• ${line}`).join("\n")}` : null,
+    "Cuando pagues, envíanos el comprobante por aquí. ¡Gracias!",
+    `— ${input.businessName}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function cancelledClassMessage(input: {
   businessName: string;
   nombre: string;

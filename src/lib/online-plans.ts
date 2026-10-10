@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { deleteFromCloudinary, uploadImageFromServer, type MediaInput } from "@/lib/cloudinary";
 import { ApiError } from "@/lib/http";
-import { classUsage, memberPackageStatus, sellMemberPackage } from "@/lib/member-packages";
+import { EXPIRING_SOON_DAYS, classUsage, memberPackageStatus, renewMemberPackage, renewalStart, sellMemberPackage } from "@/lib/member-packages";
 import { queueNotification } from "@/lib/notification-queue";
 import {
   type OnlinePayment,
@@ -15,7 +15,7 @@ import type { ExtendedTransactionClient } from "@/lib/prisma-types";
 import { MAX_PENDING_RECEIPTS } from "@/lib/receipts";
 import { namesMatch, normalizeMemberPhone } from "@/lib/studio-constants";
 import { money } from "@/lib/studio-messages";
-import { dateToDateKey, studioNow } from "@/lib/studio-time";
+import { dateToDateKey, daysBetweenKeys, studioNow } from "@/lib/studio-time";
 
 // Comprar un plan desde la pagina publica y "Mi plan" (spec 021).
 
@@ -160,11 +160,12 @@ export async function createOnlinePlanPurchase(
   const payment = input.pago;
   const identity = await identifyPublicMember(studio.id, input.celular, input.nombre);
   await assertPendingPurchasesLimit(studio.id, identity.member && !identity.member.deletedAt ? identity.member.id : null);
-  const member = await ensureMember(identity.celular, identity.member);
   const accessToken = newAccessToken();
 
-  const sale = await withReceiptUpload(studio.id, payment, (media) =>
-    prisma.$transaction(async (tx) => {
+  // La clienta se registra despues de subir la foto: si la subida falla, no queda creada sin plan.
+  const { member, sale } = await withReceiptUpload(studio.id, payment, async (media) => {
+    const member = await ensureMember(identity.celular, identity.member);
+    const sale = await prisma.$transaction(async (tx) => {
       // D6: empieza el dia de la compra.
       const created = await sellMemberPackage(tx, {
         clientId: studio.id,
@@ -178,8 +179,9 @@ export async function createOnlinePlanPurchase(
         await createReceiptRow(tx, { clientId: studio.id, memberPackageId: created.id, media, metodo: payment.metodo });
       }
       return created;
-    })
-  );
+    });
+    return { member, sale };
+  });
 
   await notifyOnlinePurchase({
     clientId: studio.id,
@@ -206,6 +208,10 @@ const publicPlanSelect = {
   anuladoAt: true,
   origen: true,
   disciplineId: true,
+  packageId: true,
+  // Spec 020 R13: renovar desde Mi plan.
+  package: { select: { activo: true, visiblePublico: true, deletedAt: true } },
+  renovaciones: { where: { anuladoAt: null }, select: { accessToken: true, nombre: true, vence: true }, take: 1 },
   discipline: {
     select: { nombre: true, color: true, tipo: true, comboItems: { select: { disciplineId: true, discipline: { select: { nombre: true } } } } }
   },
@@ -224,7 +230,7 @@ const publicPlanSelect = {
     orderBy: [{ session: { fecha: "asc" as const } }, { session: { horaInicio: "asc" as const } }]
   },
   client: {
-    select: { id: true, businessName: true, slug: true, telefono: true, exigirPagoValidado: true, paymentMethodItems: true }
+    select: { id: true, businessName: true, slug: true, telefono: true, exigirPagoValidado: true, permitirPagoEnEstudio: true, paymentMethodItems: true }
   }
 };
 
@@ -255,6 +261,22 @@ export async function getPublicPlan(token: string, instant = new Date()) {
   }));
 
   const canBook = estado === "ACTIVO" && !(row.client.exigirPagoValidado && saldo > 0);
+  const paymentMethods = Array.isArray(row.client.paymentMethodItems)
+    ? (row.client.paymentMethodItems as Array<{ name?: unknown; account?: unknown }>)
+        .map((method) => ({ name: String(method?.name ?? "").trim(), account: String(method?.account ?? "").trim() }))
+        .filter((method) => method.name || method.account)
+    : [];
+  const vence = dateToDateKey(row.vence);
+  const renewal = row.renovaciones[0];
+  // Spec 020 R13: por vencer, vencido o agotado, sin renovar, y el plan se sigue vendiendo en linea.
+  const puedeRenovar =
+    row.clases > 1 &&
+    !renewal &&
+    (estado === "VENCIDO" || estado === "AGOTADO" || (estado === "ACTIVO" && daysBetweenKeys(today, vence) <= EXPIRING_SOON_DAYS)) &&
+    row.package.activo &&
+    row.package.visiblePublico &&
+    !row.package.deletedAt &&
+    (paymentMethods.length > 0 || row.client.permitirPagoEnEstudio);
 
   return {
     id: row.id,
@@ -266,8 +288,12 @@ export async function getPublicPlan(token: string, instant = new Date()) {
     clasesRestantes: Math.max(row.clases - row.clasesUsadas, 0),
     uso: classUsage(row.bookings),
     inicio: dateToDateKey(row.inicio),
-    vence: dateToDateKey(row.vence),
+    vence,
     estado,
+    packageId: row.packageId,
+    puedeRenovar,
+    inicioRenovacion: renewalStart({ estado, vence }, today),
+    renovacion: renewal ? { enlace: renewal.accessToken, nombre: renewal.nombre, vence: dateToDateKey(renewal.vence) } : null,
     precio,
     pagado,
     saldo,
@@ -299,11 +325,9 @@ export async function getPublicPlan(token: string, instant = new Date()) {
       businessName: row.client.businessName,
       slug: row.client.slug,
       telefono: row.client.telefono,
-      paymentMethods: Array.isArray(row.client.paymentMethodItems)
-        ? (row.client.paymentMethodItems as Array<{ name?: unknown; account?: unknown }>)
-            .map((method) => ({ name: String(method?.name ?? "").trim(), account: String(method?.account ?? "").trim() }))
-            .filter((method) => method.name || method.account)
-        : []
+      permitirPagoEnEstudio: row.client.permitirPagoEnEstudio,
+      exigirPagoValidado: row.client.exigirPagoValidado,
+      paymentMethods
     }
   };
 }
@@ -360,6 +384,58 @@ export async function attachPlanReceipt(token: string, input: { comprobante: str
     console.error("No se pudo avisar el comprobante", error);
   }
   return getPublicPlan(token);
+}
+
+/**
+ * Spec 020 R13: renovar desde Mi plan. La identidad sale del enlace; el resto es
+ * como comprar en linea (pago, tope D7, aviso a la duena) y la venta queda encadenada.
+ */
+export async function renewPublicPlan(token: string, pago: OnlinePayment | undefined) {
+  const current = await getPublicPlan(token);
+  if (!current) throw new ApiError(404, "Plan no encontrado");
+  if (current.renovacion) throw new ApiError(409, "Este plan ya se renovó");
+  if (!current.puedeRenovar) throw new ApiError(409, "Este plan no se puede renovar en línea. Escríbele al estudio.");
+
+  const sale = await prisma.memberPackage.findUniqueOrThrow({
+    where: { accessToken: token },
+    select: { id: true, clientId: true, member: { select: { id: true, nombre: true } }, package: { select: { nombre: true, precio: true } } }
+  });
+  const studio: StudioForPayments = {
+    id: sale.clientId,
+    permitirPagoEnEstudio: current.estudio.permitirPagoEnEstudio,
+    paymentMethods: current.estudio.paymentMethods
+  };
+  assertPaymentAllowed(studio, pago);
+  await assertPendingPurchasesLimit(studio.id, sale.member.id);
+  const accessToken = newAccessToken();
+
+  const renewal = await withReceiptUpload(studio.id, pago, (media) =>
+    prisma.$transaction(async (tx) => {
+      const created = await renewMemberPackage(tx, {
+        clientId: studio.id,
+        saleId: sale.id,
+        today: studioNow().dateKey,
+        origen: "PUBLICO",
+        accessToken
+      });
+      if (media && pago.tipo === "COMPROBANTE") {
+        await createReceiptRow(tx, { clientId: studio.id, memberPackageId: created.id, media, metodo: pago.metodo });
+      }
+      return created;
+    })
+  );
+
+  await notifyOnlinePurchase({
+    clientId: studio.id,
+    memberId: sale.member.id,
+    memberName: sale.member.nombre,
+    saleId: renewal.id,
+    plan: `${sale.package.nombre} (renovación)`,
+    precio: Number(sale.package.precio),
+    withReceipt: pago.tipo === "COMPROBANTE"
+  });
+
+  return { accessToken, plan: await getPublicPlan(accessToken) };
 }
 
 /** Spec 021 R10: el enlace Mi plan de cualquier venta del negocio (lo crea si falta). */

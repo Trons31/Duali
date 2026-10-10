@@ -65,12 +65,12 @@ export function ReceiptReviewList({ receipts, showMember = true }: { receipts: R
           </li>
         ))}
       </ul>
-      {reviewing ? <ReviewModal key={reviewing.receipt.id + reviewing.action} {...reviewing} onClose={() => setReviewing(null)} /> : null}
+      {reviewing ? <ReceiptReviewModal key={reviewing.receipt.id + reviewing.action} {...reviewing} onClose={() => setReviewing(null)} /> : null}
     </>
   );
 }
 
-function ReviewModal({ receipt, action, onClose }: { receipt: ReceiptView; action: "approve" | "reject"; onClose: () => void }) {
+export function ReceiptReviewModal({ receipt, action, onClose }: { receipt: ReceiptView; action: "approve" | "reject"; onClose: () => void }) {
   const request = useStudioRequest();
   const [monto, setMonto] = useState(String(receipt.sale.saldo));
   // Spec 021 R11: el metodo que eligio la clienta, ya seleccionado.

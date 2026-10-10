@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { ClassSessionModal } from "@/components/dashboard/class-session-modal";
+import { InstructorSelect, type InstructorOption } from "@/components/dashboard/instructor-select";
 import { ColorDot, EmptyCard, ToggleRow, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import {
   WEEKDAYS,
@@ -49,7 +50,8 @@ export function ClassSchedulePanel({
   attendanceDate,
   sessions,
   schedules,
-  disciplines
+  disciplines,
+  instructors
 }: {
   today: string;
   weekStart: string;
@@ -58,6 +60,7 @@ export function ClassSchedulePanel({
   sessions: ClassSessionItem[];
   schedules: ClassScheduleItem[];
   disciplines: DisciplineItem[];
+  instructors: InstructorOption[];
 }) {
   const [view, setView] = useState<View>(initialView);
   const [selectedSession, setSelectedSession] = useState<ClassSessionItem | null>(null);
@@ -198,6 +201,7 @@ export function ClassSchedulePanel({
           key={selectedSession.key}
           session={selectedSession}
           today={today}
+          instructors={instructors}
           canEditSchedule={schedules.some((schedule) => schedule.id === selectedSession.scheduleId)}
           onEditSchedule={() => {
             const scheduleId = selectedSession.scheduleId;
@@ -213,6 +217,7 @@ export function ClassSchedulePanel({
           key={scheduleModal.item?.id ?? "new"}
           item={scheduleModal.item}
           disciplines={disciplines}
+          instructors={instructors}
           onClose={() => setScheduleModal(null)}
         />
       ) : null}
@@ -349,17 +354,22 @@ type ScheduleFormValues = {
   horaInicio: string;
   duracionMin: string;
   cupo: string;
-  instructor: string;
+  /** Id del titular, TEXTO_PROPIO (el nombre escrito a mano que ya tenia) o "" sin asignar. */
+  instructorId: string;
   activo: boolean;
 };
+
+const OWN_TEXT = "TEXTO_PROPIO";
 
 function ScheduleModal({
   item,
   disciplines,
+  instructors,
   onClose
 }: {
   item?: ClassScheduleItem;
   disciplines: DisciplineItem[];
+  instructors: InstructorOption[];
   onClose: () => void;
 }) {
   const request = useStudioRequest();
@@ -379,7 +389,7 @@ function ScheduleModal({
       horaInicio: item?.horaInicio ?? "18:00",
       duracionMin: String(item?.duracionMin ?? 60),
       cupo: String(item?.cupo ?? 15),
-      instructor: item?.instructor ?? "",
+      instructorId: item?.instructorId ?? (item?.instructor ? OWN_TEXT : ""),
       activo: item?.activo ?? true
     }
   });
@@ -404,7 +414,10 @@ function ScheduleModal({
       horaInicio: values.horaInicio,
       duracionMin: Number(values.duracionMin),
       cupo: Number(values.cupo),
-      instructor: values.instructor.trim() || null
+      // Spec 023 D5: el servidor copia el nombre del titular al texto del horario.
+      ...(values.instructorId === OWN_TEXT
+        ? {}
+        : { instructorId: values.instructorId || null, instructor: null })
     };
 
     const saved = isEditing
@@ -528,9 +541,28 @@ function ScheduleModal({
 
           <div>
             <label className={labelClass} htmlFor="schedule-instructor">
-              Instructor <span className="text-ink-400">(opcional)</span>
+              Instructor titular <span className="text-ink-400">(opcional)</span>
             </label>
-            <input id="schedule-instructor" className={inputClass} placeholder="Nombre" {...register("instructor")} />
+            <InstructorSelect
+              id="schedule-instructor"
+              value={watch("instructorId")}
+              onChange={(value) => setValue("instructorId", value)}
+              instructors={instructors}
+              disciplineId={disciplineId}
+              emptyLabel="Sin asignar"
+              extraOption={
+                item?.instructor && !item.instructorId ? { value: OWN_TEXT, label: `${item.instructor} (sin registrar)` } : null
+              }
+            />
+            {!instructors.length ? (
+              <p className="mt-1 text-[11px] text-ink-400">
+                Registra a tu equipo en{" "}
+                <Link href="/dashboard/colaboradores" className="font-medium text-brand-600 hover:underline">
+                  Colaboradores
+                </Link>{" "}
+                para elegirlo aquí.
+              </p>
+            ) : null}
           </div>
 
           {isEditing ? (

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { FiSearch, FiShoppingBag } from "react-icons/fi";
 import { ColorDot, EmptyCard } from "@/components/dashboard/studio-ui";
-import { ClassesBar, OnlineBadge, PackageStatusBadge, PaymentStatusBadge, memberName } from "@/components/dashboard/studio-sales-ui";
+import { ClassesBar, OnlineBadge, PackageStatusBadge, PaymentStatusBadge, RenewalNote, memberName } from "@/components/dashboard/studio-sales-ui";
 import { cn, currency } from "@/lib/web-utils";
 import type { MemberPackageSaleItem } from "@/lib/web-types";
 
@@ -110,6 +110,7 @@ export function MemberSalesPanel({ sales: allSales, today }: { sales: MemberPack
                     </div>
                     <PackageStatusBadge item={item} />
                   </div>
+                  <RenewalNote item={item} />
                   {item.estado !== "ANULADO" ? <ClassesBar item={item} legend /> : null}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <span className="text-ink-500">{currency(item.precio)}</span>

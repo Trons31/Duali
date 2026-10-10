@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicShell } from "@/components/public/public-shell";
-import { PaymentAccounts, PlansExplorer, ScheduleExplorer } from "@/components/public/studio-explorers";
+import { PlansExplorer, ScheduleExplorer } from "@/components/public/studio-explorers";
 import { ClosingCta, Disciplines, Hero, PostsFeed, SectionHeading } from "@/components/public/studio-sections";
 import { listPublishedPosts } from "@/lib/content";
 import { joinNames, lowestPrice } from "@/lib/public-presentation";
@@ -89,13 +89,6 @@ export default async function PublicStudioPage({ params }: Props) {
           <section id="novedades" className="scroll-mt-28 md:scroll-mt-20">
             <SectionHeading eyebrow="Del estudio" title="Novedades" />
             <PostsFeed posts={posts} />
-          </section>
-        ) : null}
-
-        {studio.paymentMethods.length ? (
-          <section id="pagos" className="scroll-mt-28 md:scroll-mt-20">
-            <SectionHeading eyebrow="Pagos" title="Cómo pagar" subtitle="Transfiere y envía el comprobante por WhatsApp." />
-            <PaymentAccounts methods={studio.paymentMethods} />
           </section>
         ) : null}
       </div>

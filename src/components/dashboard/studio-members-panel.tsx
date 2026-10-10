@@ -5,11 +5,11 @@ import Link from "next/link";
 import { FiCalendar, FiChevronRight, FiPlus, FiSearch } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { EmptyCard } from "@/components/dashboard/studio-ui";
-import { ClassesBar, MemberFormModal, PackageStatusBadge, formatClassDate, memberName } from "@/components/dashboard/studio-sales-ui";
+import { ClassesBar, MemberFormModal, PackageStatusBadge, daysLabel, formatClassDate, memberName } from "@/components/dashboard/studio-sales-ui";
 import { cn, currency } from "@/lib/web-utils";
 import type { StudioMemberItem } from "@/lib/web-types";
 
-type Filter = "todos" | "con-plan" | "por-usar" | "saldo" | "sin-plan";
+type Filter = "todos" | "con-plan" | "por-usar" | "saldo" | "sin-plan" | "vencidos";
 
 type Member = StudioMemberItem;
 
@@ -19,8 +19,23 @@ const FILTERS: Array<{ value: Filter; label: string; match: (member: Member) => 
   { value: "con-plan", label: "Con plan", match: (member) => member.vigentes.some((item) => !item.claseSuelta) },
   { value: "por-usar", label: "Clases por usar", match: (member) => member.clasesDisponibles > 0 },
   { value: "saldo", label: "Con saldo", match: (member) => member.saldo > 0 },
-  { value: "sin-plan", label: "Sin plan", match: (member) => !member.vigentes.length }
+  { value: "sin-plan", label: "Sin plan", match: (member) => !member.vigentes.length },
+  // Spec 020 R7.
+  { value: "vencidos", label: "Vencidos sin renovar", match: (member) => Boolean(expiredPlan(member)) }
 ];
+
+/** El plan vencido sin renovar mas reciente (spec 020 R7), si no tiene otro vigente. */
+function expiredPlan(member: Member) {
+  if (member.vigentes.some((item) => !item.claseSuelta)) return null;
+  return (
+    member.packages
+      .filter((item) => item.estado === "VENCIDO" && !item.claseSuelta && !item.renovadoPor && item.diasVencido <= RENEWAL_WINDOW_DAYS)
+      .sort((a, b) => a.diasVencido - b.diasVencido)[0] ?? null
+  );
+}
+
+/** El mismo plazo que RENEWAL_WINDOW_DAYS en el servidor. */
+const RENEWAL_WINDOW_DAYS = 60;
 
 /** Clientes del estudio (spec 006 R6; tarjetas y filtros de la spec 019 R4). */
 export function StudioMembersPanel({ members }: { members: StudioMemberItem[] }) {
@@ -33,13 +48,15 @@ export function StudioMembersPanel({ members }: { members: StudioMemberItem[] })
     const text = query.trim().toLocaleLowerCase("es");
     const digits = query.replace(/\D/g, "");
     const match = FILTERS.find((entry) => entry.value === filter)!.match;
-    return members.filter((member) => {
+    const found = members.filter((member) => {
       if (!match(member)) return false;
       if (!text) return true;
       return (
         memberName(member).toLocaleLowerCase("es").includes(text) || (digits.length >= 3 && member.celular.includes(digits))
       );
     });
+    // Spec 020 R7: del que vencio hace menos al que mas.
+    return filter === "vencidos" ? found.sort((a, b) => expiredPlan(a)!.diasVencido - expiredPlan(b)!.diasVencido) : found;
   }, [members, query, filter]);
 
   return (
@@ -121,6 +138,10 @@ export function StudioMembersPanel({ members }: { members: StudioMemberItem[] })
                         </div>
                       ))}
                     </div>
+                  ) : expiredPlan(member) ? (
+                    <p className="border-t border-ink-100 pt-3 text-xs font-medium text-rose-600">
+                      {expiredPlan(member)!.nombre} · {expiredPlan(member)!.discipline.nombre}: venció hace {daysLabel(expiredPlan(member)!.diasVencido)}
+                    </p>
                   ) : (
                     <p className="border-t border-ink-100 pt-3 text-xs text-ink-400">Sin plan vigente</p>
                   )}

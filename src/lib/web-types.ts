@@ -22,6 +22,7 @@ export type SafeClient = {
   devolverClaseInasistencia: boolean;
   permitirPagoEnEstudio: boolean;
   exigirPagoValidado: boolean;
+  diasPlazoSaldo: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -50,6 +51,8 @@ export type ClassScheduleItem = {
   duracionMin: number;
   cupo: number;
   instructor: string | null;
+  /** Spec 023 D5: el titular registrado; nulo si el nombre se escribio a mano. */
+  instructorId: string | null;
   activo: boolean;
   discipline: { id: string; nombre: string; color: string };
 };

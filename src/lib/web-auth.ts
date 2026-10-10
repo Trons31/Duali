@@ -50,7 +50,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           select: authClientSelect
         });
 
-        if (!client) return null;
+        if (!client) return authorizeCollaborator(email, password);
 
         const isValid = await comparePassword(String(credentials.password), client.passwordHash);
         if (!isValid) return null;
@@ -64,7 +64,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: safeClient.email,
           businessName: safeClient.businessName,
           telefono: safeClient.telefono,
-          apiToken: signToken(client)
+          apiToken: signToken(client),
+          collaboratorId: null,
+          collaboratorRole: null
         };
       }
     })
@@ -77,6 +79,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.email = user.email;
         token.businessName = user.businessName;
         token.telefono = user.telefono;
+        token.collaboratorId = user.collaboratorId ?? null;
+        token.collaboratorRole = user.collaboratorRole ?? null;
       }
 
       return token;
@@ -85,7 +89,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const userId = String(token.sub ?? "");
       const email = String(token.email ?? "");
       const role = token.role === "ADMIN" || userId === "duali-admin" ? "ADMIN" : "CLIENT";
-      const apiToken = role === "CLIENT" && userId && email ? signToken({ id: userId, email }) : "";
+      const collaboratorId = typeof token.collaboratorId === "string" ? token.collaboratorId : null;
+      const apiToken = role === "CLIENT" && userId && email ? signToken({ id: userId, email }, collaboratorId) : "";
 
       session.user.id = userId;
       session.user.role = role;
@@ -94,7 +99,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.businessName = String(token.businessName ?? (role === "ADMIN" ? "Duali" : ""));
       session.user.telefono = (token.telefono as string | null | undefined) ?? null;
       session.user.apiToken = apiToken;
+      session.user.collaboratorId = collaboratorId;
+      session.user.collaboratorRole = collaboratorId ? (token.collaboratorRole ?? "ADMIN") : null;
       return session;
     }
   }
 });
+
+/**
+ * Spec 024 R4: un colaborador entra por el mismo login y trabaja sobre el negocio
+ * de la dueña (`id` es el negocio; el token lleva ademas quien es).
+ */
+async function authorizeCollaborator(email: string, password: string) {
+  const collaborator = await prisma.collaborator.findFirst({
+    where: { email, activo: true, client: { deletedAt: null } },
+    include: { client: { select: { id: true, businessName: true } } }
+  });
+  if (!collaborator || !(await comparePassword(password, collaborator.passwordHash))) return null;
+  await prisma.collaborator.update({ where: { id: collaborator.id }, data: { ultimoAcceso: new Date() } });
+
+  return {
+    id: collaborator.client.id,
+    role: "CLIENT" as const,
+    name: collaborator.nombre,
+    email: collaborator.email,
+    businessName: collaborator.client.businessName,
+    telefono: collaborator.celular,
+    apiToken: signToken({ id: collaborator.client.id, email: collaborator.email }, collaborator.id),
+    collaboratorId: collaborator.id,
+    collaboratorRole: collaborator.rol
+  };
+}

@@ -51,6 +51,7 @@ export const clientProfileSchema = z.object({
   devolverClaseInasistencia: z.boolean().optional(),
   permitirPagoEnEstudio: z.boolean().optional(),
   exigirPagoValidado: z.boolean().optional(),
+  diasPlazoSaldo: z.coerce.number().int().min(0, "Mínimo 0 días").max(90, "Máximo 90 días").optional(),
   nombre: z.string().min(2).optional(),
   telefono: z.string().optional().nullable(),
   businessName: z.string().min(2).optional(),
@@ -430,6 +431,8 @@ const classScheduleFieldsSchema = z.object({
   duracionMin: z.coerce.number().int().min(15, "Mínimo 15 minutos").max(240, "Máximo 4 horas"),
   cupo: z.coerce.number().int().min(1, "Mínimo 1 cupo").max(500),
   instructor: optionalTextSchema(80),
+  // Spec 023 D5: el titular registrado (null lo quita).
+  instructorId: z.string().min(1).optional().nullable(),
   activo: z.boolean().optional()
 });
 
@@ -450,7 +453,9 @@ export const classSessionUpdateSchema = z.object({
   fecha: dateKeySchema,
   cupo: z.coerce.number().int().min(1).max(500).optional(),
   cancelada: z.boolean().optional(),
-  motivoCancelacion: optionalTextSchema(200)
+  motivoCancelacion: optionalTextSchema(200),
+  // Spec 023 D5: reemplazo de esta fecha (null vuelve al titular).
+  instructorId: z.string().min(1).optional().nullable()
 });
 
 // ─── Modo Estudio: clientes y ventas (spec 006) ───────────────────────────────
@@ -487,8 +492,13 @@ export const memberPackageSaleSchema = z.object({
   inicio: dateKeySchema.optional(),
   precio: z.coerce.number().min(0).max(100_000_000).optional(),
   notas: optionalTextSchema(300),
-  pago: studioPaymentSchema.optional()
+  pago: studioPaymentSchema.optional(),
+  /** Spec 020 D2. */
+  fechaLimitePago: dateKeySchema.optional().nullable()
 });
+
+/** Spec 020 R3: renovar el mismo paquete, encadenado a la venta anterior. */
+export const memberPackageRenewSchema = memberPackageSaleSchema.pick({ inicio: true, precio: true, pago: true, fechaLimitePago: true });
 
 export const memberPackageUpdateSchema = z.union([
   z.object({ vence: dateKeySchema }),
@@ -588,6 +598,9 @@ export const publicPlanPurchaseSchema = z.object({
   apellido: optionalTextSchema(60),
   pago: onlinePaymentSchema
 });
+
+/** Spec 020 R13: renovar desde Mi plan; los datos salen del enlace. */
+export const publicPlanRenewSchema = z.object({ pago: onlinePaymentSchema });
 
 export const publicPlanReceiptSchema = z.object({
   comprobante: z.string().max(6_000_000),
@@ -695,3 +708,141 @@ export const subscriptionPaymentSchema = z.object({
   notes: z.string().optional().nullable(),
   paidAt: localDateInputSchema.optional()
 });
+
+// ─── Modo Estudio: instructores (spec 023) ────────────────────────────────────
+
+const payMoneySchema = z.coerce.number().min(0).max(100_000_000);
+
+const instructorDisciplineSchema = z.object({
+  disciplineId: z.string().min(1),
+  valor: payMoneySchema.optional().nullable()
+});
+
+/**
+ * D1: sueldo fijo = solo `sueldo`; variable = solo `variable` + `valor`;
+ * sueldo + variable = ambos. Con ALUMNO_PORCENTAJE los valores son %.
+ */
+export const instructorSchema = z
+  .object({
+    nombre: z.string().trim().min(2, "El nombre es muy corto").max(60),
+    apellido: optionalTextSchema(60),
+    celular: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((value) => (value ? normalizeMemberPhone(value) : null))
+      .refine((value) => !value || (value.length >= 7 && value.length <= 15), "Celular inválido"),
+    email: z.string().trim().max(120).email("Correo inválido").optional().nullable().or(z.literal("").transform(() => null)),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido").default("#0ea5e9"),
+    activo: z.boolean().optional(),
+    notas: optionalTextSchema(500),
+    sueldo: payMoneySchema.nullable().default(null),
+    variable: z.enum(["POR_CLASE", "ALUMNO_FIJO", "ALUMNO_PORCENTAJE"]).nullable().default(null),
+    valor: payMoneySchema.nullable().default(null),
+    minimoPorClase: payMoneySchema.nullable().default(null),
+    alumnosMinimos: z.coerce.number().int().min(1).max(100).default(1),
+    disciplinas: z.array(instructorDisciplineSchema).max(40).default([])
+  })
+  .superRefine((value, ctx) => {
+    if (value.sueldo == null && !value.variable) {
+      ctx.addIssue({ code: "custom", path: ["variable"], message: "Elige cómo le pagas" });
+    }
+    if (value.sueldo != null && value.sueldo <= 0) ctx.addIssue({ code: "custom", path: ["sueldo"], message: "El sueldo debe ser mayor a 0" });
+    if (value.variable && !(value.valor && value.valor > 0)) {
+      ctx.addIssue({ code: "custom", path: ["valor"], message: "Escribe el valor" });
+    }
+    if (value.variable === "ALUMNO_PORCENTAJE") {
+      const tooHigh = [value.valor, ...value.disciplinas.map((item) => item.valor)].some((item) => item != null && item > 100);
+      if (tooHigh) ctx.addIssue({ code: "custom", path: ["valor"], message: "El porcentaje no puede pasar de 100" });
+    }
+    const ids = value.disciplinas.map((item) => item.disciplineId);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["disciplinas"], message: "Disciplina repetida" });
+  });
+
+export type InstructorInput = z.infer<typeof instructorSchema>;
+
+// ─── Spec 023 fase 2: ciclo de pago de instructores ───────────────────────────
+
+const payFrequencySchema = z.enum(["DIARIO", "SEMANAL", "QUINCENAL", "MENSUAL"]);
+
+function checkPayDay(frecuencia: z.infer<typeof payFrequencySchema>, dia: number, path: string, ctx: z.RefinementCtx) {
+  if (frecuencia === "SEMANAL" && (dia < 1 || dia > 7)) ctx.addIssue({ code: "custom", path: [path], message: "Elige un día de la semana" });
+  if ((frecuencia === "QUINCENAL" || frecuencia === "MENSUAL") && (dia < 1 || dia > 28)) {
+    ctx.addIssue({ code: "custom", path: [path], message: "El día debe estar entre 1 y 28" });
+  }
+}
+
+export const instructorPaySettingsSchema = z
+  .object({
+    frecuencia: payFrequencySchema,
+    diaPago: z.coerce.number().int().default(1),
+    frecuenciaSueldo: payFrequencySchema,
+    diaPagoSueldo: z.coerce.number().int().default(1),
+    diaPagoAbreSiguiente: z.boolean().default(false),
+    inasistenciasCuentan: z.boolean().default(false),
+    pagarClasesVacias: z.boolean().default(false),
+    basePorcentaje: z.enum(["VENDIDO", "COBRADO"]).default("VENDIDO")
+  })
+  .superRefine((value, ctx) => {
+    checkPayDay(value.frecuencia, value.diaPago, "diaPago", ctx);
+    checkPayDay(value.frecuenciaSueldo, value.diaPagoSueldo, "diaPagoSueldo", ctx);
+  })
+  .transform((value) => ({
+    ...value,
+    diaPago: value.frecuencia === "DIARIO" ? 1 : value.diaPago,
+    diaPagoSueldo: value.frecuenciaSueldo === "DIARIO" ? 1 : value.diaPagoSueldo
+  }));
+
+export type InstructorPaySettingsInput = z.infer<typeof instructorPaySettingsSchema>;
+
+// ─── Spec 023 fase 3: pagos a instructores ────────────────────────────────────
+
+export const instructorPaySchema = z
+  .object({
+    instructorId: z.string().min(1),
+    tipo: z.enum(["COMISION", "SUELDO"]),
+    /** Como CliqCut: solo el saldo anterior, solo el ciclo actual, o los dos. */
+    alcance: z.enum(["TODO", "SALDO", "ACTUAL"]).default("TODO"),
+    monto: z.coerce.number().int("En pesos enteros").positive("El monto debe ser mayor a 0").max(100_000_000),
+    // D8: en una o dos formas a la vez.
+    metodos: z
+      .array(z.object({ metodo: z.enum(STUDIO_PAYMENT_METHODS), monto: z.coerce.number().int().positive().max(100_000_000) }))
+      .min(1, "Elige con qué le pagas")
+      .max(2, "Máximo dos formas de pago"),
+    nota: optionalTextSchema(300)
+  })
+  .superRefine((value, ctx) => {
+    const sum = value.metodos.reduce((total, item) => total + item.monto, 0);
+    if (sum !== value.monto) ctx.addIssue({ code: "custom", path: ["metodos"], message: "Las formas de pago no suman el total" });
+    if (value.metodos.length === 2 && value.metodos[0].metodo === value.metodos[1].metodo) {
+      ctx.addIssue({ code: "custom", path: ["metodos"], message: "Elige dos formas de pago distintas" });
+    }
+  });
+
+export type InstructorPayInput = z.infer<typeof instructorPaySchema>;
+
+export const instructorPaymentVoidSchema = z.object({ motivo: z.string().trim().min(3, "Escribe el motivo").max(200) });
+
+// ─── Spec 024: colaboradores con acceso ───────────────────────────────────────
+
+export const collaboratorSchema = z.object({
+  nombre: z.string().trim().min(2, "El nombre es muy corto").max(80),
+  email: z.string().trim().toLowerCase().email("Correo inválido").max(120),
+  celular: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((value) => (value ? normalizeMemberPhone(value) : null)),
+  rol: z.enum(["ADMIN", "SOCIO"]),
+  permisos: z.record(z.string(), z.boolean()).default({}),
+  // Al crear es obligatoria; al editar, vacia = no cambiarla.
+  password: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((value) => value || null)
+    .refine((value) => !value || value.length >= 8, "La contraseña debe tener al menos 8 caracteres"),
+  activo: z.boolean().optional()
+});
+
+export type CollaboratorInput = z.infer<typeof collaboratorSchema>;

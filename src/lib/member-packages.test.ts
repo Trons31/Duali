@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { classUsage, serializeMemberPackage } from "@/lib/member-packages";
+import { classUsage, expiredWithoutRenewal, paymentDeadline, renewalStart, serializeMemberPackage } from "@/lib/member-packages";
 import { normalizeMemberPhone } from "@/lib/studio-constants";
 
 type Row = Parameters<typeof serializeMemberPackage>[0];
@@ -27,9 +27,14 @@ function sale(overrides: Partial<Row> = {}): Row {
     discipline: { id: "disciplina", nombre: "Body Combat", color: "#f43f5e", tipo: "CLASE" },
     origen: "PANEL",
     accessToken: null,
+    fechaLimitePago: null,
+    renovacionDeId: null,
     payments: [],
     bookings: [],
     receipts: [],
+    client: { diasPlazoSaldo: 7 },
+    renovacionDe: null,
+    renovaciones: [],
     ...overrides
   };
 }
@@ -135,5 +140,70 @@ describe("barra de clases y clase suelta (spec 019 R8, D2)", () => {
     assert.equal(item.clase?.fecha, "2026-10-13");
     assert.equal(item.clase?.horaInicio, "18:00");
     assert.equal(serializeMemberPackage(sale({ clases: 1 }), "2026-10-05").clase, null);
+  });
+});
+
+describe("fecha límite del saldo y renovación (spec 020)", () => {
+  // La venta base: empieza el 1 oct, vence el 30 oct, debe 25.000.
+  test("sin fecha guardada, el saldo vence a los días del plazo; con fecha, en esa", () => {
+    assert.equal(paymentDeadline({ fechaLimitePago: null, inicio: new Date("2026-10-01T00:00:00Z") }, 7), "2026-10-08");
+    assert.equal(
+      paymentDeadline({ fechaLimitePago: new Date("2026-10-20T00:00:00Z"), inicio: new Date("2026-10-01T00:00:00Z") }, 7),
+      "2026-10-20"
+    );
+  });
+
+  test("el saldo está vencido desde el día después de la fecha límite, con sus días de atraso", () => {
+    assert.equal(serializeMemberPackage(sale(), "2026-10-08").saldoVencido, false);
+    const late = serializeMemberPackage(sale(), "2026-10-11");
+    assert.equal(late.saldoVencido, true);
+    assert.equal(late.diasAtrasoSaldo, 3);
+    assert.equal(serializeMemberPackage(sale({ client: { diasPlazoSaldo: 15 } }), "2026-10-11").saldoVencido, false);
+    assert.equal(serializeMemberPackage(sale({ pagado: 55000 as never }), "2026-10-20").saldoVencido, false);
+  });
+
+  test("un pago en revisión no está atrasado; uno rechazado sí", () => {
+    const review = sale({ origen: "PUBLICO", receipts: [{ estado: "POR_REVISAR", createdAt: new Date("2026-10-02T12:00:00Z") }] });
+    assert.equal(serializeMemberPackage(review, "2026-10-20").saldoVencido, false);
+    const rejected = sale({ origen: "PUBLICO", receipts: [{ estado: "RECHAZADO", createdAt: new Date("2026-10-02T12:00:00Z") }] });
+    assert.equal(serializeMemberPackage(rejected, "2026-10-20").saldoVencido, true);
+  });
+
+  test("días vencido y cuándo se puede renovar", () => {
+    const expired = serializeMemberPackage(sale(), "2026-11-04");
+    assert.equal(expired.estado, "VENCIDO");
+    assert.equal(expired.diasVencido, 5);
+    assert.equal(expired.puedeRenovar, true);
+    assert.equal(serializeMemberPackage(sale(), "2026-10-09").puedeRenovar, false, "vigente y lejos de vencer");
+    assert.equal(serializeMemberPackage(sale(), "2026-10-28").puedeRenovar, true, "por vencer");
+    assert.equal(serializeMemberPackage(sale({ clasesUsadas: 4 }), "2026-10-09").puedeRenovar, true, "agotado");
+    assert.equal(serializeMemberPackage(sale({ clases: 1 }), "2026-11-04").puedeRenovar, false, "clase suelta");
+    const renewed = sale({
+      renovaciones: [{ id: "nueva", nombre: "Básico", inicio: new Date("2026-10-31T00:00:00Z"), vence: new Date("2026-11-29T00:00:00Z") }]
+    });
+    const view = serializeMemberPackage(renewed, "2026-11-04");
+    assert.equal(view.puedeRenovar, false);
+    assert.deepEqual(view.renovadoPor, { id: "nueva", nombre: "Básico", inicio: "2026-10-31", vence: "2026-11-29" });
+  });
+
+  test("renovar: vigente sigue al día siguiente de vencer; vencido o agotado, hoy", () => {
+    assert.equal(renewalStart({ estado: "ACTIVO", vence: "2026-10-30" }, "2026-10-28"), "2026-10-31");
+    assert.equal(renewalStart({ estado: "VENCIDO", vence: "2026-10-30" }, "2026-11-04"), "2026-11-04");
+    assert.equal(renewalStart({ estado: "AGOTADO", vence: "2026-10-30" }, "2026-10-20"), "2026-10-20");
+  });
+
+  test("vencidos sin renovar: sin otro plan vigente, dentro de 60 días, uno por disciplina", () => {
+    const today = "2026-11-10";
+    const view = (overrides: Partial<Row>) => ({ ...serializeMemberPackage(sale(overrides), today), discipline: { id: overrides.disciplineId ?? "disciplina", nombre: "", color: "", tipo: "CLASE" as const } });
+    const ida = view({ id: "ida", memberId: "ida", vence: new Date("2026-11-05T00:00:00Z") });
+    const idaOlder = view({ id: "ida-vieja", memberId: "ida", vence: new Date("2026-10-01T00:00:00Z") });
+    const eva = view({ id: "eva", memberId: "eva", vence: new Date("2026-11-08T00:00:00Z") });
+    const evaActive = view({ id: "eva-nueva", memberId: "eva", disciplineId: "otra", vence: new Date("2026-12-01T00:00:00Z") });
+    const old = view({ id: "olga", memberId: "olga", vence: new Date("2026-08-01T00:00:00Z") });
+    const bea = view({ id: "bea", memberId: "bea", vence: new Date("2026-11-09T00:00:00Z") });
+
+    const result = expiredWithoutRenewal([ida, idaOlder, eva, evaActive, old, bea]);
+    assert.deepEqual(result.map((item) => item.id), ["bea", "ida"]);
+    assert.deepEqual(expiredWithoutRenewal([ida, bea], 3).map((item) => item.id), ["bea"]);
   });
 });

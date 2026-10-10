@@ -4,8 +4,12 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import * as publicPageRoute from "@/app/api/client/public-page/route";
 import * as bookingsRoute from "@/app/api/bookings/route";
+import * as paymentRoute from "@/app/api/member-packages/[id]/payments/[paymentId]/route";
 import * as postsRoute from "@/app/api/content-posts/route";
 import * as sessionsRoute from "@/app/api/class-sessions/route";
+import * as instructorsRoute from "@/app/api/instructors/route";
+import * as paySettingsRoute from "@/app/api/instructor-payments/settings/route";
+import * as collaboratorsRoute from "@/app/api/collaborators/route";
 import { hashPassword } from "@/lib/auth";
 import { addDaysToKey, isoWeekday, studioNow } from "@/lib/studio-time";
 import { call, disconnect, expectOk, prisma } from "../functional/helpers";
@@ -85,13 +89,15 @@ describe("proxy: qué pide sesión y qué no", () => {
 });
 
 describe("spec 008 · página pública renderizada", () => {
-  test("muestra negocio, horario con cupos, precios y cómo pagar; nunca nombres de clientes", async () => {
+  test("muestra negocio, horario con cupos y precios; nunca nombres de clientes", async () => {
     const { status, html } = await new Browser().page(`/s/${slug}`);
     assert.equal(status, 200);
     const text = visibleText(html);
-    for (const expected of ["Studio Dance E2E", "Reservar clase", "Horario", "Planes", "Body Combat", "Mix Studio", "Básico", "Cómo pagar", "Nequi", "Copiar"]) {
+    for (const expected of ["Studio Dance E2E", "Reservar clase", "Horario", "Planes", "Body Combat", "Mix Studio", "Básico"]) {
       assert.ok(text.includes(expected), `falta "${expected}"`);
     }
+    // Las cuentas se muestran en el paso Pago (spec 021), no en la portada.
+    assert.equal(text.includes("Cómo pagar"), false);
     assert.match(text, /55\.000/);
     assert.match(text, /Quedan 9 cupos/, "la clase con 1 reserva de 10 cupos");
     assert.equal(text.includes("Laura"), false, "no expone clientes");
@@ -203,8 +209,6 @@ describe("spec 017 · navegación de la página pública", () => {
     for (const label of ["Horario", "Clases", "Planes"]) assert.ok(header.includes(`>${label}</a>`), `falta ${label} en la barra`);
     assert.equal(header.includes("Cómo pagar"), false);
     assert.match(header, /aria-label="Abrir menú"/);
-    // La sección de pagos sigue en la página.
-    assert.match(html, /id="pagos"/);
   });
 });
 
@@ -290,7 +294,8 @@ describe("panel de la dueña (specs 001–008)", () => {
     const { status, html } = await browser.page(`/dashboard/clientes/${memberId}`);
     assert.equal(status, 200);
     const text = visibleText(html);
-    for (const expected of ["Laura", "Saldo pendiente", "Básico", "Próximas reservas", "Vender paquete", "Quedan 3 de 4", "1 reservada", "Clases (1)"]) {
+    // Spec 022: resumen arriba, el plan con su accion principal y los desplegables.
+    for (const expected of ["Laura", "clases disponibles", "debe · antes del", "Plan actual", "Básico", "Próximas clases", "Vender paquete", "Quedan 3 de 4", "1 reservada", "Clases (1)", "Pagos (1)", "Registrar pago", "Más"]) {
       assert.ok(text.includes(expected), `falta "${expected}"`);
     }
   });
@@ -402,5 +407,207 @@ describe("spec 021 · comprar un plan en línea y Mi plan", () => {
     assert.ok(text.includes("Paula"));
     const plans = visibleText((await browser.page("/dashboard/clientes?tab=planes")).html);
     assert.ok(plans.includes("Pago en revisión"), "falta el filtro Pago en revisión");
+  });
+});
+
+describe("spec 020 · renovaciones, pagos y vencimientos", () => {
+  const PHOTO = `data:image/png;base64,iVBORw0KGgo${"A".repeat(400)}`;
+  let renataId = "";
+  let browser: Browser;
+
+  before(async () => {
+    const plan = await prisma.package.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Básico", clases: 4 }, select: { id: true } });
+    const renata = await createMember(owner.token, "Renata");
+    renataId = renata.id;
+    // Venció hace 10 días y no pagó: plan vencido sin renovar y saldo vencido.
+    await sell(owner.token, renata.id, plan.id, { inicio: addDaysToKey(studioNow().dateKey, -39) });
+    browser = new Browser();
+    await browser.login(owner.email, PASSWORD);
+  });
+
+  test("Clientes › Pagos lista los abonos con totales", async () => {
+    const { status, html } = await browser.page("/dashboard/clientes?tab=pagos");
+    assert.equal(status, 200);
+    const text = visibleText(html);
+    for (const expected of ["Pagos", "Cobrado este mes", "Por cobrar", "Saldos vencidos", "Hoy", "Laura", "Nequi", "Todos los métodos"]) {
+      assert.ok(text.includes(expected), `Pagos: falta "${expected}"`);
+    }
+  });
+
+  test("el filtro Vencidos sin renovar y la ficha con Registrar pago, Renovar y el menú Más", async () => {
+    const list = visibleText((await browser.page("/dashboard/clientes")).html);
+    assert.ok(list.includes("Vencidos sin renovar"), "falta el filtro");
+    assert.match(list, /Renata[\s\S]*venció hace 10 días/);
+
+    const card = visibleText((await browser.page(`/dashboard/clientes/${renataId}`)).html);
+    for (const expected of ["Venció hace 10 días", "Saldo vencido hace", "saldo vencido", "Registrar pago", "Renovar", "Más"]) {
+      assert.ok(card.includes(expected), `ficha: falta "${expected}"`);
+    }
+  });
+
+  test("Avisos e Inicio muestran vencidos sin renovar y saldos vencidos; Ajustes, el plazo", async () => {
+    const avisos = visibleText((await browser.page("/dashboard/avisos")).html);
+    for (const expected of ["Planes vencidos sin renovar", "Saldos vencidos", "Renata"]) assert.ok(avisos.includes(expected), `Avisos: falta "${expected}"`);
+    const home = visibleText((await browser.page("/dashboard")).html);
+    assert.ok(home.includes("saldo"), "Inicio: falta saldos vencidos");
+    const ajustes = visibleText((await browser.page("/dashboard/ajustes")).html);
+    assert.ok(ajustes.includes("Plazo para pagar el saldo"), "Ajustes: falta el plazo");
+  });
+
+  test("Mi plan vencido ofrece Renovar y abre el pago sin pedir datos", async () => {
+    const plan = await prisma.package.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Básico", visiblePublico: true }, select: { id: true } });
+    const visitor = new Browser();
+    const bought = await visitor.json(`/api/public/studios/${slug}/plans`, "POST", {
+      packageId: plan.id,
+      celular: "3115550388",
+      nombre: "Gina",
+      pago: { tipo: "COMPROBANTE", comprobante: PHOTO, metodo: "Nequi" }
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+    const token = bought.body.data.accessToken as string;
+    const today = studioNow().dateKey;
+    await prisma.memberPackage.update({
+      where: { accessToken: token },
+      data: { inicio: new Date(`${addDaysToKey(today, -40)}T00:00:00Z`), vence: new Date(`${addDaysToKey(today, -11)}T00:00:00Z`) }
+    });
+
+    const mine = visibleText((await visitor.page(`/s/${slug}/plan/${token}`)).html);
+    assert.ok(mine.includes("Renovar plan"), "Mi plan: falta Renovar plan");
+
+    const renew = await visitor.page(`/s/${slug}/comprar?renueva=${token}`);
+    assert.equal(renew.status, 200);
+    const text = visibleText(renew.html);
+    for (const expected of ["Renueva tu plan", "Renovación para Gina", "Enviar comprobante y renovar"]) assert.ok(text.includes(expected), `renovar: falta "${expected}"`);
+    assert.equal(text.includes("Tus datos"), false, "no pide datos");
+  });
+});
+
+describe("spec 022 · ficha del cliente", () => {
+  const PHOTO = `data:image/png;base64,iVBORw0KGgo${"A".repeat(400)}`;
+  let browser: Browser;
+
+  before(async () => {
+    browser = new Browser();
+    await browser.login(owner.email, PASSWORD);
+  });
+
+  test("un pago anulado dice Anulado y no cuenta en Pagos", async () => {
+    const plan = await prisma.package.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Básico", clases: 4 }, select: { id: true } });
+    const member = await createMember(owner.token, "Nora");
+    const sale = await sell(owner.token, member.id, plan.id, { pago: { monto: 55000, metodoPago: "NEQUI" } });
+    const payment = await prisma.memberPackagePayment.findFirstOrThrow({ where: { memberPackageId: sale.id } });
+    expectOk(await call(paymentRoute.DELETE, { token: owner.token, method: "DELETE", params: { id: sale.id, paymentId: payment.id } }));
+
+    const text = visibleText((await browser.page(`/dashboard/clientes/${member.id}`)).html);
+    for (const expected of ["Pagos (0)", "1 pago anulado no cuenta", "Anulado", "Registrar pago", "Comprobantes (0)"]) {
+      assert.ok(text.includes(expected), `ficha: falta "${expected}"`);
+    }
+  });
+
+  test("la pestaña Comprobantes se abre sola con el globo y deja aprobar", async () => {
+    const plan = await prisma.package.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Básico", visiblePublico: true }, select: { id: true } });
+    const bought = await new Browser().json(`/api/public/studios/${slug}/plans`, "POST", {
+      packageId: plan.id,
+      celular: "3115550499",
+      nombre: "Olivia",
+      pago: { tipo: "COMPROBANTE", comprobante: PHOTO, metodo: "Nequi" }
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+    const member = await prisma.studioMember.findFirstOrThrow({ where: { clientId: owner.id, celular: "3115550499" }, select: { id: true } });
+
+    const { html } = await browser.page(`/dashboard/clientes/${member.id}`);
+    assert.match(html, /aria-label="1 por revisar"/, "la pestaña lleva el globo");
+    const text = visibleText(html);
+    for (const expected of ["Revisar comprobante", "Comprobantes", "Por revisar", "Aprobar $", "Rechazar", "Compró en línea", "Pago en revisión"]) {
+      assert.ok(text.includes(expected), `ficha: falta "${expected}"`);
+    }
+  });
+
+  test("con dos planes muestra el selector y un plan a la vez", async () => {
+    const plans = await prisma.package.findMany({ where: { clientId: owner.id, nombre: "Básico", clases: 4 }, select: { id: true } });
+    const member = await createMember(owner.token, "Dalia");
+    await sell(owner.token, member.id, plans[0].id, { pago: { monto: 55000, metodoPago: "NEQUI" } });
+    await sell(owner.token, member.id, plans[1].id);
+
+    const { html } = await browser.page(`/dashboard/clientes/${member.id}`);
+    const text = visibleText(html);
+    assert.ok(text.includes("Planes actuales (2)"), "falta el título con los dos planes");
+    assert.match(html, /aria-label="Planes del cliente"/, "falta el selector de planes");
+    assert.equal((html.match(/Más acciones del plan/g) ?? []).length, 1, "se ve un plan a la vez");
+  });
+});
+
+describe("spec 023 · instructores y pagos a instructores", () => {
+  let browser: Browser;
+
+  before(async () => {
+    browser = new Browser();
+    await browser.login(owner.email, PASSWORD);
+  });
+
+  test("instructores, titular en el horario y Pagos que primero invita a configurar", async () => {
+    const discipline = await prisma.discipline.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Body Combat" }, select: { id: true } });
+    expectOk(
+      await call(instructorsRoute.POST, {
+        token: owner.token,
+        method: "POST",
+        body: { nombre: "Valeria", apellido: "Toro", variable: "ALUMNO_FIJO", valor: 6000, disciplinas: [{ disciplineId: discipline.id }] }
+      }),
+      201
+    );
+
+    // Spec 024 R8: la dirección vieja lleva a Colaboradores.
+    const old = await browser.page("/dashboard/instructores");
+    assert.match(old.location ?? "", /\/dashboard\/colaboradores$/);
+    const team = visibleText((await browser.page("/dashboard/colaboradores")).html);
+    for (const expected of ["Colaboradores", "Agregar colaborador", "Instructores", "Administradores", "Socios", "Valeria Toro", "$6.000 por alumno", "EQUIPO", "Pagos"]) {
+      assert.ok(team.includes(expected), `instructores: falta "${expected}"`);
+    }
+
+    const invite = visibleText((await browser.page("/dashboard/colaboradores/pagos")).html);
+    for (const expected of ["Pagos a instructores", "Configura tu ciclo de pago", "No se genera deuda de antes"]) {
+      assert.ok(invite.includes(expected), `pagos sin configurar: falta "${expected}"`);
+    }
+
+    expectOk(
+      await call(paySettingsRoute.PUT, {
+        token: owner.token,
+        method: "PUT",
+        body: { frecuencia: "SEMANAL", diaPago: 7, frecuenciaSueldo: "MENSUAL", diaPagoSueldo: 15 }
+      })
+    );
+    const ledger = visibleText((await browser.page("/dashboard/colaboradores/pagos")).html);
+    for (const expected of ["Total pendiente de pago", "Comisiones:", "Semanal, los domingos", "Configurar ciclo de pago", "Pendientes", "Historial"]) {
+      assert.ok(ledger.includes(expected), `pagos: falta "${expected}"`);
+    }
+    // Nadie del equipo tiene sueldo: ese calendario no aparece.
+    assert.equal(ledger.includes("Sueldos:"), false);
+  });
+});
+
+describe("spec 024 · un administrador entra y ve solo su menú", () => {
+  test("login con su correo, menú según permisos, sin plan y sin acceso a lo demás", async () => {
+    const adminEmail = `admin-${Date.now()}@equipo.test`;
+    expectOk(
+      await call(collaboratorsRoute.POST, {
+        token: owner.token,
+        method: "POST",
+        path: "/api/collaborators",
+        body: { nombre: "Camila Admin", email: adminEmail, password: "Secreta123", rol: "ADMIN", permisos: { HORARIO: true, VER_PAGOS: true } }
+      }),
+      201
+    );
+    const camila = new Browser();
+    await camila.login(adminEmail, "Secreta123");
+
+    const home = visibleText((await camila.page("/dashboard/horario")).html);
+    for (const expected of ["Horario de clases", "Camila Admin", "Administrador", "Pagos"]) {
+      assert.ok(home.includes(expected), `horario: falta "${expected}"`);
+    }
+    for (const hidden of ["Clientes", "Contabilidad", "Mi Plan", "Colaboradores"]) {
+      assert.equal(home.includes(hidden), false, `no debería ver "${hidden}"`);
+    }
+    const blocked = visibleText((await camila.page("/dashboard/contabilidad")).html);
+    assert.ok(blocked.includes("No tienes acceso a esta sección"));
   });
 });

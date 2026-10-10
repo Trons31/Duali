@@ -8,6 +8,9 @@ declare module "next-auth" {
       businessName: string;
       telefono?: string | null;
       apiToken: string;
+      /** Spec 024: quien entro, si no es la dueña. */
+      collaboratorId?: string | null;
+      collaboratorRole?: "ADMIN" | "SOCIO" | null;
     };
   }
 
@@ -17,6 +20,8 @@ declare module "next-auth" {
     businessName: string;
     telefono?: string | null;
     apiToken: string;
+    collaboratorId?: string | null;
+    collaboratorRole?: "ADMIN" | "SOCIO" | null;
   }
 }
 
@@ -26,5 +31,7 @@ declare module "next-auth/jwt" {
     role?: "CLIENT" | "ADMIN";
     telefono?: string | null;
     apiToken?: string;
+    collaboratorId?: string | null;
+    collaboratorRole?: "ADMIN" | "SOCIO" | null;
   }
 }

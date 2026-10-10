@@ -38,7 +38,8 @@ Ningún negocio queda publicado sin que su dueño lo active.
     `activo && visiblePublico`, igual que en el panel.
   - **Horario:** próximos 7 días con cada clase, hora y "Quedan N cupos" / "Lleno"
     / "Cancelada". Nunca se muestran nombres de clientes.
-  - **Cómo pagar:** los métodos de pago del negocio (Ajustes).
+  - ~~**Cómo pagar:** los métodos de pago del negocio (Ajustes).~~ Quitada el
+    2026-10-10: las cuentas se muestran, con Copiar, en el paso Pago (spec 021).
   - Botón **Reservar** → asistente de la spec 009.
 - **R3 — Panel** `MI PÁGINA → Página pública` (`/dashboard/mi-pagina`): elegir la
   dirección, publicar/despublicar, copiar enlace, abrir y compartir por WhatsApp.
