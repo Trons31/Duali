@@ -1,4 +1,3 @@
-import type { Prisma } from "@prisma/client";
 import type { prisma } from "./prisma";
 
 /**
@@ -15,10 +14,12 @@ export type ExtendedTransactionClient = Omit<
  * Los helpers que sirven tanto dentro de una transaccion como con el cliente
  * global reciben este tipo.
  */
-export type DbClient = Prisma.TransactionClient | ExtendedTransactionClient | typeof prisma;
+// Un solo tipo, no una union: con la union de tres clientes TypeScript debia
+// comparar las firmas de cada modelo y, con el esquema mas grande, se rendia
+// ("This expression is not callable" / "Excessive stack depth") y rompia el build.
+// La extension de prisma.ts solo intercepta consultas, asi que el cliente global
+// (que tiene todo lo de ExtendedTransactionClient) tambien encaja aqui.
+export type DbClient = ExtendedTransactionClient;
 
 /** Igual que `DbClient`, pero solo con los modelos que el helper necesita. */
-export type DbClientFor<K extends keyof Prisma.TransactionClient> =
-  | Pick<Prisma.TransactionClient, K>
-  | Pick<ExtendedTransactionClient, K & keyof ExtendedTransactionClient>
-  | typeof prisma;
+export type DbClientFor<K extends keyof ExtendedTransactionClient> = Pick<ExtendedTransactionClient, K>;
