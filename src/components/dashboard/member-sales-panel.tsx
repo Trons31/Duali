@@ -102,7 +102,7 @@ export function MemberSalesPanel({ sales: allSales, today }: { sales: MemberPack
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-ink-800">{memberName(item.member)}</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-ink-500">
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-ink-500">
                         <ColorDot color={item.discipline.color} className="size-2" />
                         {item.nombre} · {item.discipline.nombre}
                         <OnlineBadge item={item} />

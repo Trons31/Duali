@@ -35,10 +35,11 @@ textarea {
   background: rgba(20, 184, 126, 0.18);
 }
 
+/* Spec 025 R3: el aviso de la cabecera nunca desaparece del todo (dejaba una franja vacia). */
 @keyframes alert-fade {
   0%,
   9% {
-    opacity: 0;
+    opacity: 0.45;
     transform: translateY(2px);
   }
 
@@ -50,8 +51,17 @@ textarea {
 
   92%,
   100% {
-    opacity: 0;
+    opacity: 0.45;
     transform: translateY(-2px);
+  }
+}
+
+@layer base {
+  /* Spec 025 R1: un hijo de grid no estira su columna mas alla de la pantalla.
+     Sin esto, un grid sin columnas en movil crece hasta su contenido mas ancho
+     (pestanas, chips, botones) y corta las tarjetas por la derecha. */
+  .grid > * {
+    min-width: 0;
   }
 }
 

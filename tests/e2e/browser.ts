@@ -42,6 +42,11 @@ export class Browser {
     return { status: response.status, body: await response.json() };
   }
 
+  /** Las cookies de la sesion, para pasarlas a un navegador real (spec 025). */
+  cookieList() {
+    return [...this.cookies];
+  }
+
   /** Inicia sesion con el formulario de credenciales de NextAuth. */
   async login(email: string, password: string) {
     const csrf = await this.request("/api/auth/csrf");

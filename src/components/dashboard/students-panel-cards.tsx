@@ -658,7 +658,7 @@ export function StudentsPanelCards({
                 aria-controls="student-filters"
               >
                 <FiFilter className="size-4" />
-                <span className="hidden min-[360px]:inline">Filtros</span>
+                <span className="sr-only sm:not-sr-only">Filtros</span>
                 {activeFilterCount > 0 ? (
                   <span className="flex size-5 items-center justify-center rounded-full bg-brand-600 text-[10px] text-white">
                     {activeFilterCount}

@@ -241,12 +241,13 @@ function MemberHeader({ member, onEdit, onDelete }: { member: StudioMemberItem; 
 
   return (
     <section className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-      <div className="flex items-start gap-3 p-4 sm:items-center sm:p-6">
+      {/* Spec 025: en el celular los botones bajan a su fila y el nombre usa todo el ancho. */}
+      <div className="flex flex-wrap items-start gap-3 p-4 sm:flex-nowrap sm:items-center sm:p-6">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-lg font-bold text-brand-700">
           {member.nombre.slice(0, 1).toUpperCase()}
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-bold text-ink-900">{memberName(member)}</h1>
+          <h1 className="break-words text-xl font-bold leading-tight text-ink-900">{memberName(member)}</h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
             <span className="tabular-nums">{member.celular}</span>
             {member.email ? (
@@ -263,20 +264,20 @@ function MemberHeader({ member, onEdit, onDelete }: { member: StudioMemberItem; 
             ) : null}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
           <a
             href={whatsappLink(member.celular)}
             target="_blank"
             rel="noreferrer"
             aria-label="Escribir por WhatsApp"
-            className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-3 text-sm font-medium text-ink-700 transition hover:border-brand-300 hover:text-brand-700"
+            className="inline-flex min-h-10 min-w-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-3 text-sm font-medium text-ink-700 transition hover:border-brand-300 hover:text-brand-700 sm:flex-none"
           >
-            <FiMessageCircle className="size-4" />
-            <span className="hidden sm:inline">WhatsApp</span>
+            <FiMessageCircle className="size-4 shrink-0" />
+            <span>WhatsApp</span>
           </a>
-          <Button variant="secondary" className="min-h-10 rounded-xl px-3 font-medium" onClick={onEdit} aria-label="Editar cliente">
+          <Button variant="secondary" className="min-h-10 flex-1 rounded-xl px-3 font-medium sm:flex-none" onClick={onEdit} aria-label="Editar cliente">
             <FiEdit2 className="size-4" />
-            <span className="hidden sm:inline">Editar</span>
+            <span>Editar</span>
           </Button>
           <ActionMenu label="Más opciones del cliente" items={[{ label: "Eliminar cliente", danger: true, onSelect: onDelete, icon: <FiTrash2 /> }]} />
         </div>
@@ -287,7 +288,7 @@ function MemberHeader({ member, onEdit, onDelete }: { member: StudioMemberItem; 
           <span className="text-2xl font-black tabular-nums text-ink-900">{member.clasesDisponibles}</span>
         </Metric>
         <Metric label={member.proxima ? `próxima · ${member.proxima.disciplina}` : "próxima clase"}>
-          <span className="block truncate text-sm font-bold capitalize text-ink-900">
+          <span className="block text-sm font-bold text-ink-900 first-letter:uppercase">
             {member.proxima ? formatClassDate(member.proxima.fecha, member.proxima.horaInicio) : "Sin reservas"}
           </span>
         </Metric>
@@ -297,7 +298,7 @@ function MemberHeader({ member, onEdit, onDelete }: { member: StudioMemberItem; 
           </span>
         </Metric>
         <Metric label="cliente desde">
-          <span className="text-sm font-bold capitalize text-ink-900">{since}</span>
+          <span className="block text-sm font-bold text-ink-900 first-letter:uppercase">{since}</span>
         </Metric>
       </dl>
     </section>
@@ -308,7 +309,7 @@ function Metric({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 border-ink-100 px-4 py-3 odd:border-r sm:border-r sm:px-6 sm:last:border-r-0 [&:nth-child(-n+2)]:border-b sm:[&:nth-child(-n+2)]:border-b-0">
       <dd className="flex min-h-8 items-end">{children}</dd>
-      <dt className="mt-0.5 truncate text-xs text-ink-500 first-letter:uppercase">{label}</dt>
+      <dt className="mt-0.5 text-xs text-ink-500 first-letter:uppercase">{label}</dt>
     </div>
   );
 }
@@ -984,7 +985,7 @@ function UpcomingBookings({ bookings }: { bookings: BookingItem[] }) {
                 <div className="flex min-w-0 items-center gap-2.5">
                   <ColorDot color={booking.session.discipline.color} className="size-2.5" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold capitalize text-ink-800">
+                    <p className="text-sm font-semibold text-ink-800 first-letter:uppercase">
                       {formatClassDate(booking.session.fecha, booking.session.horaInicio)}
                     </p>
                     <p className="truncate text-xs text-ink-500">
