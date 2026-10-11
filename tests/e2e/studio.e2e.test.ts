@@ -196,7 +196,7 @@ describe("spec 016 · logo nuevo", () => {
       assert.match(html, /#22d3ee/);
       assert.equal(html.includes("y5lrqo"), false);
     }
-    const icon = await new Browser().request("/logo/icon.svg");
+    const icon = await new Browser().request("/logo/duali-icon.svg");
     assert.equal(icon.status, 200);
   });
 });

@@ -1,4 +1,4 @@
-self.DUALI_NOTIFICATION_ICON = "/logo/icon-metadata.png";
+self.DUALI_NOTIFICATION_ICON = "/logo/duali-icon-192.png";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

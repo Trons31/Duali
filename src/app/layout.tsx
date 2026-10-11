@@ -42,11 +42,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/logo/icon.svg", type: "image/svg+xml" },
-      { url: "/logo/icon-metadata.png", type: "image/png", sizes: "512x512" }
+      { url: "/logo/duali-icon.svg", type: "image/svg+xml" },
+      { url: "/logo/duali-icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/logo/duali-icon-512.png", type: "image/png", sizes: "512x512" }
     ],
-    shortcut: "/logo/icon-metadata.png",
-    apple: "/logo/icon-metadata.png"
+    shortcut: "/logo/duali-icon-192.png",
+    apple: { url: "/logo/duali-apple-icon-180.png", sizes: "180x180" }
   },
   openGraph: {
     type: "website",
