@@ -11,6 +11,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx scripts/seed-demo-studio.ts",
+    "db:seed:validacion": "tsx scripts/seed-demo-validation.ts",
     "prisma": "prisma",
     "test": "npm run test:unit && npm run test:functional",
     "test:all": "npm test && npm run test:e2e",

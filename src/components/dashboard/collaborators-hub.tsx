@@ -73,7 +73,7 @@ export function CollaboratorsHub({
       </div>
 
       {tabs.length > 1 ? (
-        <nav className="flex gap-1 overflow-x-auto border-b border-ink-200" role="tablist" aria-label="Tipo de colaborador">
+        <nav className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-ink-200" role="tablist" aria-label="Tipo de colaborador">
           {tabs.map((item) => {
             const Icon = item.icon;
             const selected = tab === item.key;

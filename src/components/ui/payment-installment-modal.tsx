@@ -5,6 +5,8 @@ import { FiCheckCircle, FiClock, FiDollarSign, FiEdit2, FiTrash2 } from "react-i
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PAYMENT_METHODS, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
+import { describeMethod, PaymentBreakdown } from "@/components/ui/payment-breakdown";
+import { paymentPartsError, type PaymentPart } from "@/lib/payment-breakdown";
 import { MoneyInput } from "@/components/ui/money-input";
 import { cn, currency, formatDate } from "@/lib/web-utils";
 import type { PaymentInstallmentItem } from "@/lib/web-types";
@@ -27,7 +29,9 @@ export type InstallmentModalPayment = {
 
 export type InstallmentSubmitValues = {
   monto: number;
-  metodoPago: PaymentMethodValue;
+  metodoPago?: PaymentMethodValue;
+  /** Spec 027: el abono en dos partes. */
+  partes?: PaymentPart[];
   fechaAbono: string;
 };
 
@@ -50,6 +54,8 @@ export function PaymentInstallmentModal({
 }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethodValue>(PAYMENT_METHODS[0].value);
+  // Spec 027: con "Pago en dos partes" quedan dos; con uno, `method`.
+  const [parts, setParts] = useState<PaymentPart[]>([{ metodo: PAYMENT_METHODS[0].value, monto: 0 }]);
   const [date, setDate] = useState(todayInputValue());
   const [editingInstallment, setEditingInstallment] = useState<PaymentInstallmentItem | null>(null);
   const [deletingInstallment, setDeletingInstallment] = useState<PaymentInstallmentItem | null>(null);
@@ -62,6 +68,7 @@ export function PaymentInstallmentModal({
 
     setAmount(payment.prefillRemaining && mode === "payment" ? String(payment.remainingAmount) : "");
     setMethod(PAYMENT_METHODS[0].value);
+    setParts([{ metodo: PAYMENT_METHODS[0].value, monto: 0 }]);
     setDate(todayInputValue());
     setEditingInstallment(null);
     setDeletingInstallment(null);
@@ -75,9 +82,13 @@ export function PaymentInstallmentModal({
     const availableAmount = payment.remainingAmount + Number(editingInstallment?.monto ?? 0);
     if (numericAmount > availableAmount) return "El abono no puede superar el saldo pendiente";
     if (!method) return "Selecciona un metodo de pago";
+    if (parts.length > 1) {
+      const splitError = paymentPartsError(numericAmount, parts);
+      if (splitError) return splitError;
+    }
     if (!date) return "Selecciona la fecha del abono";
     return "";
-  }, [amount, date, editingInstallment, isHistoryMode, method, numericAmount, payment]);
+  }, [amount, date, editingInstallment, isHistoryMode, method, numericAmount, parts, payment]);
 
   if (!payment) return null;
 
@@ -89,7 +100,16 @@ export function PaymentInstallmentModal({
 
   function submit() {
     if (validationError || !payment) return;
-    onSubmit({ monto: numericAmount, metodoPago: method, fechaAbono: date });
+    onSubmit({ monto: numericAmount, ...methodValues(), fechaAbono: date });
+  }
+
+  function methodValues(): Pick<InstallmentSubmitValues, "metodoPago" | "partes"> {
+    return parts.length > 1 ? { partes: parts } : { metodoPago: method };
+  }
+
+  function changeParts(next: PaymentPart[]) {
+    setParts(next);
+    if (next.length === 1) setMethod(next[0].metodo as PaymentMethodValue);
   }
 
   function payRemaining() {
@@ -100,7 +120,10 @@ export function PaymentInstallmentModal({
     setDeletingInstallment(null);
     setEditingInstallment(installment);
     setAmount(String(installment.monto));
-    setMethod(installment.metodoPago as PaymentMethodValue);
+    // Un abono en dos partes se vuelve a repartir al editarlo.
+    const known = PAYMENT_METHODS.some((item) => item.value === installment.metodoPago);
+    setMethod(known ? (installment.metodoPago as PaymentMethodValue) : PAYMENT_METHODS[0].value);
+    setParts([{ metodo: known ? installment.metodoPago : PAYMENT_METHODS[0].value, monto: Number(installment.monto) }]);
     setDate(dateInputValue(installment.fechaAbono));
   }
 
@@ -108,13 +131,14 @@ export function PaymentInstallmentModal({
     setEditingInstallment(null);
     setAmount("");
     setMethod(PAYMENT_METHODS[0].value);
+    setParts([{ metodo: PAYMENT_METHODS[0].value, monto: 0 }]);
     setDate(todayInputValue());
   }
 
   async function saveEditedInstallment() {
     if (!editingInstallment || !onEditInstallment || validationError) return;
     setMutatingInstallment(true);
-    await onEditInstallment(editingInstallment.id, { monto: numericAmount, metodoPago: method, fechaAbono: date })
+    await onEditInstallment(editingInstallment.id, { monto: numericAmount, ...methodValues(), fechaAbono: date })
       .then(cancelEditing)
       .catch(() => undefined)
       .finally(() => setMutatingInstallment(false));
@@ -178,30 +202,11 @@ export function PaymentInstallmentModal({
               </label>
             </div>
 
-            <div>
-              <p className="text-sm font-black text-ink-950">Metodo de pago</p>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                {PAYMENT_METHODS.map((paymentMethod) => {
-                  const active = method === paymentMethod.value;
-
-                  return (
-                    <button
-                      key={paymentMethod.value}
-                      type="button"
-                      onClick={() => setMethod(paymentMethod.value)}
-                      className={cn(
-                        "rounded-[18px] border px-4 py-3 text-sm font-black transition",
-                        active
-                          ? "border-brand-600 bg-brand-600 text-white"
-                          : "border-ink-100 bg-ink-50 text-ink-500 hover:border-ink-200 hover:bg-ink-100 hover:text-ink-800"
-                      )}
-                    >
-                      {paymentMethod.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <PaymentBreakdown
+              total={Number.isFinite(numericAmount) && numericAmount > 0 ? numericAmount : 0}
+              value={parts}
+              onChange={changeParts}
+            />
 
             {editingInstallment ? (
               <div className="flex flex-wrap justify-end gap-3">
@@ -231,7 +236,7 @@ export function PaymentInstallmentModal({
                         Abono #{installment.numero} - {formatDate(installment.fechaAbono)}
                       </p>
                       <p className="mt-1 text-xs font-semibold text-ink-500">
-                        {installment.metodoPago} · {installment.registradoPorNombre ?? "Administrador"}
+                        {describeMethod(installment.metodoPago)} · {installment.registradoPorNombre ?? "Administrador"}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">

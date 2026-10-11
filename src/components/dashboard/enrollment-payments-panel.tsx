@@ -1,5 +1,6 @@
 "use client";
 
+import type { PaymentPart } from "@/lib/payment-breakdown";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -175,13 +176,14 @@ export function EnrollmentPaymentsPanel({ payments }: { payments: EnrollmentPaym
     setInstallmentTarget(null);
   }
 
-  async function payCurrent() {
+  async function payCurrent(partes?: PaymentPart[]) {
     if (!payTarget) return;
     setSubmittingPayment(true);
 
     await clientApiFetch(`/api/enrollment-payments/${payTarget.id}/pay`, token, {
       method: "PUT",
-      body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
+      // Spec 027: en dos partes, si se dividió.
+      body: JSON.stringify({ ...(partes ? { partes } : { metodoPago: paymentMethod }), fechaPago: paymentDate })
     })
       .then(() => {
         sileo.success({ title: "Inscripcion marcada como pagada" });

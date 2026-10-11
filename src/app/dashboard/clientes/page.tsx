@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { ClientsHub, type ClientsTab } from "@/components/dashboard/clients-hub";
 import { StudioModuleNotice } from "@/components/dashboard/studio-module-notice";
 import { getBusinessModules } from "@/lib/business-modules";
@@ -13,7 +14,9 @@ export default async function StudioMembersPage({ searchParams }: { searchParams
   if (!modules.moduloEstudio) return <StudioModuleNotice title="Clientes" />;
 
   const { tab } = await searchParams;
-  const initialTab: ClientsTab = tab === "planes" || tab === "sueltas" || tab === "pagos" ? tab : "clientes";
+  // Spec 027 D5: la pestana Pagos ahora es el Historial de Ventas › Cobros.
+  if (tab === "pagos") redirect("/dashboard/ventas/cobros?tab=historial");
+  const initialTab: ClientsTab = tab === "planes" || tab === "sueltas" ? tab : "clientes";
   const [members, sales] = await Promise.all([
     apiFetch<StudioMemberItem[]>("/api/studio-members"),
     apiFetch<MemberPackageSaleItem[]>("/api/member-packages")

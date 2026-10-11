@@ -1,3 +1,4 @@
+import { EnableNotificationsButton } from "@/components/notifications/enable-notifications-button";
 import { NotificationsPanel } from "@/components/dashboard/notifications-panel";
 import { apiFetch } from "@/lib/server-api";
 import type { NotificationItem } from "@/lib/web-types";
@@ -16,6 +17,7 @@ export default async function NotificationsPage() {
           <p className="mt-3 max-w-3xl text-sm leading-7 text-ink-500 sm:text-base">
             Aqui ves los recordatorios que el sistema genera para cobros pendientes, vencidos y eventos manuales.
           </p>
+          <EnableNotificationsButton />
         </section>
 
         <NotificationsPanel notifications={payload.notifications} />

@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { ApiError } from "@/lib/http";
 import { paymentState } from "@/lib/online-payments";
+import { allocatePayment, type PaymentPart } from "@/lib/payment-breakdown";
+import { paymentPartsOrThrow, savePaymentParts, serializeParts, type PaymentMethodInput } from "@/lib/payment-parts";
 import type { ExtendedTransactionClient } from "@/lib/prisma-types";
 import { addDaysToKey, dateKeyToDate, dateToDateKey, daysBetweenKeys } from "@/lib/studio-time";
 
@@ -21,7 +23,7 @@ export { normalizeMemberPhone } from "@/lib/studio-constants";
 
 export const memberPackageInclude = {
   discipline: { select: { id: true, nombre: true, color: true, tipo: true } },
-  payments: { orderBy: { fecha: "desc" } },
+  payments: { orderBy: { fecha: "desc" }, include: { methodParts: { select: { metodo: true, monto: true } } } },
   // Spec 019 R8: para desglosar las clases usadas (asistio, falto, reservadas).
   bookings: {
     select: {
@@ -157,6 +159,8 @@ export function serializeMemberPackage(row: MemberPackageRow, today: string) {
       id: payment.id,
       monto: Number(payment.monto),
       metodoPago: payment.metodoPago,
+      // Spec 027: las dos partes cuando metodoPago es MIXTO.
+      partes: serializeParts(payment.methodParts),
       fecha: payment.fecha.toISOString(),
       notas: payment.notas,
       anuladoAt: payment.anuladoAt?.toISOString() ?? null
@@ -245,7 +249,7 @@ type SaleInput = {
   inicio: string;
   precio?: number;
   notas?: string | null;
-  pago?: { monto: number; metodoPago: string };
+  pago?: { monto: number } & PaymentMethodInput;
   /** Spec 021: compra desde la pagina publica, con su enlace "Mi plan". */
   origen?: "PANEL" | "PUBLICO";
   accessToken?: string;
@@ -296,18 +300,75 @@ export async function sellMemberPackage(tx: ExtendedTransactionClient, input: Sa
   });
 
   if (input.pago) {
-    await tx.memberPackagePayment.create({
+    const { metodoPago, partes } = paymentPartsOrThrow(input.pago.monto, input.pago);
+    const payment = await tx.memberPackagePayment.create({
       data: {
         clientId: input.clientId,
         memberPackageId: sale.id,
         monto: input.pago.monto,
-        metodoPago: input.pago.metodoPago,
+        metodoPago,
         fecha: new Date()
       }
     });
+    await savePaymentParts(tx, input.clientId, { memberPackagePaymentId: payment.id }, partes);
   }
 
   return sale;
+}
+
+type CartInput = {
+  clientId: string;
+  memberId: string;
+  items: Array<{ packageId: string; inicio?: string; precio?: number }>;
+  today: string;
+  notas?: string | null;
+  pago?: { monto: number; metodoPago?: string | null; partes?: PaymentPart[] | null };
+  fechaLimitePago?: string | null;
+};
+
+/**
+ * Spec 027 D1/D4: varios paquetes en una venta. Cada uno queda como su propia
+ * venta; lo recibido se reparte en el orden elegido (el primero hasta cubrirlo)
+ * y los métodos también (primero se gasta el método 1). Corre dentro de la
+ * transacción del llamador: si un paquete falla, no se vende ninguno.
+ */
+export async function sellMemberPackages(tx: ExtendedTransactionClient, input: CartInput) {
+  const catalog = await tx.package.findMany({
+    where: { id: { in: input.items.map((item) => item.packageId) }, clientId: input.clientId, deletedAt: null, activo: true },
+    select: { id: true, precio: true }
+  });
+  const prices = input.items.map((item) => {
+    const found = catalog.find((entry) => entry.id === item.packageId);
+    if (!found) throw new ApiError(422, "Uno de los paquetes no existe o no está disponible para la venta");
+    return item.precio ?? Number(found.precio);
+  });
+  const total = prices.reduce((sum, price) => sum + price, 0);
+
+  let shares: Array<{ monto: number; partes: PaymentPart[] }> = input.items.map(() => ({ monto: 0, partes: [] }));
+  if (input.pago) {
+    if (input.pago.monto > total) throw new ApiError(422, "El pago no puede superar el total de la venta");
+    const { partes } = paymentPartsOrThrow(input.pago.monto, input.pago);
+    // Con un solo método, ese método por todo lo recibido.
+    shares = allocatePayment(prices, partes.length ? partes : [{ metodo: input.pago.metodoPago ?? "", monto: input.pago.monto }]);
+  }
+
+  const sales = [];
+  for (const [index, item] of input.items.entries()) {
+    const share = shares[index];
+    sales.push(
+      await sellMemberPackage(tx, {
+        clientId: input.clientId,
+        memberId: input.memberId,
+        packageId: item.packageId,
+        inicio: item.inicio ?? input.today,
+        precio: prices[index],
+        notas: input.notas ?? null,
+        fechaLimitePago: input.fechaLimitePago ?? null,
+        ...(share.monto > 0 ? { pago: { monto: share.monto, partes: share.partes } } : {})
+      })
+    );
+  }
+  return sales;
 }
 
 type RenewInput = Omit<SaleInput, "memberId" | "packageId" | "inicio" | "renovacionDeId"> & { saleId: string; today: string; inicio?: string };
@@ -349,8 +410,9 @@ export async function renewMemberPackage(tx: ExtendedTransactionClient, input: R
  */
 export async function addPackagePayment(
   tx: ExtendedTransactionClient,
-  input: { clientId: string; saleId: string; monto: number; metodoPago: string; fecha?: string; notas?: string | null }
+  input: { clientId: string; saleId: string; monto: number; fecha?: string; notas?: string | null } & PaymentMethodInput
 ) {
+  const { metodoPago, partes } = paymentPartsOrThrow(input.monto, input);
   const current = await tx.memberPackage.findFirst({ where: { id: input.saleId, clientId: input.clientId } });
   if (!current) throw new ApiError(404, "Venta no encontrada");
   if (current.anuladoAt) throw new ApiError(409, "La venta está anulada");
@@ -365,15 +427,17 @@ export async function addPackagePayment(
     throw new ApiError(422, `El pago supera el saldo pendiente ($${saldo.toLocaleString("es-CO")})`);
   }
 
-  return tx.memberPackagePayment.create({
+  const payment = await tx.memberPackagePayment.create({
     data: {
       clientId: input.clientId,
       memberPackageId: input.saleId,
       monto: input.monto,
-      metodoPago: input.metodoPago,
+      metodoPago,
       // Una fecha elegida se guarda al mediodia de Bogota para que no se corra de dia.
       fecha: input.fecha ? new Date(`${input.fecha}T17:00:00.000Z`) : new Date(),
       notas: input.notas ?? null
     }
   });
+  await savePaymentParts(tx, input.clientId, { memberPackagePaymentId: payment.id }, partes);
+  return payment;
 }

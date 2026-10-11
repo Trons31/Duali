@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import { summaryMethod } from "@/lib/payment-breakdown";
+import { savePaymentParts } from "@/lib/payment-parts";
 import { ApiError } from "@/lib/http";
 import { cycleLabel } from "@/lib/instructor-cycle-time";
 import { ensureInstructorLedger, serializeCycleView, settlement, snapshotPay } from "@/lib/instructor-ledger";
@@ -74,9 +76,12 @@ export async function payInstructor(clientId: string, input: InstructorPayInput,
         descripcion: [`${TYPE_LABEL[input.tipo]} · ciclo ${applications.map((item) => item.etiqueta).join(", ")}`, input.nota].filter(Boolean).join(" · "),
         monto: input.monto,
         fecha: now,
-        categoria: EXPENSE_CATEGORY[input.tipo]
+        categoria: EXPENSE_CATEGORY[input.tipo],
+        // Spec 027 D8: el egreso dice con que se pago, igual que el pago al instructor.
+        metodoPago: summaryMethod(input.metodos)
       }
     });
+    await savePaymentParts(tx, clientId, { expenseId: expense.id }, input.metodos.length > 1 ? input.metodos : []);
     const payment = await tx.instructorPayment.create({
       data: {
         clientId,

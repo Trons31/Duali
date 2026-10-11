@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { FiCheck, FiX } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { ModalSteps, PaymentSummary } from "@/components/ui/modal-steps";
 import { MoneyInput } from "@/components/ui/money-input";
-import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
+import { PaymentBreakdown, paymentPayload, usePaymentParts } from "@/components/ui/payment-breakdown";
+import { paymentPartsError } from "@/lib/payment-breakdown";
 import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import { addDaysToKey, dateKeyToDate, formatTimeKey } from "@/lib/studio-time";
 import { cn, currency } from "@/lib/web-utils";
@@ -312,38 +315,139 @@ export function MemberFormModal({
   );
 }
 
-function PaymentMethodPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+// ─── Spec 027: venta, renovación y pago, paso a paso ─────────────────────────
+
+type ChargeMode = "TOTAL" | "ABONO" | "NADA";
+
+/** Cuánto se recibe ahora (todo, una parte o nada) y con qué métodos. */
+function useCharge(due: number, initial: ChargeMode = "TOTAL") {
+  const [mode, setMode] = useState<ChargeMode>(initial);
+  const [abono, setAbono] = useState("");
+  const amount = mode === "TOTAL" ? due : mode === "ABONO" ? Number(abono || 0) : 0;
+  const [parts, setParts] = usePaymentParts(amount);
+  const error =
+    mode === "NADA"
+      ? null
+      : amount <= 0
+        ? "Escribe cuánto recibes"
+        : amount > due
+          ? `No puede superar ${currency(due)}`
+          : parts.length > 1
+            ? paymentPartsError(amount, parts)
+            : null;
+  return { mode, setMode, abono, setAbono, amount, parts, setParts, error, debe: amount < due };
+}
+
+type Charge = ReturnType<typeof useCharge>;
+
+/** Lo recibido, listo para el cuerpo de la API (nada si no pagó). */
+function chargeBody(charge: Charge) {
+  return charge.amount > 0 ? { pago: { monto: charge.amount, ...paymentPayload(charge.parts) } } : {};
+}
+
+function ChargeStep({
+  charge,
+  due,
+  allowLater,
+  deadline
+}: {
+  charge: Charge;
+  due: number;
+  /** Venta y renovación pueden quedar sin pago; un pago, no. */
+  allowLater: boolean;
+  deadline?: { value: string; min: string; onChange: (value: string) => void } | null;
+}) {
+  const modes: Array<[ChargeMode, string]> = [
+    ["TOTAL", "Paga todo"],
+    ["ABONO", "Abona una parte"],
+    ...(allowLater ? ([["NADA", "Paga después"]] as Array<[ChargeMode, string]>) : [])
+  ];
+
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {PAYMENT_METHODS.map((method) => (
-        <button
-          key={method.value}
-          type="button"
-          aria-pressed={value === method.value}
-          onClick={() => onChange(method.value)}
-          className={cn(
-            "rounded-xl border px-3 py-2 text-sm font-medium transition-all",
-            value === method.value ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600 hover:border-ink-300"
-          )}
-        >
-          {method.label}
-        </button>
-      ))}
+    <div className="space-y-4">
+      <div role="radiogroup" aria-label="¿Cuánto paga ahora?" className={cn("grid gap-2", allowLater ? "grid-cols-3" : "grid-cols-2")}>
+        {modes.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={charge.mode === value}
+            onClick={() => charge.setMode(value)}
+            className={cn(
+              "min-h-11 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors sm:text-sm",
+              charge.mode === value ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600 hover:border-ink-300"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {charge.mode === "ABONO" ? (
+        <div>
+          <label className={labelClass}>¿Cuánto abona?</label>
+          <MoneyInput value={charge.abono} onChange={charge.setAbono} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto del abono" />
+          {charge.amount > 0 && charge.amount < due ? (
+            <p className="mt-1 text-[11px] text-amber-600">Quedará debiendo {currency(due - charge.amount)}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {charge.mode !== "NADA" ? (
+        <PaymentBreakdown total={charge.amount} value={charge.parts} onChange={charge.setParts} />
+      ) : (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">Quedará debiendo {currency(due)}.</p>
+      )}
+
+      {deadline && charge.debe && due > 0 ? <BalanceDeadlineField value={deadline.value} min={deadline.min} onChange={deadline.onChange} /> : null}
     </div>
   );
 }
 
-type SaleFormValues = {
-  disciplineId: string;
-  packageId: string;
-  inicio: string;
-  precio: string;
-  pagarAhora: boolean;
-  monto: string;
-  metodoPago: string;
-};
+function WizardFooter({
+  step,
+  last,
+  saving,
+  disabled,
+  finishLabel,
+  onBack,
+  onNext,
+  onFinish
+}: {
+  step: number;
+  last: number;
+  saving: boolean;
+  disabled?: boolean;
+  finishLabel: string;
+  onBack: () => void;
+  onNext: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <div className="flex gap-3 border-t border-ink-100 pt-4">
+      <Button type="button" variant="secondary" className="flex-1 rounded-xl py-2.5" onClick={onBack} disabled={saving}>
+        {step === 0 ? "Cancelar" : "Atrás"}
+      </Button>
+      <Button
+        type="button"
+        className="flex-1 rounded-xl py-2.5 shadow-none"
+        loading={saving}
+        disabled={disabled}
+        onClick={step === last ? onFinish : onNext}
+      >
+        {step === last ? finishLabel : "Continuar"}
+      </Button>
+    </div>
+  );
+}
 
-/** Spec 006 R7: disciplina → paquete → inicio → precio → pago, en un paso. */
+type CartLine = { packageId: string; inicio: string; precio: string };
+
+/**
+ * Spec 027 D1: vender uno o varios paquetes (de distintas disciplinas) en una
+ * venta, en tres pasos: Paquetes → Detalles → Pago. Cada paquete queda como su
+ * propio plan; lo recibido se reparte en el orden elegido (D4).
+ */
 export function SellPackageModal({
   memberLabel,
   memberId,
@@ -364,215 +468,218 @@ export function SellPackageModal({
   const request = useStudioRequest();
   const forSale = useMemo(() => packages.filter((item) => item.activo), [packages]);
   const sellable = disciplines.filter((discipline) => forSale.some((item) => item.disciplineId === discipline.id));
-  const {
-    control,
-    handleSubmit,
-    register,
-    setValue,
-    watch,
-    formState: { isSubmitting }
-  } = useForm<SaleFormValues>({
-    defaultValues: {
-      disciplineId: sellable[0]?.id ?? "",
-      packageId: "",
-      inicio: today,
-      precio: "",
-      pagarAhora: true,
-      monto: "",
-      metodoPago: "EFECTIVO"
-    }
-  });
-  const disciplineId = watch("disciplineId");
-  const packageId = watch("packageId");
-  const pagarAhora = watch("pagarAhora");
-  const options = forSale.filter((item) => item.disciplineId === disciplineId);
-  const selected = forSale.find((item) => item.id === packageId);
-  const precio = Number(watch("precio") || 0);
-  const monto = Number(watch("monto") || 0);
-  const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [lines, setLines] = useState<CartLine[]>([]);
   const [fechaLimite, setFechaLimite] = useState("");
-  const inicio = watch("inicio") || today;
-  const debe = !pagarAhora || monto < precio;
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function pickPackage(item: PackageItem) {
-    const price = String(Math.round(Number(item.precio)));
-    setValue("packageId", item.id);
-    setValue("precio", price);
-    setValue("monto", price);
+  const picked = lines
+    .map((line) => ({ line, item: forSale.find((entry) => entry.id === line.packageId) }))
+    .filter((entry): entry is { line: CartLine; item: PackageItem } => Boolean(entry.item));
+  const total = picked.reduce((sum, entry) => sum + Number(entry.line.precio || 0), 0);
+  const charge = useCharge(total);
+  const firstStart = picked.reduce((min, entry) => (entry.line.inicio < min ? entry.line.inicio : min), picked[0]?.line.inicio ?? today);
+  const disciplineName = (id: string) => disciplines.find((discipline) => discipline.id === id)?.nombre ?? "";
+
+  function toggle(item: PackageItem) {
+    setLines((current) =>
+      current.some((line) => line.packageId === item.id)
+        ? current.filter((line) => line.packageId !== item.id)
+        : [...current, { packageId: item.id, inicio: today, precio: String(Math.round(Number(item.precio))) }]
+    );
   }
 
-  const onSubmit = handleSubmit(async (values) => {
-    if (!selected) return setError("Elige un paquete");
-    if (values.pagarAhora && (monto <= 0 || monto > precio)) return setError("El pago debe ser mayor a 0 y no superar el precio");
-    if (debe && fechaLimite && fechaLimite < values.inicio) return setError("La fecha para pagar el resto no puede ser antes del inicio");
-    setError(null);
+  function update(packageId: string, patch: Partial<CartLine>) {
+    setLines((current) => current.map((line) => (line.packageId === packageId ? { ...line, ...patch } : line)));
+  }
 
+  function next() {
+    if (step === 0 && !picked.length) return setError("Elige al menos un paquete");
+    if (step === 1 && picked.some((entry) => !entry.line.inicio)) return setError("Escribe la fecha de inicio de cada paquete");
+    setError(null);
+    setStep((current) => current + 1);
+  }
+
+  async function submit() {
+    if (charge.error) return setError(charge.error);
+    if (charge.debe && fechaLimite && fechaLimite < firstStart) return setError("La fecha para pagar el resto no puede ser antes del inicio");
+    setError(null);
+    setSaving(true);
     const saved = await request(
       "/api/member-packages",
       {
         method: "POST",
         body: JSON.stringify({
           memberId,
-          packageId: selected.id,
-          inicio: values.inicio,
-          precio,
-          ...(values.pagarAhora ? { pago: { monto, metodoPago: values.metodoPago } } : {}),
+          items: picked.map((entry) => ({ packageId: entry.item.id, inicio: entry.line.inicio, precio: Number(entry.line.precio || 0) })),
+          ...chargeBody(charge),
           // Spec 020 D2: sin tocarla, aplica el plazo de Ajustes.
-          ...(debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
+          ...(charge.debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
         })
       },
-      "Paquete vendido"
+      picked.length > 1 ? `${picked.length} paquetes vendidos` : "Paquete vendido"
     );
+    setSaving(false);
     if (saved) onClose();
-  });
+  }
 
   return (
-    <Modal open onClose={() => (isSubmitting ? undefined : onClose())} title="Vender paquete" description={memberLabel}>
+    <Modal open onClose={() => (saving ? undefined : onClose())} title="Vender paquetes" description={memberLabel}>
       {!sellable.length ? (
         <p className="rounded-xl border border-dashed border-ink-200 bg-ink-50 p-4 text-center text-sm text-ink-500">
           No hay paquetes disponibles para la venta. Créalos en Paquetes y precios.
         </p>
       ) : (
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <div>
-            <span className={labelClass}>Disciplina</span>
-            <div className="flex flex-wrap gap-2">
+        <div className="space-y-4">
+          <ModalSteps steps={["Paquetes", "Detalles", "Pago"]} current={step} onSelect={setStep} />
+
+          {step === 0 ? (
+            <div className="space-y-4">
+              <p className="text-sm text-ink-500">Elige uno o varios paquetes. Puedes combinar disciplinas.</p>
               {sellable.map((discipline) => (
-                <button
-                  key={discipline.id}
-                  type="button"
-                  aria-pressed={disciplineId === discipline.id}
-                  onClick={() => {
-                    setValue("disciplineId", discipline.id);
-                    setValue("packageId", "");
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-all",
-                    disciplineId === discipline.id
-                      ? "border-brand-500 bg-brand-50 text-brand-700"
-                      : "border-ink-200 text-ink-600 hover:border-ink-300"
-                  )}
-                >
-                  <ColorDot color={discipline.color} className="size-2.5" />
-                  {discipline.nombre}
-                </button>
+                <section key={discipline.id}>
+                  <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-500">
+                    <ColorDot color={discipline.color} className="size-2.5" />
+                    {discipline.nombre}
+                  </h3>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {forSale
+                      .filter((item) => item.disciplineId === discipline.id)
+                      .map((item) => {
+                        const selected = lines.some((line) => line.packageId === item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => toggle(item)}
+                            className={cn(
+                              "flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 text-left transition-all",
+                              selected ? "border-brand-500 bg-brand-50" : "border-ink-200 hover:border-ink-300"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "flex size-5 shrink-0 items-center justify-center rounded-md border-2",
+                                selected ? "border-brand-500 bg-brand-500 text-white" : "border-ink-300"
+                              )}
+                              aria-hidden
+                            >
+                              {selected ? <FiCheck className="size-3.5" /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-ink-800">{item.nombre}</span>
+                              <span className="block text-xs text-ink-500">
+                                {item.clases === 1 ? "Clase suelta" : `${item.clases} clases · ${item.vigenciaDias} días`}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-sm font-bold text-ink-900">{currency(item.precio)}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </section>
               ))}
+              {picked.length ? (
+                <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800">
+                  {picked.length === 1 ? "1 paquete" : `${picked.length} paquetes`} · {currency(total)}
+                </p>
+              ) : null}
             </div>
-          </div>
+          ) : null}
 
-          <div>
-            <span className={labelClass}>Paquete</span>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {options.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={packageId === item.id}
-                  onClick={() => pickPackage(item)}
-                  className={cn(
-                    "flex items-center justify-between gap-2 rounded-xl border-2 px-3 py-2.5 text-left transition-all",
-                    packageId === item.id ? "border-brand-500 bg-brand-50" : "border-ink-200 hover:border-ink-300"
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-ink-800">{item.nombre}</span>
-                    <span className="block text-xs text-ink-500">
-                      {item.clases === 1 ? "Clase suelta" : `${item.clases} clases · ${item.vigenciaDias} días`}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-sm font-bold text-ink-900">{currency(item.precio)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {selected ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass} htmlFor="sale-inicio">
-                    Inicia
-                  </label>
-                  <input id="sale-inicio" type="date" className={inputClass} {...register("inicio", { required: true })} />
-                  <p className="mt-1 text-[11px] text-ink-400">
-                    Vence {formatDateKeyShort(addDaysToKey(watch("inicio") || today, selected.vigenciaDias - 1))}
-                  </p>
-                </div>
-                <div>
-                  <label className={labelClass}>Precio final</label>
-                  <Controller
-                    control={control}
-                    name="precio"
-                    render={({ field }) => (
-                      <MoneyInput
-                        value={field.value}
-                        onChange={(value) => {
-                          field.onChange(value);
-                          if (pagarAhora) setValue("monto", value);
-                        }}
-                        className="h-[42px] rounded-xl py-2.5 text-sm"
-                        aria-label="Precio final"
-                      />
-                    )}
-                  />
-                  {precio < Number(selected.precio) ? (
-                    <p className="mt-1 text-[11px] text-brand-600">Descuento de {currency(Number(selected.precio) - precio)}</p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-ink-200 bg-ink-50/60 p-3">
-                <label className="flex items-center gap-2 text-sm font-medium text-ink-700">
-                  <input type="checkbox" className="size-4 accent-brand-600" {...register("pagarAhora")} />
-                  Registrar pago ahora
-                </label>
-                {pagarAhora ? (
-                  <>
-                    <div>
-                      <label className={labelClass}>Monto recibido</label>
-                      <Controller
-                        control={control}
-                        name="monto"
-                        render={({ field }) => (
-                          <MoneyInput
-                            value={field.value}
-                            onChange={field.onChange}
-                            className="h-[42px] rounded-xl py-2.5 text-sm"
-                            aria-label="Monto recibido"
-                          />
-                        )}
-                      />
-                      {monto > 0 && monto < precio ? (
-                        <p className="mt-1 text-[11px] text-amber-600">Quedará debiendo {currency(precio - monto)}</p>
+          {step === 1 ? (
+            <div className="space-y-3">
+              {picked.map(({ line, item }) => {
+                const price = Number(line.precio || 0);
+                return (
+                  <div key={item.id} className="rounded-xl border border-ink-200 p-3">
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <p className="min-w-0 text-sm font-bold text-ink-900">
+                        {item.nombre} <span className="font-medium text-ink-500">· {disciplineName(item.disciplineId)}</span>
+                      </p>
+                      {picked.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(item)}
+                          aria-label={`Quitar ${item.nombre}`}
+                          className="rounded-lg p-1 text-ink-400 hover:bg-ink-50 hover:text-rose-600"
+                        >
+                          <FiX className="size-4" />
+                        </button>
                       ) : null}
                     </div>
-                    <PaymentMethodPicker value={watch("metodoPago")} onChange={(value) => setValue("metodoPago", value)} />
-                  </>
-                ) : (
-                  <p className="text-[11px] text-ink-500">Quedará debiendo {currency(precio)}.</p>
-                )}
-                {debe && precio > 0 ? (
-                  <BalanceDeadlineField
-                    value={fechaLimite || addDaysToKey(inicio, diasPlazoSaldo)}
-                    min={inicio}
-                    onChange={setFechaLimite}
-                  />
-                ) : null}
-              </div>
-            </>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass} htmlFor={`sale-inicio-${item.id}`}>
+                          Inicia
+                        </label>
+                        <input
+                          id={`sale-inicio-${item.id}`}
+                          type="date"
+                          className={inputClass}
+                          value={line.inicio}
+                          onChange={(event) => update(item.id, { inicio: event.target.value })}
+                        />
+                        <p className="mt-1 text-[11px] text-ink-400">Vence {formatDateKeyShort(addDaysToKey(line.inicio || today, item.vigenciaDias - 1))}</p>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Precio final</label>
+                        <MoneyInput
+                          value={line.precio}
+                          onChange={(value) => update(item.id, { precio: value })}
+                          className="h-[42px] rounded-xl py-2.5 text-sm"
+                          aria-label={`Precio final de ${item.nombre}`}
+                        />
+                        {price < Number(item.precio) ? (
+                          <p className="mt-1 text-[11px] text-brand-600">Descuento de {currency(Number(item.precio) - price)}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div className="space-y-4">
+              <PaymentSummary
+                rows={picked.map(({ line, item }) => ({
+                  label: (
+                    <>
+                      {item.nombre} · {disciplineName(item.disciplineId)}
+                      <span className="block text-[11px] text-ink-400">desde {formatDateKeyShort(line.inicio)}</span>
+                    </>
+                  ),
+                  value: Number(line.precio || 0)
+                }))}
+                totalLabel="Total de la venta"
+                total={total}
+              />
+              <ChargeStep
+                charge={charge}
+                due={total}
+                allowLater
+                deadline={{ value: fechaLimite || addDaysToKey(firstStart, diasPlazoSaldo), min: firstStart, onChange: setFechaLimite }}
+              />
+            </div>
           ) : null}
 
           {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
 
-          <div className="flex gap-3 pt-1">
-            <Button type="button" variant="secondary" className="flex-1 rounded-xl py-2.5" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="flex-1 rounded-xl py-2.5 shadow-none" loading={isSubmitting} disabled={!selected}>
-              Vender {selected ? currency(precio) : ""}
-            </Button>
-          </div>
-        </form>
+          <WizardFooter
+            step={step}
+            last={2}
+            saving={saving}
+            disabled={step === 0 && !picked.length}
+            finishLabel={charge.amount > 0 ? `Vender y cobrar ${currency(charge.amount)}` : `Vender ${currency(total)}`}
+            onBack={() => (step === 0 ? onClose() : setStep(step - 1))}
+            onNext={next}
+            onFinish={submit}
+          />
+        </div>
       )}
     </Modal>
   );
@@ -600,7 +707,7 @@ function BalanceDeadlineField({ value, min, onChange }: { value: string; min: st
 /**
  * Spec 020 D1/R3: renovar es vender el mismo paquete otra vez. Un plan vigente
  * sigue el dia despues de vencer; uno vencido o agotado empieza hoy (la misma
- * regla de renewalStart en el servidor).
+ * regla de renewalStart en el servidor). Spec 027: Detalles → Pago.
  */
 export function RenewPackageModal({
   sale,
@@ -619,21 +726,18 @@ export function RenewPackageModal({
 }) {
   const request = useStudioRequest();
   const item = packages.find((entry) => entry.id === sale.packageId && entry.activo);
+  const [step, setStep] = useState(0);
   const [inicio, setInicio] = useState(sale.estado === "ACTIVO" && sale.vence >= today ? addDaysToKey(sale.vence, 1) : today);
   const [precio, setPrecio] = useState(item ? String(Math.round(Number(item.precio))) : "");
-  const [pagarAhora, setPagarAhora] = useState(false);
-  const [monto, setMonto] = useState("");
-  const [metodoPago, setMetodoPago] = useState("EFECTIVO");
   const [fechaLimite, setFechaLimite] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const price = Number(precio || 0);
-  const paid = pagarAhora ? Number(monto || 0) : 0;
-  const debe = paid < price;
+  const charge = useCharge(price, "NADA");
 
   async function submit() {
-    if (pagarAhora && (paid <= 0 || paid > price)) return setError("El pago debe ser mayor a 0 y no superar el precio");
-    if (debe && fechaLimite && fechaLimite < inicio) return setError("La fecha para pagar el resto no puede ser antes del inicio");
+    if (charge.error) return setError(charge.error);
+    if (charge.debe && fechaLimite && fechaLimite < inicio) return setError("La fecha para pagar el resto no puede ser antes del inicio");
     setError(null);
     setSaving(true);
     const saved = await request(
@@ -643,8 +747,8 @@ export function RenewPackageModal({
         body: JSON.stringify({
           inicio,
           precio: price,
-          ...(pagarAhora ? { pago: { monto: paid, metodoPago } } : {}),
-          ...(debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
+          ...chargeBody(charge),
+          ...(charge.debe && fechaLimite ? { fechaLimitePago: fechaLimite } : {})
         })
       },
       "Plan renovado"
@@ -663,135 +767,182 @@ export function RenewPackageModal({
     >
       {!item ? (
         <p className="rounded-xl border border-dashed border-ink-200 bg-ink-50 p-4 text-center text-sm text-ink-500">
-          Este paquete ya no se vende. Véndele otro desde Vender paquete.
+          Este paquete ya no se vende. Véndele otro desde Vender paquetes.
         </p>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass} htmlFor="renew-inicio">
-                Empieza
-              </label>
-              <input
-                id="renew-inicio"
-                type="date"
-                value={inicio}
-                onChange={(event) => setInicio(event.target.value || today)}
-                className={inputClass}
-              />
-              <p className="mt-1 text-[11px] text-ink-400">Vence {formatDateKeyShort(addDaysToKey(inicio, item.vigenciaDias - 1))}</p>
-            </div>
-            <div>
-              <label className={labelClass}>Precio</label>
-              <MoneyInput value={precio} onChange={setPrecio} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Precio" />
-            </div>
-          </div>
+          <ModalSteps steps={["Detalles", "Pago"]} current={step} onSelect={setStep} />
 
-          <div className="space-y-3 rounded-xl border border-ink-200 bg-ink-50/60 p-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-ink-700">
-              <input
-                type="checkbox"
-                className="size-4 accent-brand-600"
-                checked={pagarAhora}
-                onChange={(event) => {
-                  setPagarAhora(event.target.checked);
-                  if (event.target.checked && !monto) setMonto(precio);
-                }}
-              />
-              Pagó ahora
-            </label>
-            {pagarAhora ? (
-              <>
+          {step === 0 ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelClass}>Monto recibido</label>
-                  <MoneyInput value={monto} onChange={setMonto} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto recibido" />
+                  <label className={labelClass} htmlFor="renew-inicio">
+                    Empieza
+                  </label>
+                  <input
+                    id="renew-inicio"
+                    type="date"
+                    value={inicio}
+                    onChange={(event) => setInicio(event.target.value || today)}
+                    className={inputClass}
+                  />
+                  <p className="mt-1 text-[11px] text-ink-400">Vence {formatDateKeyShort(addDaysToKey(inicio, item.vigenciaDias - 1))}</p>
                 </div>
-                <PaymentMethodPicker value={metodoPago} onChange={setMetodoPago} />
-              </>
-            ) : null}
-            {debe && price > 0 ? (
-              <BalanceDeadlineField value={fechaLimite || addDaysToKey(inicio, diasPlazoSaldo)} min={inicio} onChange={setFechaLimite} />
-            ) : null}
-          </div>
+                <div>
+                  <label className={labelClass}>Precio</label>
+                  <MoneyInput value={precio} onChange={setPrecio} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Precio" />
+                </div>
+              </div>
+              {sale.clasesRestantes > 0 ? (
+                <p className="text-[11px] text-amber-700">
+                  Le {sale.clasesRestantes === 1 ? "queda 1 clase" : `quedan ${sale.clasesRestantes} clases`} sin usar: no se pasan al plan nuevo.
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <PaymentSummary
+                rows={[{ label: `${sale.nombre} · ${sale.discipline.nombre}, desde ${formatDateKeyShort(inicio)}`, value: price }]}
+                totalLabel="Total de la renovación"
+                total={price}
+              />
+              <ChargeStep
+                charge={charge}
+                due={price}
+                allowLater
+                deadline={{ value: fechaLimite || addDaysToKey(inicio, diasPlazoSaldo), min: inicio, onChange: setFechaLimite }}
+              />
+            </>
+          )}
 
-          {sale.clasesRestantes > 0 ? (
-            <p className="text-[11px] text-amber-700">
-              Le {sale.clasesRestantes === 1 ? "queda 1 clase" : `quedan ${sale.clasesRestantes} clases`} sin usar: no se pasan al plan nuevo.
-            </p>
-          ) : null}
           {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
 
-          <div className="flex gap-3 pt-1">
-            <Button type="button" variant="secondary" className="flex-1 rounded-xl py-2.5" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="button" className="flex-1 rounded-xl py-2.5 shadow-none" loading={saving} onClick={submit}>
-              Renovar {currency(price)}
-            </Button>
-          </div>
+          <WizardFooter
+            step={step}
+            last={1}
+            saving={saving}
+            finishLabel={charge.amount > 0 ? `Renovar y cobrar ${currency(charge.amount)}` : `Renovar ${currency(price)}`}
+            onBack={() => (step === 0 ? onClose() : setStep(0))}
+            onNext={() => setStep(1)}
+            onFinish={submit}
+          />
         </div>
       )}
     </Modal>
   );
 }
 
+/**
+ * Spec 027 D7: registrar el pago de un plan en dos pasos. Resumen (precio,
+ * pagado, saldo; cuánto paga y cuándo) → Pago (método o dos partes).
+ */
 export function RegisterPaymentModal({ sale, today, onClose }: { sale: MemberPackageItem; today: string; onClose: () => void }) {
   const request = useStudioRequest();
-  const [monto, setMonto] = useState(String(sale.saldo));
-  const [metodoPago, setMetodoPago] = useState("EFECTIVO");
+  const [step, setStep] = useState(0);
   const [fecha, setFecha] = useState(today);
   const [saving, setSaving] = useState(false);
-  const amount = Number(monto || 0);
-  const invalid = amount <= 0 || amount > sale.saldo;
+  const [error, setError] = useState<string | null>(null);
+  const charge = useCharge(sale.saldo);
+
+  function next() {
+    if (charge.mode === "ABONO" && (charge.amount <= 0 || charge.amount > sale.saldo)) {
+      return setError(charge.amount > sale.saldo ? `No puede superar el saldo de ${currency(sale.saldo)}` : "Escribe cuánto abona");
+    }
+    setError(null);
+    setStep(1);
+  }
 
   async function submit() {
+    if (charge.error) return setError(charge.error);
+    setError(null);
     setSaving(true);
     const saved = await request(
       `/api/member-packages/${sale.id}/payments`,
-      { method: "POST", body: JSON.stringify({ monto: amount, metodoPago, fecha }) },
-      amount === sale.saldo ? "Paquete pagado" : "Abono registrado"
+      { method: "POST", body: JSON.stringify({ monto: charge.amount, fecha, ...paymentPayload(charge.parts) }) },
+      charge.amount === sale.saldo ? "Plan pagado" : "Abono registrado"
     );
     setSaving(false);
     if (saved) onClose();
   }
 
   return (
-    <Modal size="md"
-      open
-      onClose={() => (saving ? undefined : onClose())}
-      title="Registrar pago"
-      description={`${sale.nombre} ${sale.discipline.nombre} · saldo ${currency(sale.saldo)}`}
-    >
+    <Modal size="md" open onClose={() => (saving ? undefined : onClose())} title="Registrar pago" description={`${sale.nombre} · ${sale.discipline.nombre}`}>
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Monto</label>
-            <MoneyInput value={monto} onChange={setMonto} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto" />
-            {amount > sale.saldo ? <p className="mt-1 text-[11px] text-rose-600">Supera el saldo</p> : null}
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="payment-fecha">
-              Fecha
-            </label>
-            <input
-              id="payment-fecha"
-              type="date"
-              max={today}
-              value={fecha}
-              onChange={(event) => setFecha(event.target.value)}
-              className={inputClass}
+        <ModalSteps steps={["Resumen", "Pago"]} current={step} onSelect={setStep} />
+
+        {step === 0 ? (
+          <>
+            <PaymentSummary
+              rows={[
+                { label: "Precio del plan", value: sale.precio },
+                ...(sale.pagado > 0 ? [{ label: "Ya pagado", value: sale.pagado, tone: "discount" as const }] : [])
+              ]}
+              totalLabel="Saldo pendiente"
+              total={sale.saldo}
             />
-          </div>
-        </div>
-        <PaymentMethodPicker value={metodoPago} onChange={setMetodoPago} />
-        <div className="flex gap-3 pt-1">
-          <Button type="button" variant="secondary" className="flex-1 rounded-xl py-2.5" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button type="button" className="flex-1 rounded-xl py-2.5 shadow-none" loading={saving} disabled={invalid} onClick={submit}>
-            Registrar {amount > 0 ? currency(amount) : ""}
-          </Button>
-        </div>
+            <div role="radiogroup" aria-label="¿Cuánto paga?" className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["TOTAL", "Paga todo el saldo"],
+                  ["ABONO", "Abona una parte"]
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={charge.mode === value}
+                  onClick={() => charge.setMode(value)}
+                  className={cn(
+                    "min-h-11 rounded-xl border-2 px-2 py-2 text-sm font-bold transition-colors",
+                    charge.mode === value ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600 hover:border-ink-300"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {charge.mode === "ABONO" ? (
+                <div>
+                  <label className={labelClass}>¿Cuánto abona?</label>
+                  <MoneyInput value={charge.abono} onChange={charge.setAbono} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto del abono" />
+                </div>
+              ) : null}
+              <div className={charge.mode === "ABONO" ? "" : "col-span-2 sm:col-span-1"}>
+                <label className={labelClass} htmlFor="payment-fecha">
+                  Fecha del pago
+                </label>
+                <input id="payment-fecha" type="date" max={today} value={fecha} onChange={(event) => setFecha(event.target.value)} className={inputClass} />
+              </div>
+            </div>
+            {charge.mode === "ABONO" && charge.amount > 0 && charge.amount < sale.saldo ? (
+              <p className="text-[11px] text-amber-600">Quedará debiendo {currency(sale.saldo - charge.amount)}</p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-brand-50 px-4 py-3">
+              <span className="text-sm font-semibold text-brand-800">{charge.mode === "TOTAL" ? "Paga el saldo" : "Abono"}</span>
+              <span className="text-2xl font-black tracking-tight text-brand-800 tabular-nums">{currency(charge.amount)}</span>
+            </div>
+            <p className="text-sm text-ink-500">Confirma cómo recibiste {currency(charge.amount)}.</p>
+            <PaymentBreakdown total={charge.amount} value={charge.parts} onChange={charge.setParts} />
+          </>
+        )}
+
+        {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
+
+        <WizardFooter
+          step={step}
+          last={1}
+          saving={saving}
+          finishLabel={`Registrar ${charge.amount > 0 ? currency(charge.amount) : ""}`}
+          onBack={() => (step === 0 ? onClose() : setStep(0))}
+          onNext={next}
+          onFinish={submit}
+        />
       </div>
     </Modal>
   );

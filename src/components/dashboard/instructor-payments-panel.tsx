@@ -1,15 +1,17 @@
 "use client";
 
+import { PaymentBreakdown } from "@/components/ui/payment-breakdown";
+import { paymentPartsError, type PaymentPart } from "@/lib/payment-breakdown";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { FiAlertTriangle, FiCalendar, FiCheck, FiChevronDown, FiChevronRight, FiChevronUp, FiPercent, FiPlus, FiSettings, FiX } from "react-icons/fi";
+import { FiAlertTriangle, FiCalendar, FiCheck, FiChevronDown, FiChevronRight, FiChevronUp, FiPercent, FiSettings } from "react-icons/fi";
 import { Avatar } from "@/components/dashboard/instructors-panel";
 import { EmptyCard, ToggleRow, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
-import { PAYMENT_METHODS, type PaymentMethodValue } from "@/components/ui/payment-method-modal";
+import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
 import { clientApiFetch } from "@/lib/client-api";
 import type { InstructorCycleView, InstructorPaySettingsView, InstructorPaymentsView, TeamPaySummary } from "@/lib/instructor-ledger";
 import type { InstructorPaymentDetail, InstructorPaymentItem, PaymentHistoryGroup } from "@/lib/instructor-payments";
@@ -783,7 +785,6 @@ function RuleToggle({ label, description, checked, onChange }: { label: string; 
 // ─── Pagar (R11) ──────────────────────────────────────────────────────────────
 
 type Scope = "TODO" | "SALDO" | "ACTUAL";
-type Split = { metodo: PaymentMethodValue; monto: string };
 
 function methodLabel(value: string) {
   if (value === "MIXTO") return "Mixto";
@@ -819,30 +820,21 @@ function PayModal({
   const max = scopes.find(([value]) => value === scope)?.[2] ?? 0;
   const [partial, setPartial] = useState(false);
   const [amount, setAmount] = useState(String(max));
-  const [splits, setSplits] = useState<Split[]>([{ metodo: "EFECTIVO", monto: String(max) }]);
+  // Spec 027: el mismo selector de pago en dos partes de todo Duali.
+  const [parts, setParts] = useState<PaymentPart[]>([{ metodo: "EFECTIVO", monto: max }]);
   const [nota, setNota] = useState("");
   const [saving, setSaving] = useState(false);
 
   const total = partial ? Number(amount || 0) : max;
-  const splitSum = splits.reduce((sum, item) => sum + Number(item.monto || 0), 0);
   // Con una sola forma, esa forma lleva el total.
-  const methods = splits.length === 1 ? [{ ...splits[0], monto: String(total) }] : splits;
-  const error =
-    total <= 0
-      ? "Escribe el monto"
-      : total > max
-        ? `El máximo es ${currency(max)}`
-        : splits.length === 2 && splitSum !== total
-          ? `Las dos formas suman ${currency(splitSum)}; deben sumar ${currency(total)}`
-          : splits.length === 2 && splits[0].metodo === splits[1].metodo
-            ? "Elige dos formas distintas"
-            : null;
+  const methods = parts.length === 1 ? [{ ...parts[0], monto: total }] : parts;
+  const error = total <= 0 ? "Escribe el monto" : total > max ? `El máximo es ${currency(max)}` : paymentPartsError(total, methods);
 
   function chooseScope(value: Scope) {
     const next = scopes.find(([item]) => item === value)?.[2] ?? 0;
     setScope(value);
     setAmount(String(next));
-    setSplits((list) => (list.length === 1 ? [{ ...list[0], monto: String(next) }] : list));
+    setParts((list) => (list.length === 1 ? [{ ...list[0], monto: next }] : list));
   }
 
   async function pay() {
@@ -925,64 +917,7 @@ function PayModal({
           ) : null}
         </div>
 
-        <div>
-          <span className={labelClass}>¿Con qué le pagas?</span>
-          <div className="space-y-2">
-            {splits.map((item, index) => (
-              <div key={index} className="flex gap-2">
-                <select
-                  aria-label={`Forma de pago ${index + 1}`}
-                  className={cn(inputClass, "flex-1")}
-                  value={item.metodo}
-                  onChange={(event) =>
-                    setSplits((list) => list.map((row, position) => (position === index ? { ...row, metodo: event.target.value as PaymentMethodValue } : row)))
-                  }
-                >
-                  {PAYMENT_METHODS.map((method) => (
-                    <option key={method.value} value={method.value}>
-                      {method.label}
-                    </option>
-                  ))}
-                </select>
-                {splits.length === 2 ? (
-                  <>
-                    <div className="w-36">
-                      <MoneyInput
-                        value={item.monto}
-                        onChange={(value) => setSplits((list) => list.map((row, position) => (position === index ? { ...row, monto: value } : row)))}
-                        className="h-[42px] rounded-xl py-2.5 text-sm"
-                        aria-label={`Monto en ${methodLabel(item.metodo)}`}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      aria-label="Quitar esta forma"
-                      onClick={() => setSplits((list) => list.filter((_, position) => position !== index).map((row) => ({ ...row, monto: String(total) })))}
-                      className="flex size-[42px] shrink-0 items-center justify-center rounded-xl border border-ink-200 text-ink-500 hover:bg-ink-50"
-                    >
-                      <FiX className="size-4" />
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            ))}
-          </div>
-          {splits.length === 1 ? (
-            <button
-              type="button"
-              onClick={() =>
-                setSplits([
-                  { metodo: splits[0].metodo, monto: String(total) },
-                  { metodo: splits[0].metodo === "NEQUI" ? "EFECTIVO" : "NEQUI", monto: "0" }
-                ])
-              }
-              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline"
-            >
-              <FiPlus className="size-3.5" />
-              Dividir en dos formas
-            </button>
-          ) : null}
-        </div>
+        <PaymentBreakdown label="¿Con qué le pagas?" total={total > 0 ? total : 0} value={parts} onChange={setParts} />
 
         <div>
           <label className={labelClass} htmlFor="pay-note">

@@ -12,6 +12,7 @@ export async function PATCH(request: Request, context: Params) {
     const body = paymentInstallmentSchema.pick({
       monto: true,
       metodoPago: true,
+      partes: true,
       fechaAbono: true
     }).parse(await readBody(request));
 
@@ -19,6 +20,7 @@ export async function PATCH(request: Request, context: Params) {
       await updateMonthlyPaymentInstallment(clientId, id, installmentId, {
         monto: body.monto,
         metodoPago: body.metodoPago,
+        partes: body.partes,
         fechaAbono: body.fechaAbono
       })
     );

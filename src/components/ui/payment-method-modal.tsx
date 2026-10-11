@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { FiCheckCircle } from "react-icons/fi";
+import { PaymentBreakdown } from "@/components/ui/payment-breakdown";
+import { paymentPartsError, type PaymentPart } from "@/lib/payment-breakdown";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { cn, currency } from "@/lib/web-utils";
@@ -40,10 +43,27 @@ export function PaymentMethodModal({
   confirmText?: string;
   loading?: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  /** Spec 027: con dos partes recibe las partes; con un método, nada (usa selectedMethod). */
+  onConfirm: (partes?: PaymentPart[]) => void;
   onChangePaymentDate: (value: string) => void;
   onSelectMethod: (value: PaymentMethodValue) => void;
 }) {
+  const total = Number(amount ?? 0);
+  // Spec 027 D2: con monto conocido se puede pagar en dos partes.
+  const canSplit = total > 0;
+  const [parts, setParts] = useState<PaymentPart[]>([{ metodo: selectedMethod, monto: total }]);
+  useEffect(() => {
+    if (open) setParts([{ metodo: selectedMethod, monto: total }]);
+    // Solo al abrir: después manda lo que elija la persona.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const splitError = parts.length > 1 ? paymentPartsError(total, parts) : null;
+
+  function changeParts(next: PaymentPart[]) {
+    setParts(next);
+    if (next.length === 1 && next[0].metodo !== selectedMethod) onSelectMethod(next[0].metodo as PaymentMethodValue);
+  }
+
   return (
     <Modal size="md" open={open} title={title} description={description} onClose={onClose}>
       <div className="space-y-5">
@@ -74,33 +94,45 @@ export function PaymentMethodModal({
           <p className="mt-2 text-sm text-ink-500">Este dia se usara en contabilidad, caja e historial.</p>
         </div>
 
-        <div className="border-t border-ink-100 pt-5">
-          <p className="text-base font-black text-ink-950">Metodo de pago</p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {PAYMENT_METHODS.map((method) => {
-              const active = selectedMethod === method.value;
-
-              return (
-                <button
-                  key={method.value}
-                  type="button"
-                  onClick={() => onSelectMethod(method.value)}
-                  className={cn(
-                    "rounded-[20px] border px-4 py-4 text-sm font-black transition",
-                    active
-                      ? "border-brand-600 bg-brand-600 text-white"
-                      : "border-ink-100 bg-ink-50 text-ink-500 hover:border-ink-200 hover:bg-ink-100 hover:text-ink-800"
-                  )}
-                >
-                  {method.label}
-                </button>
-              );
-            })}
+        {canSplit ? (
+          <div className="border-t border-ink-100 pt-5">
+            <PaymentBreakdown total={total} value={parts} onChange={changeParts} />
           </div>
-        </div>
+        ) : (
+          <div className="border-t border-ink-100 pt-5">
+            <p className="text-base font-black text-ink-950">Metodo de pago</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {PAYMENT_METHODS.map((method) => {
+                const active = selectedMethod === method.value;
+
+                return (
+                  <button
+                    key={method.value}
+                    type="button"
+                    onClick={() => onSelectMethod(method.value)}
+                    className={cn(
+                      "rounded-[20px] border px-4 py-4 text-sm font-black transition",
+                      active
+                        ? "border-brand-600 bg-brand-600 text-white"
+                        : "border-ink-100 bg-ink-50 text-ink-500 hover:border-ink-200 hover:bg-ink-100 hover:text-ink-800"
+                    )}
+                  >
+                    {method.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 pt-1">
-          <Button type="button" className="min-h-14 w-full rounded-[22px]" onClick={onConfirm} loading={loading}>
+          <Button
+            type="button"
+            className="min-h-14 w-full rounded-[22px]"
+            onClick={() => onConfirm(parts.length > 1 ? parts : undefined)}
+            loading={loading}
+            disabled={Boolean(splitError)}
+          >
             <FiCheckCircle className="size-5" />
             {confirmText}
           </Button>

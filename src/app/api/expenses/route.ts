@@ -1,6 +1,7 @@
 import { requireClient } from "@/lib/auth";
 import { created, handleError, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { paymentPartsOrThrow, savePaymentParts, serializeParts } from "@/lib/payment-parts";
 import { expenseSchema } from "@/lib/validations";
 
 export async function GET(request: Request) {
@@ -25,10 +26,11 @@ export async function GET(request: Request) {
             }
           : {})
       },
-      orderBy: { fecha: "desc" }
+      orderBy: { fecha: "desc" },
+      include: { methodParts: { select: { metodo: true, monto: true } } }
     });
 
-    return ok(expenses);
+    return ok(expenses.map(({ methodParts, ...expense }) => ({ ...expense, partes: serializeParts(methodParts) })));
   } catch (error) {
     return handleError(error);
   }
@@ -38,8 +40,15 @@ export async function POST(request: Request) {
   try {
     const { clientId } = await requireClient(request);
     const body = expenseSchema.parse(await readBody(request));
-    const expense = await prisma.expense.create({ data: { ...body, clientId } });
-    return created(expense);
+    const { partes: _partes, ...data } = body;
+    // Spec 027 D8: un egreso nuevo siempre dice con que se pago.
+    const metodo = paymentPartsOrThrow(body.monto, body);
+    const expense = await prisma.$transaction(async (tx) => {
+      const row = await tx.expense.create({ data: { ...data, metodoPago: metodo.metodoPago, clientId } });
+      await savePaymentParts(tx, clientId, { expenseId: row.id }, metodo.partes);
+      return row;
+    });
+    return created({ ...expense, partes: metodo.partes });
   } catch (error) {
     return handleError(error);
   }

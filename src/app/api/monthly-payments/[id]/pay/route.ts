@@ -2,6 +2,7 @@ import { requireClient } from "@/lib/auth";
 import { monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } from "@/lib/dates";
 import { ApiError, handleError, ok, readBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { lenientPaymentParts, savePaymentParts } from "@/lib/payment-parts";
 import { payMonthlySchema } from "@/lib/validations";
 
 type Params = { params: Promise<{ id: string }> };
@@ -20,6 +21,9 @@ export async function PUT(request: Request, context: Params) {
     const studentBillingMode =
       (exists.student as { modalidadMensualidad?: "ANTICIPADA" | "VENCIDA" }).modalidadMensualidad ?? "ANTICIPADA";
 
+    // Spec 027: en una o dos partes por el valor de la mensualidad.
+    const metodo = lenientPaymentParts(Number(exists.monto) - Number(exists.montoAbonado) || Number(exists.monto), body);
+
     const payment = await prisma.$transaction(async (tx) => {
       const fechaRegistro = new Date();
       const paidPayment = await tx.monthlyPayment.update({
@@ -28,7 +32,7 @@ export async function PUT(request: Request, context: Params) {
           estado: "PAGADO",
           fechaPago: body.fechaPago ?? fechaRegistro,
           fechaRegistro,
-          metodoPago: body.metodoPago,
+          metodoPago: metodo.metodoPago || null,
           registradoPorUserId: client.id,
           registradoPorNombre: client.nombre,
           montoAbonado: exists.monto,
@@ -37,6 +41,7 @@ export async function PUT(request: Request, context: Params) {
           notas: body.notas
         }
       });
+      await savePaymentParts(tx, clientId, { monthlyPaymentId: id }, metodo.partes);
 
       if (exists.student.estado === "ACTIVO") {
         const nextPeriod = nextMonthlyPeriod(exists.mes, exists.anio);

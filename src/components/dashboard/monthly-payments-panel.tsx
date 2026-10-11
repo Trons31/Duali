@@ -1,5 +1,6 @@
 "use client";
 
+import type { PaymentPart } from "@/lib/payment-breakdown";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -98,12 +99,13 @@ export function MonthlyPaymentsPanel({
       .catch((error: Error) => sileo.error({ title: error.message }));
   }
 
-  async function payPayment() {
+  async function payPayment(partes?: PaymentPart[]) {
     if (!payTarget) return;
     setSubmittingPayment(true);
     await clientApiFetch(`/api/monthly-payments/${payTarget.id}/pay`, token, {
       method: "PUT",
-      body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
+      // Spec 027: en dos partes, si se dividió.
+      body: JSON.stringify({ ...(partes ? { partes } : { metodoPago: paymentMethod }), fechaPago: paymentDate })
     })
       .then(() => {
         sileo.success({ title: "Mensualidad marcada como pagada" });

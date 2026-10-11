@@ -1,3 +1,4 @@
+import type { PaymentMethodInput } from "@/lib/payment-parts";
 import { Prisma } from "@prisma/client";
 import { ensureClassSession } from "@/lib/class-sessions";
 import { ApiError } from "@/lib/http";
@@ -100,7 +101,7 @@ type BookingInput = {
   venta?: {
     packageId: string;
     precio?: number;
-    pago?: { monto: number; metodoPago: string };
+    pago?: { monto: number } & PaymentMethodInput;
     /** Spec 021: venta desde la pagina publica, con su enlace Mi plan y su comprobante. */
     origen?: "PANEL" | "PUBLICO";
     accessToken?: string;

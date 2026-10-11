@@ -2,20 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FiChevronRight, FiCreditCard, FiSearch } from "react-icons/fi";
+import { FiCalendar, FiChevronRight, FiCreditCard, FiSearch } from "react-icons/fi";
 import { EmptyCard } from "@/components/dashboard/studio-ui";
 import { memberName } from "@/components/dashboard/studio-sales-ui";
+import { describeMethod } from "@/components/ui/payment-breakdown";
+import { SelectField } from "@/components/ui/select-field";
 import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
 import { addDaysToKey, dateKeyToDate, studioNow } from "@/lib/studio-time";
 import { cn, currency } from "@/lib/web-utils";
 import type { MemberPackageSaleItem } from "@/lib/web-types";
 
-const methodLabel = (value: string) => PAYMENT_METHODS.find((method) => method.value === value)?.label ?? value;
-
 type PaymentRow = {
   id: string;
   monto: number;
   metodoPago: string;
+  partes: Array<{ metodo: string; monto: number }>;
   dia: string;
   anulado: boolean;
   /** "abono 2 de 2" cuando la venta tuvo mas de un pago valido. */
@@ -24,7 +25,8 @@ type PaymentRow = {
 };
 
 function monthLabel(month: string) {
-  return new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric", timeZone: "UTC" }).format(dateKeyToDate(`${month}-01`));
+  const label = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric", timeZone: "UTC" }).format(dateKeyToDate(`${month}-01`));
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function dayLabel(day: string, today: string) {
@@ -45,6 +47,7 @@ export function paymentRows(sales: MemberPackageSaleItem[]): PaymentRow[] {
           id: payment.id,
           monto: payment.monto,
           metodoPago: payment.metodoPago,
+          partes: payment.partes ?? [],
           dia: studioNow(new Date(payment.fecha)).dateKey,
           anulado: Boolean(payment.anuladoAt) || sale.estado === "ANULADO",
           abono: !payment.anuladoAt && valid.length > 1 ? `abono ${position} de ${valid.length}` : null,
@@ -55,8 +58,8 @@ export function paymentRows(sales: MemberPackageSaleItem[]): PaymentRow[] {
     .sort((a, b) => b.dia.localeCompare(a.dia));
 }
 
-/** Spec 020 D3/R5: Clientes › Pagos, todos los pagos del estudio. */
-export function PaymentsPanel({ sales, today }: { sales: MemberPackageSaleItem[]; today: string }) {
+/** Spec 020 D3/R5 → spec 027 D5: Ventas › Cobros › Historial, todos los pagos del estudio. */
+export function PaymentsPanel({ sales, today, embedded = false }: { sales: MemberPackageSaleItem[]; today: string; embedded?: boolean }) {
   const month = today.slice(0, 7);
   const rows = useMemo(() => paymentRows(sales), [sales]);
   const months = useMemo(() => Array.from(new Set([month, ...rows.map((row) => row.dia.slice(0, 7))])).sort().reverse(), [rows, month]);
@@ -78,7 +81,8 @@ export function PaymentsPanel({ sales, today }: { sales: MemberPackageSaleItem[]
     return rows.filter(
       (row) =>
         (period === "TODO" || row.dia.startsWith(period)) &&
-        (method === "TODOS" || row.metodoPago === method) &&
+        // Spec 027: un pago en dos partes aparece al filtrar por cualquiera de sus dos métodos.
+        (method === "TODOS" || row.metodoPago === method || row.partes.some((part) => part.metodo === method)) &&
         (!text || `${memberName(row.sale.member)} ${row.sale.nombre} ${row.sale.discipline.nombre}`.toLocaleLowerCase("es").includes(text))
     );
   }, [rows, period, method, query]);
@@ -90,19 +94,19 @@ export function PaymentsPanel({ sales, today }: { sales: MemberPackageSaleItem[]
   }, [visible]);
 
   const periodTotal = visible.filter((row) => !row.anulado).reduce((sum, row) => sum + row.monto, 0);
-  const selectClass =
-    "rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brand-400";
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-ink-900 sm:text-2xl">Pagos</h1>
-        <p className="mt-1 text-sm text-ink-500">Todo lo que te han pagado por planes y clases sueltas</p>
-      </div>
+      {embedded ? null : (
+        <div>
+          <h1 className="text-xl font-bold text-ink-900 sm:text-2xl">Pagos</h1>
+          <p className="mt-1 text-sm text-ink-500">Todo lo que te han pagado por planes y clases sueltas</p>
+        </div>
+      )}
 
       {rows.length ? (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3", embedded && "hidden")}>
             <Stat label="Cobrado este mes" value={currency(totals.cobradoMes)} />
             <Stat label="Por cobrar" value={currency(totals.porCobrar)} tone={totals.porCobrar > 0 ? "danger" : "default"} />
             <Stat
@@ -125,22 +129,34 @@ export function PaymentsPanel({ sales, today }: { sales: MemberPackageSaleItem[]
               />
             </label>
             <div className="flex flex-wrap items-center gap-2">
-              <select aria-label="Mes" value={period} onChange={(event) => setPeriod(event.target.value)} className={cn(selectClass, "capitalize")}>
+              <SelectField
+                aria-label="Mes"
+                icon={FiCalendar}
+                wrapperClassName="min-w-[10rem] flex-1 sm:flex-none"
+                value={period}
+                onChange={(event) => setPeriod(event.target.value)}
+              >
                 {months.map((entry) => (
                   <option key={entry} value={entry}>
                     {entry === month ? "Este mes" : monthLabel(entry)}
                   </option>
                 ))}
                 <option value="TODO">Todos los meses</option>
-              </select>
-              <select aria-label="Método" value={method} onChange={(event) => setMethod(event.target.value)} className={selectClass}>
+              </SelectField>
+              <SelectField
+                aria-label="Método"
+                icon={FiCreditCard}
+                wrapperClassName="min-w-[11rem] flex-1 sm:flex-none"
+                value={method}
+                onChange={(event) => setMethod(event.target.value)}
+              >
                 <option value="TODOS">Todos los métodos</option>
                 {PAYMENT_METHODS.map((entry) => (
                   <option key={entry.value} value={entry.value}>
                     {entry.label}
                   </option>
                 ))}
-              </select>
+              </SelectField>
               <span className="ml-auto text-sm text-ink-500">
                 Total <span className="font-semibold text-ink-800">{currency(periodTotal)}</span>
               </span>
@@ -167,7 +183,7 @@ export function PaymentsPanel({ sales, today }: { sales: MemberPackageSaleItem[]
                               </span>
                             </span>
                             <span className={cn("block truncate text-xs text-ink-500", row.anulado && "line-through")}>
-                              {methodLabel(row.metodoPago)}
+                              {describeMethod(row.metodoPago, row.partes)}
                               {row.abono ? ` · ${row.abono}` : ""}
                             </span>
                             {row.anulado ? (

@@ -221,6 +221,7 @@ model Client {
   instructorCycles       InstructorCycle[]
   instructorPayments     InstructorPayment[]
   collaborators          Collaborator[]
+  paymentMethodParts     PaymentMethodPart[]
   classSessions          ClassSession[]
   studioMembers          StudioMember[]
   memberPackages         MemberPackage[]
@@ -395,6 +396,7 @@ model EnrollmentPayment {
   student      Student              @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
   installments PaymentInstallment[]
   reminders    Reminder[]
+  methodParts  PaymentMethodPart[]
 
   @@index([clientId])
   @@index([estudianteId])
@@ -434,6 +436,7 @@ model MonthlyPayment {
   group        Group                @relation(fields: [grupoId], references: [id], onDelete: Restrict)
   installments PaymentInstallment[]
   reminders    Reminder[]
+  methodParts  PaymentMethodPart[]
 
   @@unique([estudianteId, mes, anio])
   @@index([clientId])
@@ -463,10 +466,11 @@ model PaymentInstallment {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  client            Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  student           Student            @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
-  monthlyPayment    MonthlyPayment?    @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
-  enrollmentPayment EnrollmentPayment? @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
+  client            Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  student           Student             @relation(fields: [estudianteId], references: [id], onDelete: Restrict)
+  monthlyPayment    MonthlyPayment?     @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
+  enrollmentPayment EnrollmentPayment?  @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
+  methodParts       PaymentMethodPart[]
 
   @@unique([monthlyPaymentId, numero])
   @@unique([enrollmentPaymentId, numero])
@@ -513,11 +517,14 @@ model Expense {
   monto       Decimal   @db.Decimal(12, 2)
   fecha       DateTime
   categoria   String?
+  // Spec 027 D8: con que se pago (MIXTO si fue en dos partes); nulo en los viejos.
+  metodoPago  String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client      Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  methodParts PaymentMethodPart[]
 
   @@index([clientId])
   @@index([clientId, fecha])
@@ -882,12 +889,43 @@ model MemberPackagePayment {
   anuladoAt       DateTime?
   createdAt       DateTime  @default(now())
 
-  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  memberPackage MemberPackage @relation(fields: [memberPackageId], references: [id], onDelete: Restrict)
+  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  memberPackage MemberPackage       @relation(fields: [memberPackageId], references: [id], onDelete: Restrict)
+  methodParts   PaymentMethodPart[]
 
   @@index([clientId, fecha])
   @@index([memberPackageId])
   @@map("member_package_payments")
+}
+
+// Spec 027 D3: las dos partes de un pago dividido (su metodoPago queda MIXTO).
+// Cada fila pertenece a un solo pago: el campo que no es nulo dice a cual.
+model PaymentMethodPart {
+  id                     String   @id @default(cuid())
+  clientId               String
+  metodo                 String
+  monto                  Decimal  @db.Decimal(12, 2)
+  memberPackagePaymentId String?
+  paymentInstallmentId   String?
+  monthlyPaymentId       String?
+  enrollmentPaymentId    String?
+  expenseId              String?
+  createdAt              DateTime @default(now())
+
+  client               Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  memberPackagePayment MemberPackagePayment? @relation(fields: [memberPackagePaymentId], references: [id], onDelete: Cascade)
+  paymentInstallment   PaymentInstallment?   @relation(fields: [paymentInstallmentId], references: [id], onDelete: Cascade)
+  monthlyPayment       MonthlyPayment?       @relation(fields: [monthlyPaymentId], references: [id], onDelete: Cascade)
+  enrollmentPayment    EnrollmentPayment?    @relation(fields: [enrollmentPaymentId], references: [id], onDelete: Cascade)
+  expense              Expense?              @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([memberPackagePaymentId])
+  @@index([paymentInstallmentId])
+  @@index([monthlyPaymentId])
+  @@index([enrollmentPaymentId])
+  @@index([expenseId])
+  @@map("payment_method_parts")
 }
 
 // ─── Modo Estudio: reservas (spec 007) ───────────────────────────────────────

@@ -59,6 +59,8 @@ const navSections: NavSection[] = [
     module: "estudio",
     items: [
       { href: "/dashboard/clientes", label: "Clientes", icon: FiUsers },
+      // Spec 027 D5: los cobros del estudio en su propia pagina.
+      { href: "/dashboard/ventas/cobros", label: "Cobros", icon: FiDollarSign },
       { href: "/dashboard/paquetes", label: "Paquetes y precios", icon: FiPackage }
     ]
   },

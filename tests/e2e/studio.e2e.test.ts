@@ -295,7 +295,7 @@ describe("panel de la dueña (specs 001–008)", () => {
     assert.equal(status, 200);
     const text = visibleText(html);
     // Spec 022: resumen arriba, el plan con su accion principal y los desplegables.
-    for (const expected of ["Laura", "clases disponibles", "debe · antes del", "Plan actual", "Básico", "Próximas clases", "Vender paquete", "Quedan 3 de 4", "1 reservada", "Clases (1)", "Pagos (1)", "Registrar pago", "Más"]) {
+    for (const expected of ["Laura", "clases disponibles", "debe · antes del", "Plan actual", "Básico", "Próximas clases", "Vender paquete", "Quedan 3 de 4", "1 reservada", "Ver clases (1)", "Pagos (1)", "Registrar pago", "Más"]) {
       assert.ok(text.includes(expected), `falta "${expected}"`);
     }
   });
@@ -425,12 +425,22 @@ describe("spec 020 · renovaciones, pagos y vencimientos", () => {
     await browser.login(owner.email, PASSWORD);
   });
 
-  test("Clientes › Pagos lista los abonos con totales", async () => {
-    const { status, html } = await browser.page("/dashboard/clientes?tab=pagos");
-    assert.equal(status, 200);
-    const text = visibleText(html);
-    for (const expected of ["Pagos", "Cobrado este mes", "Por cobrar", "Saldos vencidos", "Hoy", "Laura", "Nequi", "Todos los métodos"]) {
-      assert.ok(text.includes(expected), `Pagos: falta "${expected}"`);
+  test("spec 027: Ventas › Cobros reúne pendientes, vencidos, por revisar e historial", async () => {
+    // La pestaña vieja Clientes › Pagos lleva al Historial de Cobros.
+    const old = await browser.page("/dashboard/clientes?tab=pagos");
+    assert.ok([303, 307, 308].includes(old.status), `esperaba redirección y llegó ${old.status}`);
+    assert.match(old.location ?? "", /\/dashboard\/ventas\/cobros\?tab=historial/);
+
+    const pending = await browser.page("/dashboard/ventas/cobros");
+    assert.equal(pending.status, 200);
+    const text = visibleText(pending.html);
+    for (const expected of ["Cobros", "Por cobrar", "Vencido", "Cobrado este mes", "Pendientes", "Vencidos", "Por revisar", "Historial", "Registrar pago"]) {
+      assert.ok(text.includes(expected), `Cobros: falta "${expected}"`);
+    }
+
+    const history = visibleText((await browser.page("/dashboard/ventas/cobros?tab=historial")).html);
+    for (const expected of ["Hoy", "Laura", "Nequi", "Todos los métodos"]) {
+      assert.ok(history.includes(expected), `Historial: falta "${expected}"`);
     }
   });
 
@@ -499,12 +509,12 @@ describe("spec 022 · ficha del cliente", () => {
     expectOk(await call(paymentRoute.DELETE, { token: owner.token, method: "DELETE", params: { id: sale.id, paymentId: payment.id } }));
 
     const text = visibleText((await browser.page(`/dashboard/clientes/${member.id}`)).html);
-    for (const expected of ["Pagos (0)", "1 pago anulado no cuenta", "Anulado", "Registrar pago", "Comprobantes (0)"]) {
+    for (const expected of ["Pagos (0)", "1 pago anulado no cuenta", "Anulado", "Registrar pago"]) {
       assert.ok(text.includes(expected), `ficha: falta "${expected}"`);
     }
   });
 
-  test("la pestaña Comprobantes se abre sola con el globo y deja aprobar", async () => {
+  test("spec 027 D6: el comprobante por revisar va arriba de los pagos del plan, sin pestañas", async () => {
     const plan = await prisma.package.findFirstOrThrow({ where: { clientId: owner.id, nombre: "Básico", visiblePublico: true }, select: { id: true } });
     const bought = await new Browser().json(`/api/public/studios/${slug}/plans`, "POST", {
       packageId: plan.id,
@@ -516,9 +526,9 @@ describe("spec 022 · ficha del cliente", () => {
     const member = await prisma.studioMember.findFirstOrThrow({ where: { clientId: owner.id, celular: "3115550499" }, select: { id: true } });
 
     const { html } = await browser.page(`/dashboard/clientes/${member.id}`);
-    assert.match(html, /aria-label="1 por revisar"/, "la pestaña lleva el globo");
+    assert.doesNotMatch(html, /aria-label="Detalle del plan"/, "el plan ya no tiene pestañas");
     const text = visibleText(html);
-    for (const expected of ["Revisar comprobante", "Comprobantes", "Por revisar", "Aprobar $", "Rechazar", "Compró en línea", "Pago en revisión"]) {
+    for (const expected of ["Revisar comprobante", "Pagos (0)", "Comprobante · Nequi", "Por revisar", "Aprobar $", "Rechazar", "Compró en línea", "Pago en revisión"]) {
       assert.ok(text.includes(expected), `ficha: falta "${expected}"`);
     }
   });

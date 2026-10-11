@@ -1,20 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { FiCreditCard, FiLayers, FiTag, FiUsers } from "react-icons/fi";
+import { FiLayers, FiTag, FiUsers } from "react-icons/fi";
 import { DropInsPanel } from "@/components/dashboard/drop-ins-panel";
 import { MemberSalesPanel } from "@/components/dashboard/member-sales-panel";
-import { PaymentsPanel } from "@/components/dashboard/payments-panel";
 import { StudioMembersPanel } from "@/components/dashboard/studio-members-panel";
 import { ScrollHint } from "@/components/shared/scroll-hint";
 import { cn } from "@/lib/web-utils";
 import type { MemberPackageSaleItem, StudioMemberItem } from "@/lib/web-types";
 
-export type ClientsTab = "clientes" | "planes" | "sueltas" | "pagos";
+export type ClientsTab = "clientes" | "planes" | "sueltas";
 
 /**
  * Spec 019 D1/R3: una sola seccion con pestanas generales (como CliqCut):
- * Clientes · Planes · Clases sueltas · Pagos (spec 020 D3). La pestana activa queda en la URL (?tab=).
+ * Clientes · Planes · Clases sueltas. Los pagos pasaron a Ventas › Cobros (spec 027 D5).
+ * La pestana activa queda en la URL (?tab=).
  */
 export function ClientsHub({
   initialTab,
@@ -34,8 +34,7 @@ export function ClientsHub({
   const tabs = [
     { value: "clientes", label: "Clientes", icon: FiUsers, count: members.length },
     { value: "planes", label: "Planes", icon: FiLayers, count: plans.filter((item) => item.estado === "ACTIVO").length },
-    { value: "sueltas", label: "Clases sueltas", icon: FiTag, count: dropIns.filter((item) => item.estado !== "ANULADO").length },
-    { value: "pagos", label: "Pagos", icon: FiCreditCard, count: sales.filter((item) => item.saldoVencido).length }
+    { value: "sueltas", label: "Clases sueltas", icon: FiTag, count: dropIns.filter((item) => item.estado !== "ANULADO").length }
   ] as const;
 
   function select(value: ClientsTab) {
@@ -80,7 +79,6 @@ export function ClientsHub({
       {tab === "clientes" ? <StudioMembersPanel members={members} /> : null}
       {tab === "planes" ? <MemberSalesPanel sales={sales} today={today} /> : null}
       {tab === "sueltas" ? <DropInsPanel sales={sales} /> : null}
-      {tab === "pagos" ? <PaymentsPanel sales={sales} today={today} /> : null}
     </div>
   );
 }

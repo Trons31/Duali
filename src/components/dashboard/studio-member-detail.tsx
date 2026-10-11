@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { Modal } from "@/components/ui/modal";
-import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
+import { describeMethod } from "@/components/ui/payment-breakdown";
 import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import {
   ClassesBar,
@@ -52,7 +52,6 @@ import type { BookingItem, DisciplineItem, MemberPackageItem, PackageItem, Studi
 /** Spec 020 R7: un plan vencido sigue a la vista para renovarlo hasta 60 dias (RENEWAL_WINDOW_DAYS en el servidor). */
 const RENEWAL_WINDOW_DAYS = 60;
 
-const methodLabel = (value: string) => PAYMENT_METHODS.find((method) => method.value === value)?.label ?? value;
 
 type MemberRef = { nombre: string; celular: string };
 
@@ -165,7 +164,7 @@ export function StudioMemberDetail({
           )}
 
           {history.length ? (
-            <PlanHistory items={history} today={today} classHistory={classHistory} receipts={receipts} onExtend={setExtending} />
+            <PlanHistory items={history} receipts={receipts} onExtend={setExtending} />
           ) : null}
         </section>
 
@@ -339,7 +338,7 @@ function PlanSwitcher({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div role="tablist" aria-label="Planes del cliente" className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-3">
+    <div role="tablist" aria-label="Planes del cliente" className="-mx-4 flex snap-x gap-2 overflow-x-auto overflow-y-hidden px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-3">
       {items.map((item) => {
         const active = item.id === selectedId;
         const count = pendingFor(item.id);
@@ -404,22 +403,18 @@ type PlanCardProps = {
   onRenew: () => void;
 };
 
-type PlanTab = "pagos" | "comprobantes" | "clases";
-
 /** Spec 022 R2–R4: el plan a todo lo ancho, con una accion principal y sus pestanas. */
 function PlanCard({ item, member, today, classes, receipts, reminder, onPay, onExtend, onVoid, onRenew }: PlanCardProps) {
   const sendMyPlan = useSendMyPlan();
   const sendReminder = useSendReminder();
   const [reminded, setReminded] = useState(Boolean(reminder?.enviadoAt));
   const pendingCount = receipts.filter((receipt) => receipt.estado === "POR_REVISAR").length;
-  // D3: con un comprobante sin validar, la pestana Comprobantes se abre sola.
-  const [tab, setTab] = useState<PlanTab>(pendingCount ? "comprobantes" : "pagos");
-  const tabsRef = useRef<HTMLDivElement>(null);
+  const paymentsRef = useRef<HTMLDivElement>(null);
   const paidPercent = item.precio > 0 ? Math.min((item.pagado / item.precio) * 100, 100) : 100;
 
+  // Spec 027 D6: los comprobantes por revisar van arriba de los pagos del plan.
   function reviewReceipts() {
-    setTab("comprobantes");
-    tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    paymentsRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   // Spec 022 D2: una sola accion principal.
@@ -470,7 +465,10 @@ function PlanCard({ item, member, today, classes, receipts, reminder, onPay, onE
           <PackageStatusBadge item={item} />
         </header>
 
-        <ClassesBar item={item} legend />
+        <div>
+          <ClassesBar item={item} legend />
+          {!item.claseSuelta && classes.length ? <PlanClasses classes={classes} today={today} /> : null}
+        </div>
 
         <div className="rounded-xl bg-ink-50/70 px-3 py-2.5">
           <p className="text-xs text-ink-600">
@@ -509,64 +507,28 @@ function PlanCard({ item, member, today, classes, receipts, reminder, onPay, onE
         </div>
       </div>
 
-      <div ref={tabsRef} className="scroll-mt-4">
-        <PlanTabs item={item} receipts={receipts} classes={classes} today={today} tab={tab} onTab={setTab} />
+      <div ref={paymentsRef} className="scroll-mt-4 border-t border-ink-100">
+        <PlanPayments item={item} receipts={receipts} />
       </div>
     </article>
   );
 }
 
-/** Spec 022 R4: Pagos · Comprobantes · Clases de un plan. */
-function PlanTabs({
-  item,
-  receipts,
-  classes,
-  today,
-  tab,
-  onTab
-}: {
-  item: MemberPackageItem;
-  receipts: ReceiptView[];
-  classes: ClassHistoryItem[];
-  today: string;
-  tab: PlanTab;
-  onTab: (tab: PlanTab) => void;
-}) {
+/**
+ * Spec 027 D6: el plan termina en sus pagos, sin pestañas. Arriba los
+ * comprobantes por revisar (Aprobar / Rechazar) y los rechazados con su motivo;
+ * debajo el historial de pagos de ese plan.
+ */
+function PlanPayments({ item, receipts }: { item: MemberPackageItem; receipts: ReceiptView[] }) {
   const validPayments = item.payments.filter((payment) => !payment.anuladoAt).length;
-  const pendingCount = receipts.filter((receipt) => receipt.estado === "POR_REVISAR").length;
-  const tabs: Array<{ value: PlanTab; label: string; count?: number }> = [
-    { value: "pagos", label: `Pagos (${validPayments})` },
-    { value: "comprobantes", label: pendingCount ? "Comprobantes" : `Comprobantes (${receipts.length})`, count: pendingCount },
-    ...(item.claseSuelta ? [] : [{ value: "clases" as const, label: `Clases (${classes.length})` }])
-  ];
-  const active = tabs.some((entry) => entry.value === tab) ? tab : "pagos";
+  const open = receipts.filter((receipt) => receipt.estado !== "APROBADO");
 
   return (
-    <div className="border-t border-ink-100">
-      <div role="tablist" aria-label="Detalle del plan" className="flex gap-1 overflow-x-auto border-b border-ink-100 px-2 sm:px-3">
-        {tabs.map((entry) => (
-          <button
-            key={entry.value}
-            type="button"
-            role="tab"
-            aria-selected={active === entry.value}
-            onClick={() => onTab(entry.value)}
-            className={cn(
-              "-mb-px inline-flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400",
-              active === entry.value ? "border-brand-500 text-ink-900" : "border-transparent text-ink-500 hover:text-ink-800"
-            )}
-          >
-            {entry.label}
-            {entry.count ? <CountBadge count={entry.count} label={`${entry.count} por revisar`} /> : null}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" className="px-4 py-1 sm:px-5">
-        {active === "pagos" ? <PaymentsList item={item} /> : null}
-        {active === "comprobantes" ? <ReceiptsList receipts={receipts} /> : null}
-        {active === "clases" ? <ClassesList classes={classes} today={today} /> : null}
-      </div>
-    </div>
+    <section aria-label="Pagos del plan" className="px-4 pb-1 pt-3 sm:px-5">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-ink-400">{`Pagos (${validPayments})`}</h3>
+      {open.length ? <ReceiptsList receipts={open} /> : null}
+      <PaymentsList item={item} />
+    </section>
   );
 }
 
@@ -581,24 +543,20 @@ function ReceiptsList({ receipts }: { receipts: ReceiptView[] }) {
   const [reviewing, setReviewing] = useState<{ receipt: ReceiptView; action: "approve" | "reject" } | null>(null);
   const ordered = [...receipts].sort((a, b) => Number(b.estado === "POR_REVISAR") - Number(a.estado === "POR_REVISAR"));
 
-  if (!receipts.length) {
-    return <p className="py-4 text-sm text-ink-400">Sin comprobantes. Los que envíe al comprar en línea o desde Mi plan aparecen aquí.</p>;
-  }
-
   return (
     <>
       <ul className="divide-y divide-ink-100">
         {ordered.map((receipt) => {
           const state = RECEIPT_STATE[receipt.estado];
           return (
-            <li key={receipt.id} className="flex gap-3 py-3">
+            <li key={receipt.id} className={cn("flex gap-3 py-3", receipt.estado === "POR_REVISAR" && "-mx-2 rounded-xl bg-amber-50/60 px-2")}>
               <a href={receipt.url} target="_blank" rel="noopener noreferrer" title="Ver comprobante completo" className="shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={receipt.url} alt="Comprobante" loading="lazy" className="size-16 rounded-lg bg-ink-50 object-cover ring-1 ring-black/5" />
               </a>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="truncate text-sm font-semibold text-ink-800">{receipt.metodoPago || "Transferencia"}</p>
+                  <p className="truncate text-sm font-semibold text-ink-800">Comprobante · {receipt.metodoPago || "Transferencia"}</p>
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", state.className)}>{state.label}</span>
                 </div>
                 <p className="text-xs text-ink-500">Enviado {formatDateTime(receipt.createdAt)}</p>
@@ -645,7 +603,7 @@ function PaymentsList({ item }: { item: MemberPackageItem }) {
   async function voidPayment(payment: MemberPackageItem["payments"][number]) {
     const ok = await confirm({
       title: "¿Anular este pago?",
-      description: `${currency(payment.monto)} del ${formatDate(payment.fecha)} · ${methodLabel(payment.metodoPago)}`,
+      description: `${currency(payment.monto)} del ${formatDate(payment.fecha)} · ${describeMethod(payment.metodoPago, payment.partes)}`,
       notice: `La venta quedará debiendo ${currency(item.saldo + payment.monto)}. El pago queda en el historial como anulado; úsalo solo si se registró por error.`,
       confirmText: "Anular pago"
     });
@@ -664,7 +622,7 @@ function PaymentsList({ item }: { item: MemberPackageItem }) {
           <li key={payment.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
             <span className="min-w-0">
               <span className={cn("block text-ink-700", payment.anuladoAt && "text-ink-400")}>
-                {formatDate(payment.fecha)} · {methodLabel(payment.metodoPago)}
+                {formatDate(payment.fecha)} · {describeMethod(payment.metodoPago, payment.partes)}
               </span>
               {!payment.anuladoAt && valid.length > 1 ? (
                 <span className="block text-xs text-ink-400">
@@ -706,14 +664,10 @@ function PaymentsList({ item }: { item: MemberPackageItem }) {
 /** Spec 022 R5: los planes que ya pasaron, en filas; tocar una muestra su detalle. */
 function PlanHistory({
   items,
-  today,
-  classHistory,
   receipts,
   onExtend
 }: {
   items: MemberPackageItem[];
-  today: string;
-  classHistory: ClassHistoryItem[];
   receipts: ReceiptView[];
   onExtend: (item: MemberPackageItem) => void;
 }) {
@@ -742,13 +696,7 @@ function PlanHistory({
                 </span>
                 <FiChevronRight className="size-4 shrink-0 text-ink-300 transition group-open:rotate-90" />
               </summary>
-              <HistoryDetail
-                item={item}
-                today={today}
-                classes={classHistory.filter((entry) => entry.memberPackageId === item.id)}
-                receipts={receipts.filter((receipt) => receipt.sale.id === item.id)}
-                onExtend={() => onExtend(item)}
-              />
+              <HistoryDetail item={item} receipts={receipts.filter((receipt) => receipt.sale.id === item.id)} onExtend={() => onExtend(item)} />
             </details>
           </li>
         ))}
@@ -757,20 +705,7 @@ function PlanHistory({
   );
 }
 
-function HistoryDetail({
-  item,
-  today,
-  classes,
-  receipts,
-  onExtend
-}: {
-  item: MemberPackageItem;
-  today: string;
-  classes: ClassHistoryItem[];
-  receipts: ReceiptView[];
-  onExtend: () => void;
-}) {
-  const [tab, setTab] = useState<PlanTab>("pagos");
+function HistoryDetail({ item, receipts, onExtend }: { item: MemberPackageItem; receipts: ReceiptView[]; onExtend: () => void }) {
   return (
     <div className="space-y-3 border-t border-ink-100 bg-ink-50/40 px-4 py-3">
       <div className="sm:hidden">
@@ -783,7 +718,7 @@ function HistoryDetail({
         <ClassesBar item={item} legend />
       )}
       <div className="overflow-hidden rounded-xl border border-ink-100 bg-white">
-        <PlanTabs item={item} receipts={receipts} classes={classes} today={today} tab={tab} onTab={setTab} />
+        <PlanPayments item={item} receipts={receipts} />
       </div>
       {item.estado !== "ANULADO" ? (
         <Button variant="secondary" className="min-h-10 rounded-xl px-4 text-sm font-medium" onClick={onExtend}>
@@ -1029,6 +964,19 @@ const CLASS_STATUS: Record<ClassHistoryItem["estado"], { label: string; classNam
   NO_ASISTIO: { label: "No asistió", className: "bg-rose-50 text-rose-700" },
   CANCELADA: { label: "Cancelada", className: "bg-ink-50 text-ink-400" }
 };
+
+/** Spec 027 D6: las clases del plan ya no son una pestaña; se despliegan bajo la barra. */
+function PlanClasses({ classes, today }: { classes: ClassHistoryItem[]; today: string }) {
+  return (
+    <details className="group mt-1">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-semibold text-brand-600 hover:underline [&::-webkit-details-marker]:hidden">
+        {`Ver clases (${classes.length})`}
+        <FiChevronRight className="size-3.5 transition group-open:rotate-90" aria-hidden />
+      </summary>
+      <ClassesList classes={classes} today={today} />
+    </details>
+  );
+}
 
 /** Spec 019 R9: las clases de un plan; las proximas arriba, las pasadas despues. */
 function ClassesList({ classes, today }: { classes: ClassHistoryItem[]; today: string }) {

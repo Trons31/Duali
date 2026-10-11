@@ -28,6 +28,7 @@ export async function POST(request: Request, context: Params) {
       kind: "ENROLLMENT_PAYMENT",
       monto: body.monto,
       metodoPago: body.metodoPago,
+      partes: body.partes,
       fechaAbono: body.fechaAbono,
       notas: body.notas,
       registeredByUserId: safeClient.id,

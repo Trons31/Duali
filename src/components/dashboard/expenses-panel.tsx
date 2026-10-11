@@ -10,6 +10,8 @@ import { sileo } from "sileo";
 import { FiCalendar, FiChevronDown, FiChevronUp, FiFilter, FiPlus, FiTrendingDown } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { MoneyInput } from "@/components/ui/money-input";
+import { describeMethod, PaymentBreakdown, paymentPayload } from "@/components/ui/payment-breakdown";
+import { paymentPartsError, type PaymentPart } from "@/lib/payment-breakdown";
 import { EXPENSE_CATEGORIES, expenseCategoryLabel, findExpenseCategory } from "@/lib/expense-categories";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -71,6 +73,10 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
   // para que su regla de obligatorio siga corriendo al enviar.
   register("categoria", { required: "Elige el tipo de egreso" });
   const selectedCategory = watch("categoria");
+  // Spec 027 D8: con qué se pagó (o en dos partes).
+  const montoValue = parseMoney(watch("monto") ?? "");
+  const [parts, setParts] = useState<PaymentPart[]>([{ metodo: "EFECTIVO", monto: 0 }]);
+  const partsError = parts.length > 1 ? paymentPartsError(montoValue, parts) : null;
 
   const monthDays = useMemo(() => buildMonthDays(selectedMonth), [selectedMonth]);
   const selectedDate = useMemo(() => buildSelectedDate(selectedMonth, selectedDay), [selectedMonth, selectedDay]);
@@ -128,6 +134,7 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
 
   function openCreateModal() {
     reset(createDefaultValues(filterMode === "day" ? selectedDate : buildSelectedDate(selectedMonth, 1)));
+    setParts([{ metodo: "EFECTIVO", monto: 0 }]);
     setCreateOpen(true);
   }
 
@@ -138,9 +145,10 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
   }
 
   async function onSubmit(values: ExpenseFormValues) {
+    if (partsError) return;
     await clientApiFetch("/api/expenses", token, {
       method: "POST",
-      body: JSON.stringify({ ...values, monto: parseMoney(values.monto) })
+      body: JSON.stringify({ ...values, monto: parseMoney(values.monto), ...paymentPayload(parts) })
     })
       .then(() => {
         sileo.success({ title: "Egreso registrado" });
@@ -428,11 +436,13 @@ export function ExpensesPanel({ expenses }: { expenses: ExpenseItem[] }) {
             </div>
           </Field>
 
+          <PaymentBreakdown label="¿Con qué lo pagaste?" total={montoValue} value={parts} onChange={setParts} />
+
           <div className="flex gap-3">
             <Button className="min-h-11 flex-1 rounded-xl" type="button" variant="secondary" onClick={closeCreateModal}>
               Cancelar
             </Button>
-            <Button className="min-h-11 flex-1 rounded-xl" type="submit" loading={isSubmitting}>
+            <Button className="min-h-11 flex-1 rounded-xl" type="submit" loading={isSubmitting} disabled={Boolean(partsError)}>
               Registrar egreso
             </Button>
           </div>
@@ -480,6 +490,7 @@ function ExpenseCard({ expense, onDelete }: { expense: ExpenseItem; onDelete: ()
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-400">Fecha</p>
           <p className="mt-2 text-sm font-semibold text-ink-900">{formatDate(expense.fecha)}</p>
+          {expense.metodoPago ? <p className="mt-1 text-xs text-ink-500">{describeMethod(expense.metodoPago, expense.partes)}</p> : null}
         </div>
         <p className="shrink-0 text-2xl font-black leading-none text-rose-700">{currency(expense.monto)}</p>
       </div>

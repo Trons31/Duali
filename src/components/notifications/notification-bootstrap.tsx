@@ -1,10 +1,56 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { NotificationsPrompt } from "@/components/notifications/notifications-prompt";
 import { clientApiFetch } from "@/lib/client-api";
 import { WEB_NOTIFICATION_ICON_URL } from "@/lib/branding";
 import { getNotificationCursor, setNotificationCursor } from "@/lib/notification-store";
+import {
+  NOTIFICATIONS_PROMPT_SEEN_KEY,
+  notificationPromptMode,
+  OPEN_NOTIFICATIONS_PROMPT_EVENT,
+  shouldAutoOpenNotificationPrompt,
+  type PromptMode
+} from "@/lib/notification-prompt";
+
+function isIOSDevice() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function isStandaloneWebApp() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+function currentPromptMode() {
+  return notificationPromptMode({
+    permission: "Notification" in window ? Notification.permission : "unsupported",
+    isIOS: isIOSDevice(),
+    isStandalone: isStandaloneWebApp()
+  });
+}
+
+function notificationsPromptSeen() {
+  try {
+    return window.localStorage.getItem(NOTIFICATIONS_PROMPT_SEEN_KEY) === "1";
+  } catch {
+    // Sin almacenamiento se pregunta igual: mejor de más que dejar al estudio sin avisos.
+    return false;
+  }
+}
+
+function markNotificationsPromptSeen() {
+  try {
+    window.localStorage.setItem(NOTIFICATIONS_PROMPT_SEEN_KEY, "1");
+  } catch {
+    // Si no se puede recordar, se volverá a preguntar.
+  }
+}
 
 type NotificationItem = {
   id: string;
@@ -38,7 +84,6 @@ function urlBase64ToUint8Array(base64String: string) {
 export function NotificationBootstrap() {
   const { data: session, status } = useSession();
   const runningRef = useRef(false);
-  const [permissionPrompted, setPermissionPrompted] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() => {
     if (typeof window === "undefined") return "unsupported";
     if (!("Notification" in window)) return "unsupported";
@@ -48,21 +93,51 @@ export function NotificationBootstrap() {
 
   const token = session?.user?.apiToken ?? null;
 
+  // Spec 026: el navegador ya no pregunta solo. Se ofrece primero la invitación
+  // propia y el diálogo del sistema solo se abre desde su botón "Activar".
+  const [promptMode, setPromptMode] = useState<PromptMode | null>(null);
+
+  const closePrompt = useCallback(() => {
+    markNotificationsPromptSeen();
+    setPromptMode(null);
+  }, []);
+
+  const activateNotifications = useCallback(async () => {
+    markNotificationsPromptSeen();
+    setPromptMode(null);
+    if (!("Notification" in window)) return;
+
+    try {
+      // Al quedar "granted", el efecto de registro suscribe este dispositivo (R5).
+      setPermission(await Notification.requestPermission());
+    } catch {
+      setPermission(Notification.permission);
+    }
+  }, []);
+
   useEffect(() => {
     if (status !== "authenticated") return;
     if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (permissionPrompted) return;
 
-    setPermissionPrompted(true);
-    setPermission(Notification.permission);
+    const mode = currentPromptMode();
+    if (!shouldAutoOpenNotificationPrompt(mode, notificationsPromptSeen())) return;
 
-    if (Notification.permission === "default") {
-      Notification.requestPermission()
-        .then((result) => setPermission(result))
-        .catch(() => undefined);
+    // Un respiro antes de aparecer: saltar encima de quien acaba de entrar es la
+    // forma más rápida de que cierre sin leer.
+    const timer = window.setTimeout(() => setPromptMode(mode), 2500);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+
+  // R6: la pantalla de Notificaciones lo reabre aunque ya se haya preguntado.
+  useEffect(() => {
+    function onOpenRequest() {
+      const mode = currentPromptMode();
+      if (mode !== "hidden") setPromptMode(mode);
     }
-  }, [permissionPrompted, status]);
+
+    window.addEventListener(OPEN_NOTIFICATIONS_PROMPT_EVENT, onOpenRequest);
+    return () => window.removeEventListener(OPEN_NOTIFICATIONS_PROMPT_EVENT, onOpenRequest);
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" || !token) return;
@@ -149,7 +224,7 @@ export function NotificationBootstrap() {
       window.removeEventListener("online", registerWebPush);
       document.removeEventListener("visibilitychange", visibilityHandler);
     };
-  }, [status, token]);
+  }, [permission, status, token]);
 
   useEffect(() => {
     if (status !== "authenticated" || !token) return;
@@ -249,5 +324,9 @@ export function NotificationBootstrap() {
     };
   }, [foregroundFallback, permission, status, token]);
 
-  return null;
+  if (!promptMode || promptMode === "hidden") return null;
+
+  return (
+    <NotificationsPrompt mode={promptMode} onClose={closePrompt} onActivate={() => void activateNotifications()} />
+  );
 }

@@ -69,3 +69,7 @@ del esquema con la URL local escrita a mano, y las pruebas se niegan a correr si
 | 022 | [Rediseño de la ficha del cliente](022-ficha-cliente/spec.md) | En curso |
 | 023 | [Instructores y pagos a instructores](023-instructores-pagos/spec.md) | En curso |
 | 024 | [Colaboradores: instructores, administradores y socios](024-colaboradores/spec.md) | Hecha (falta e2e) |
+| 026 | [Invitación propia para activar las notificaciones](026-invitacion-notificaciones/spec.md) | Implementada y probada |
+| 027 | [Cobros ordenados, venta de varios paquetes y pago en dos partes](027-cobros-y-pagos/spec.md) | Implementada y probada |
+| 028 | [Contabilidad como CliqCut, cabecera compacta y selects del panel](028-contabilidad-cliqcut/spec.md) | Implementada y probada |
+| 029 | [Seed de validación en el demo](029-seed-validacion-demo/spec.md) | Implementada y probada |

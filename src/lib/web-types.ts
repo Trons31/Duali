@@ -362,6 +362,9 @@ export type ExpenseItem = {
   monto: number | string;
   fecha: string;
   categoria: string | null;
+  /** Spec 027 D8: nulo en los egresos de antes. */
+  metodoPago: string | null;
+  partes?: Array<{ metodo: string; monto: number }>;
   createdAt: string;
 };
 

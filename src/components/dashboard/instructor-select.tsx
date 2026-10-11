@@ -1,6 +1,6 @@
 "use client";
 
-import { inputClass } from "@/components/dashboard/studio-ui";
+import { SelectField } from "@/components/ui/select-field";
 
 /** Lo que el horario necesita de un instructor activo (spec 023 D5). */
 export type InstructorOption = { id: string; nombre: string; disciplinaIds: string[] };
@@ -33,7 +33,7 @@ export function InstructorSelect({
   const others = instructors.filter((item) => !item.disciplinaIds.includes(disciplineId));
 
   return (
-    <select id={id} className={inputClass} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+    <SelectField id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
       <option value="">{emptyLabel}</option>
       {extraOption ? <option value={extraOption.value}>{extraOption.label}</option> : null}
       {teaches.length && others.length ? (
@@ -60,6 +60,6 @@ export function InstructorSelect({
           </option>
         ))
       )}
-    </select>
+    </SelectField>
   );
 }

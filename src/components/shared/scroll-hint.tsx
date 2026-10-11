@@ -63,7 +63,7 @@ export function ScrollHint({
       <div
         ref={scroller}
         {...scrollerProps}
-        className={cn("overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", scrollerClassName)}
+        className={cn("overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", scrollerClassName)}
       >
         {children}
       </div>

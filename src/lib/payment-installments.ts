@@ -3,6 +3,8 @@ import { monthlyDueDateForPeriod, nextMonthlyPeriod, paymentStatusForDueDate } f
 import { ApiError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import type { DbClient } from "@/lib/prisma-types";
+import type { PaymentPart } from "@/lib/payment-breakdown";
+import { lenientPaymentParts, savePaymentParts } from "@/lib/payment-parts";
 import {
   buildPaymentInstallmentMessage,
   createWhatsappUrl,
@@ -17,7 +19,9 @@ type RegisterInstallmentInput = {
   paymentId: string;
   kind: InstallmentPaymentKind;
   monto: number;
-  metodoPago: string;
+  metodoPago?: string | null;
+  /** Spec 027: el abono en dos partes. */
+  partes?: PaymentPart[] | null;
   fechaAbono?: Date;
   notas?: string | null;
   registeredByUserId?: string | null;
@@ -52,8 +56,15 @@ export async function getPaymentInstallments(clientId: string, paymentId: string
 }
 
 export async function registerPaymentInstallment(input: RegisterInstallmentInput) {
-  const method = input.metodoPago.trim();
   const amountCents = toCents(input.monto);
+  if (amountCents <= 0) {
+    throw new ApiError(422, "El valor del abono debe ser mayor a cero");
+  }
+  if (!input.partes?.length && !input.metodoPago?.trim()) {
+    throw new ApiError(422, "Debes seleccionar un metodo de pago");
+  }
+  // Spec 027: metodoPago queda MIXTO si son dos partes; valida que sumen el abono.
+  const { metodoPago: method, partes } = lenientPaymentParts(input.monto, input);
   const paidAt = input.fechaAbono ?? new Date();
 
   if (amountCents <= 0) {
@@ -66,10 +77,10 @@ export async function registerPaymentInstallment(input: RegisterInstallmentInput
 
   const result = await prisma.$transaction(async (tx) => {
     if (input.kind === "MONTHLY_PAYMENT") {
-      return registerMonthlyInstallment(tx, input, amountCents, method, paidAt);
+      return registerMonthlyInstallment(tx, { ...input, partes }, amountCents, method, paidAt);
     }
 
-    return registerEnrollmentInstallment(tx, input, amountCents, method, paidAt);
+    return registerEnrollmentInstallment(tx, { ...input, partes }, amountCents, method, paidAt);
   });
 
   await persistStudentInstallmentMessage(input.clientId, result).catch(() => undefined);
@@ -81,10 +92,13 @@ export async function updateMonthlyPaymentInstallment(
   clientId: string,
   paymentId: string,
   installmentId: string,
-  input: Pick<RegisterInstallmentInput, "monto" | "metodoPago" | "fechaAbono">
+  input: Pick<RegisterInstallmentInput, "monto" | "metodoPago" | "partes" | "fechaAbono">
 ) {
-  const method = input.metodoPago.trim();
   const amountCents = toCents(input.monto);
+  if (!input.partes?.length && !input.metodoPago?.trim()) {
+    throw new ApiError(422, "Debes seleccionar un metodo de pago");
+  }
+  const { metodoPago: method, partes } = amountCents > 0 ? lenientPaymentParts(input.monto, input) : { metodoPago: "", partes: [] as PaymentPart[] };
 
   if (amountCents <= 0) {
     throw new ApiError(422, "El valor del abono debe ser mayor a cero");
@@ -110,7 +124,9 @@ export async function updateMonthlyPaymentInstallment(
         : installment
     );
 
-    return rebuildMonthlyPaymentInstallments(tx, payment, installments);
+    const rebuilt = await rebuildMonthlyPaymentInstallments(tx, payment, installments);
+    await savePaymentParts(tx, clientId, { paymentInstallmentId: installmentId }, partes);
+    return rebuilt;
   });
 }
 
@@ -406,7 +422,7 @@ async function createInstallment(
 
   const remainingCents = params.currentBalanceCents - params.amountCents;
 
-  return tx.paymentInstallment.create({
+  const installment = await tx.paymentInstallment.create({
     data: {
       clientId: params.input.clientId,
       estudianteId: params.studentId,
@@ -423,6 +439,9 @@ async function createInstallment(
       notas: params.input.notas
     }
   });
+  // Spec 027: llegan ya validadas; solo hay partes cuando fueron dos.
+  await savePaymentParts(tx, params.input.clientId, { paymentInstallmentId: installment.id }, params.input.partes ?? []);
+  return installment;
 }
 
 async function createNextMonthlyPaymentIfNeeded(

@@ -38,6 +38,10 @@ export async function PATCH(request: Request, context: Params) {
     if (!payment) throw new ApiError(404, "Mensualidad no encontrada para este alumno");
 
     await prisma.$transaction(async (tx) => {
+      // Spec 027: si cambia el metodo o deja de estar pagada, las partes viejas sobran.
+      if (!body.paid || body.metodoPago) {
+        await tx.paymentMethodPart.deleteMany({ where: { clientId, monthlyPaymentId: payment.id } });
+      }
       if (body.paid) {
         const fechaRegistro = new Date();
         await tx.paymentInstallment.deleteMany({

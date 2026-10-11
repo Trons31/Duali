@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PAYMENT_METHOD_VALUES } from "@/lib/payment-breakdown";
 import { DISCIPLINE_COLORS, normalizeMemberPhone, slugProblem } from "@/lib/studio-constants";
 import { isDateKey, isTimeKey } from "@/lib/studio-time";
 import { validateOverduePaymentMessageTemplate } from "@/lib/whatsapp-template";
@@ -326,9 +327,17 @@ export const generateMonthlyByGroupSchema = z.object({
   monto: z.coerce.number().positive().optional()
 });
 
+// Spec 027 D2: un pago en una o dos partes. Que sumen el total lo valida el
+// servidor (payment-parts.ts), porque el total depende de cada caso.
+export const paymentPartsSchema = z
+  .array(z.object({ metodo: z.enum(PAYMENT_METHOD_VALUES), monto: z.coerce.number().positive("Cada parte debe ser mayor a 0").max(100_000_000) }))
+  .min(1, "Elige el método de pago")
+  .max(2, "Máximo dos partes");
+
 export const payMonthlySchema = z.object({
   fechaPago: localDateInputSchema.optional(),
   metodoPago: z.string().optional().nullable(),
+  partes: paymentPartsSchema.optional(),
   comprobanteUrl: z.string().url().optional().nullable(),
   notas: z.string().optional().nullable()
 });
@@ -343,12 +352,15 @@ export const studentPaymentHistoryUpdateSchema = z.object({
 export const payEnrollmentSchema = z.object({
   fechaPago: localDateInputSchema.optional(),
   metodoPago: z.string().optional().nullable(),
+  partes: paymentPartsSchema.optional(),
   notas: z.string().optional().nullable()
 });
 
 export const paymentInstallmentSchema = z.object({
   monto: z.coerce.number().positive("El valor del abono debe ser mayor a cero"),
-  metodoPago: z.string().trim().min(1, "Selecciona un metodo de pago"),
+  // Spec 027: o el metodo, o las partes (el servidor exige uno de los dos).
+  metodoPago: z.string().trim().optional().nullable(),
+  partes: paymentPartsSchema.optional(),
   fechaAbono: localDateInputSchema.optional(),
   notas: z.string().optional().nullable()
 });
@@ -368,7 +380,10 @@ export const expenseSchema = z.object({
   descripcion: z.string().optional().nullable(),
   monto: z.coerce.number().positive(),
   fecha: localDateInputSchema,
-  categoria: z.string().optional().nullable()
+  categoria: z.string().optional().nullable(),
+  // Spec 027 D8: con que se pago, o en dos partes. Al crear es obligatorio (lo exige la API).
+  metodoPago: z.enum(PAYMENT_METHOD_VALUES).optional(),
+  partes: paymentPartsSchema.optional()
 });
 
 // ─── Modo Estudio (specs 003 y 004) ───────────────────────────────────────────
@@ -483,7 +498,8 @@ export const studioMemberSchema = z.object({
 
 const studioPaymentSchema = z.object({
   monto: z.coerce.number().positive("El monto debe ser mayor a 0").max(100_000_000),
-  metodoPago: z.enum(STUDIO_PAYMENT_METHODS)
+  metodoPago: z.enum(STUDIO_PAYMENT_METHODS).optional(),
+  partes: paymentPartsSchema.optional()
 });
 
 export const memberPackageSaleSchema = z.object({
@@ -498,6 +514,24 @@ export const memberPackageSaleSchema = z.object({
 });
 
 /** Spec 020 R3: renovar el mismo paquete, encadenado a la venta anterior. */
+/** Spec 027 D1/R5: varios paquetes en una venta, con un solo pago repartido. */
+export const memberPackageCartSchema = z.object({
+  memberId: z.string().min(1),
+  items: z
+    .array(
+      z.object({
+        packageId: z.string().min(1),
+        inicio: dateKeySchema.optional(),
+        precio: z.coerce.number().min(0).max(100_000_000).optional()
+      })
+    )
+    .min(1, "Elige al menos un paquete")
+    .max(10, "Máximo 10 paquetes por venta"),
+  notas: optionalTextSchema(300),
+  pago: studioPaymentSchema.optional(),
+  fechaLimitePago: dateKeySchema.optional().nullable()
+});
+
 export const memberPackageRenewSchema = memberPackageSaleSchema.pick({ inicio: true, precio: true, pago: true, fechaLimitePago: true });
 
 export const memberPackageUpdateSchema = z.union([

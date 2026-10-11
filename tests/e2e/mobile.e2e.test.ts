@@ -167,6 +167,8 @@ before(async () => {
     "/dashboard/mi-plan",
     "/dashboard/notificaciones",
     "/dashboard/paquetes",
+    "/dashboard/ventas/cobros",
+    "/dashboard/ventas/cobros?tab=historial",
     "/auth/login",
     "/auth/register",
     `/s/${slug}`,

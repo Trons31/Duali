@@ -1,5 +1,7 @@
 "use client";
 
+import { PaymentBreakdown, paymentPayload } from "@/components/ui/payment-breakdown";
+import { paymentPartsError, type PaymentPart } from "@/lib/payment-breakdown";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { FiArrowLeft, FiCalendar, FiCheck, FiClock, FiList, FiSearch, FiUser, FiUserPlus, FiUsers, FiX } from "react-icons/fi";
@@ -8,7 +10,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { MoneyInput } from "@/components/ui/money-input";
-import { PAYMENT_METHODS } from "@/components/ui/payment-method-modal";
 import { ColorDot, inputClass, labelClass, useStudioRequest } from "@/components/dashboard/studio-ui";
 import { AttendanceToggle } from "@/components/dashboard/attendance-ui";
 import { InstructorSelect, type InstructorOption } from "@/components/dashboard/instructor-select";
@@ -365,7 +366,8 @@ export function BookingForm({
   const [sellId, setSellId] = useState("");
   const [pagarAhora, setPagarAhora] = useState(true);
   const [monto, setMonto] = useState("");
-  const [metodoPago, setMetodoPago] = useState("EFECTIVO");
+  // Spec 027: también en dos partes.
+  const [parts, setParts] = useState<PaymentPart[]>([{ metodo: "EFECTIVO", monto: 0 }]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -406,6 +408,7 @@ export function BookingForm({
 
   const toSell = options?.sellable.find((item) => item.id === sellId);
   const amount = Number(monto || 0);
+  const partsError = parts.length > 1 ? paymentPartsError(amount, parts) : null;
 
   async function submit() {
     if (!member) return;
@@ -415,7 +418,7 @@ export function BookingForm({
       : {
           venta: {
             packageId: sellId,
-            ...(pagarAhora && amount > 0 ? { pago: { monto: amount, metodoPago } } : {})
+            ...(pagarAhora && amount > 0 ? { pago: { monto: amount, ...paymentPayload(parts) } } : {})
           }
         };
     const saved = await request(
@@ -559,22 +562,7 @@ export function BookingForm({
                   <MoneyInput value={monto} onChange={setMonto} className="h-[42px] rounded-xl py-2.5 text-sm" aria-label="Monto recibido" />
                   {toSell && amount > toSell.precio ? <p className="mt-1 text-[11px] text-rose-600">Supera el precio</p> : null}
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {PAYMENT_METHODS.map((method) => (
-                    <button
-                      key={method.value}
-                      type="button"
-                      aria-pressed={metodoPago === method.value}
-                      onClick={() => setMetodoPago(method.value)}
-                      className={cn(
-                        "rounded-xl border px-2 py-1.5 text-xs font-medium",
-                        metodoPago === method.value ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600"
-                      )}
-                    >
-                      {method.label}
-                    </button>
-                  ))}
-                </div>
+                <PaymentBreakdown total={amount} value={parts} onChange={setParts} />
               </>
             ) : (
               <p className="text-[11px] text-ink-500">Quedará debiendo {toSell ? currency(toSell.precio) : ""}.</p>
@@ -583,7 +571,7 @@ export function BookingForm({
           <Button
             className="w-full rounded-xl py-2.5 shadow-none"
             loading={saving}
-            disabled={!sellId || (pagarAhora && (amount <= 0 || (toSell ? amount > toSell.precio : false)))}
+            disabled={!sellId || (pagarAhora && (amount <= 0 || Boolean(partsError) || (toSell ? amount > toSell.precio : false)))}
             onClick={submit}
           >
             {walkIn ? "Vender y registrar llegada" : "Vender y reservar"}

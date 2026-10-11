@@ -1,4 +1,6 @@
 import { requireClient } from "@/lib/auth";
+import { methodBreakdown } from "@/lib/payment-breakdown";
+import { serializeParts } from "@/lib/payment-parts";
 import { handleError, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { calculateTotalDebtAfterInstallment, getOpenDebtByStudent } from "@/lib/student-debt";
@@ -51,6 +53,10 @@ function normalizeMethod(method: string | null) {
       return "Bancolombia";
     case "DAVIPLATA":
       return "Daviplata";
+    case "MIXTO":
+      return "Dos partes";
+    case "OTRO":
+      return "Otro";
     default:
       return method;
   }
@@ -81,7 +87,8 @@ export async function GET(request: Request) {
       orderBy: [{ fechaPago: "desc" }, { createdAt: "desc" }],
       include: {
         student: true,
-        group: true
+        group: true,
+        methodParts: { select: { metodo: true, monto: true } }
       }
     });
     const enrollmentPayments = await prisma.enrollmentPayment.findMany({
@@ -98,7 +105,8 @@ export async function GET(request: Request) {
           include: {
             group: true
           }
-        }
+        },
+        methodParts: { select: { metodo: true, monto: true } }
       }
     });
     const installments = await prisma.paymentInstallment.findMany({
@@ -109,6 +117,7 @@ export async function GET(request: Request) {
       orderBy: [{ fechaAbono: "desc" }, { createdAt: "desc" }],
       include: {
         student: true,
+        methodParts: { select: { metodo: true, monto: true } },
         monthlyPayment: {
           include: {
             group: true
@@ -142,6 +151,7 @@ export async function GET(request: Request) {
       },
       orderBy: [{ fecha: "desc" }, { createdAt: "desc" }],
       include: {
+        methodParts: { select: { metodo: true, monto: true } },
         memberPackage: {
           select: {
             nombre: true,
@@ -165,41 +175,16 @@ export async function GET(request: Request) {
 
     const methodMap = new Map<string, { amount: number; count: number }>();
 
-    for (const payment of monthlyPayments) {
-      const key = normalizeMethod(payment.metodoPago);
-      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
-      methodMap.set(key, {
-        amount: current.amount + Number(payment.monto),
-        count: current.count + 1
-      });
-    }
-
-    for (const payment of enrollmentPayments) {
-      const key = normalizeMethod(payment.metodoPago);
-      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
-      methodMap.set(key, {
-        amount: current.amount + Number(payment.monto),
-        count: current.count + 1
-      });
-    }
-
-    for (const installment of installments) {
-      const key = normalizeMethod(installment.metodoPago);
-      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
-      methodMap.set(key, {
-        amount: current.amount + Number(installment.monto),
-        count: current.count + 1
-      });
-    }
-
-    for (const payment of packagePayments) {
-      const key = normalizeMethod(payment.metodoPago);
-      const current = methodMap.get(key) ?? { amount: 0, count: 0 };
-      methodMap.set(key, {
-        amount: current.amount + Number(payment.monto),
-        count: current.count + 1
-      });
-    }
+    // Spec 027 R11: un pago en dos partes suma a cada metodo lo suyo.
+    const addToMethods = (payment: { monto: unknown; metodoPago: string | null; methodParts: Array<{ metodo: string; monto: unknown }> }) => {
+      const parts = methodBreakdown({ monto: Number(payment.monto), metodoPago: payment.metodoPago, partes: serializeParts(payment.methodParts) });
+      for (const part of parts) {
+        const key = normalizeMethod(part.metodo || null);
+        const current = methodMap.get(key) ?? { amount: 0, count: 0 };
+        methodMap.set(key, { amount: current.amount + part.monto, count: current.count + 1 });
+      }
+    };
+    [...monthlyPayments, ...enrollmentPayments, ...installments, ...packagePayments].forEach(addToMethods);
 
     const paymentMethods = Array.from(methodMap.entries())
       .map(([method, value]) => ({

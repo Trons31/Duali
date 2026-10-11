@@ -1,5 +1,6 @@
 "use client";
 
+import { allocatePayment, type PaymentPart } from "@/lib/payment-breakdown";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -157,11 +158,14 @@ export function DuePaymentsPanel({
     setInstallmentTarget(null);
   }
 
-  async function payCurrent() {
+  async function payCurrent(partes?: PaymentPart[]) {
     if (!payTarget) return;
     setSubmittingPayment(true);
+    // Spec 027 D4: en dos partes, cada cobro se lleva su porción en orden.
+    const shares = partes ? allocatePayment(payTarget.items.map(paymentRemainingAmount), partes) : null;
     await Promise.all(
-      payTarget.items.map((item) => {
+      payTarget.items.map((item, index) => {
+        const share = shares?.[index];
         const endpoint =
           item.kind === "MONTHLY_PAYMENT"
             ? `/api/monthly-payments/${item.id}/pay`
@@ -169,7 +173,10 @@ export function DuePaymentsPanel({
 
         return clientApiFetch(endpoint, token, {
           method: "PUT",
-          body: JSON.stringify({ metodoPago: paymentMethod, fechaPago: paymentDate })
+          body: JSON.stringify({
+            ...(share && share.partes.length > 1 ? { partes: share.partes } : { metodoPago: share?.partes[0]?.metodo ?? paymentMethod }),
+            fechaPago: paymentDate
+          })
         });
       })
     )

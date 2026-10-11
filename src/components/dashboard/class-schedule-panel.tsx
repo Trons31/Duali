@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectField } from "@/components/ui/select-field";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -515,13 +516,13 @@ function ScheduleModal({
               <label className={labelClass} htmlFor="schedule-duracion">
                 Duración
               </label>
-              <select id="schedule-duracion" className={inputClass} {...register("duracionMin")}>
+              <SelectField id="schedule-duracion" {...register("duracionMin")}>
                 {DURATIONS.map((minutes) => (
                   <option key={minutes} value={minutes}>
                     {minutes} min
                   </option>
                 ))}
-              </select>
+              </SelectField>
             </div>
             <div>
               <label className={labelClass} htmlFor="schedule-cupo">

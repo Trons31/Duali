@@ -43,7 +43,7 @@ export async function globalSetup() {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  app = spawn(process.execPath, [path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "dev", "--port", String(port)], {
+  app = spawn(process.execPath, [path.join(ROOT, "node_modules", "next", "dist", "bin", "next"), "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: ROOT,
     env: {
       ...process.env,

@@ -112,11 +112,12 @@ export function DashboardShell({
   const navContent = (
     <div className="relative flex h-full flex-col overflow-hidden bg-white text-ink-950">
       <div className="relative px-2 pb-3 pt-2">
-        {/* Como el Sidebar de Nubi: marca arriba; persona, tipo de negocio y plan abajo. */}
-        <div className="rounded-2xl border border-brand-100 bg-white shadow-sm">
-          <div className="flex items-center gap-3 px-3 pb-3 pt-3.5">
-            <BrandLogo size={40} priority />
-            <p className="min-w-0 flex-1 whitespace-normal break-words text-base font-black leading-tight text-ink-950">
+        {/* Spec 028 R6: compacta como la de CliqCut. Negocio arriba (logo + nombre, hasta dos
+            lineas) y, bajo un divisor, quien esta conectado, su tipo de negocio y el plan. */}
+        <div className="rounded-2xl border border-ink-100 bg-white shadow-sm">
+          <div className="flex items-center gap-2.5 p-3">
+            <BrandLogo size={36} priority />
+            <p className="line-clamp-2 min-w-0 flex-1 break-words text-sm font-black leading-snug text-ink-950" title={user.businessName}>
               {user.businessName}
             </p>
             <button
@@ -129,16 +130,16 @@ export function DashboardShell({
             </button>
           </div>
 
-          <div className="border-t border-brand-100/70 px-3 pb-3 pt-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-sm font-semibold text-ink-800">{user.name || user.businessName}</p>
-              <span className="shrink-0 rounded-md bg-ink-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-500">
+          <div className="border-t border-ink-100 px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <p className="min-w-0 flex-1 truncate text-xs font-semibold text-ink-700">{user.name || user.businessName}</p>
+              <span className="shrink-0 rounded-full bg-ink-100 px-1.5 py-px text-[10px] font-bold text-ink-500">
                 {businessKindLabel(modules)}
               </span>
             </div>
             {/* Como CliqCut: el colaborador no ve el plan, que es de la dueña. */}
             {isCollaborator ? (
-              <p className="mt-1 text-xs font-semibold text-brand-700">{access.role === "SOCIO" ? "Socio" : "Administrador"}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-brand-700">{access.role === "SOCIO" ? "Socio" : "Administrador"}</p>
             ) : (
               <PlanBadge days={visiblePlanDays} overdue={isPlanOverdue} onNavigate={() => setOpen(false)} />
             )}
@@ -273,9 +274,9 @@ function PlanBadge({ days, overdue, onNavigate }: { days: number; overdue: boole
     <Link
       href="/dashboard/mi-plan"
       onClick={onNavigate}
-      className={cn("mt-1.5 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition hover:opacity-80", tone)}
+      className={cn("mt-0.5 flex items-center gap-1 rounded-lg text-[11px] font-semibold transition hover:opacity-80", tone)}
     >
-      <FiZap className="size-3.5 shrink-0" />
+      <FiZap className="size-[11px] shrink-0 fill-current" />
       <span className="truncate">Plan · {status}</span>
       {urgent ? (
         <span className="relative flex size-2 shrink-0">
